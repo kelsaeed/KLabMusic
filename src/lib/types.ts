@@ -25,3 +25,38 @@ export interface UserProfile {
   displayName: string
   avatarUrl?: string
 }
+
+export type InstrumentId =
+  | 'piano'
+  | 'electricPiano'
+  | 'guitar'
+  | 'bass'
+  | 'pad'
+  | 'lead'
+  | 'organ'
+  | 'drums'
+  | 'glitch'
+  | 'meme'
+
+export type InstrumentCategory = 'sampled' | 'synth' | 'percussion' | 'fx'
+export type InstrumentPlayMode = 'note' | 'sample'
+
+export interface InstrumentMeta {
+  id: InstrumentId
+  category: InstrumentCategory
+  playMode: InstrumentPlayMode
+  icon: string
+  available: boolean
+  samples?: readonly string[]
+}
+
+export type EffectId =
+  | 'reverb'
+  | 'delay'
+  | 'distortion'
+  | 'chorus'
+  | 'filter'
+  | 'bitcrusher'
+  | 'compressor'
+
+export type LoadState = 'idle' | 'loading' | 'ready' | 'error'

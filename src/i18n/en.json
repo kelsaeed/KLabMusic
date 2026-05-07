@@ -39,6 +39,39 @@
     "midnight-jazz": "Midnight Jazz",
     "custom": "Custom"
   },
+  "audio": {
+    "instruments": "Instruments",
+    "effects": "Effects",
+    "master": "Master",
+    "muted": "Muted",
+    "live": "Live",
+    "testPad": "Test Pad",
+    "testPadHint": "Click + hold to play",
+    "pickInstrument": "Pick an instrument to load its effect chain.",
+    "notAvailable": "Add sound files to /public/sounds/meme/",
+    "activeNotes": "{n} active",
+    "instrument": {
+      "piano": "Piano",
+      "electricPiano": "E-Piano",
+      "guitar": "Guitar",
+      "bass": "Bass",
+      "pad": "Pad",
+      "lead": "Lead",
+      "organ": "Organ",
+      "drums": "Drums",
+      "glitch": "Glitch",
+      "meme": "Meme"
+    },
+    "effect": {
+      "reverb": "Reverb",
+      "delay": "Delay",
+      "distortion": "Drive",
+      "chorus": "Chorus",
+      "filter": "Filter",
+      "bitcrusher": "Crush",
+      "compressor": "Comp"
+    }
+  },
   "common": {
     "loading": "Loading…",
     "save": "Save",

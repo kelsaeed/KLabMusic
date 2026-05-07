@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppNav from '@/components/AppNav.vue'
 import ModuleTabs from '@/components/ModuleTabs.vue'
+import AudioStage from '@/components/instruments/AudioStage.vue'
 import type { ModuleTab } from '@/lib/types'
 
 const { t } = useI18n()
@@ -15,7 +16,9 @@ const active = ref<ModuleTab>('live')
     <ModuleTabs :active="active" @change="(tab) => (active = tab)" />
 
     <main class="stage">
-      <section class="placeholder">
+      <AudioStage v-if="active === 'live'" />
+
+      <section v-else class="placeholder">
         <h2>{{ t(`modules.${active}`) }}</h2>
         <p>Module coming up in the next phase.</p>
       </section>
@@ -32,9 +35,9 @@ const active = ref<ModuleTab>('live')
 }
 .stage {
   flex: 1;
-  padding: 2rem 1.5rem;
-  display: grid;
-  place-items: center;
+  padding: 1.5rem;
+  display: flex;
+  justify-content: center;
 }
 .placeholder {
   text-align: center;
@@ -44,6 +47,7 @@ const active = ref<ModuleTab>('live')
   background: var(--bg-surface);
   max-width: 560px;
   width: 100%;
+  margin: auto;
 }
 .placeholder h2 {
   margin: 0 0 0.5rem;

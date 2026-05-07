@@ -39,6 +39,39 @@
     "midnight-jazz": "جاز منتصف الليل",
     "custom": "مخصص"
   },
+  "audio": {
+    "instruments": "الآلات",
+    "effects": "التأثيرات",
+    "master": "الماستر",
+    "muted": "صامت",
+    "live": "حي",
+    "testPad": "لوحة التجربة",
+    "testPadHint": "اضغط واستمر للعزف",
+    "pickInstrument": "اختر آلة لتحميل سلسلة التأثيرات.",
+    "notAvailable": "أضف ملفات الصوت إلى /public/sounds/meme/",
+    "activeNotes": "{n} نشط",
+    "instrument": {
+      "piano": "بيانو",
+      "electricPiano": "بيانو كهربائي",
+      "guitar": "جيتار",
+      "bass": "باس",
+      "pad": "باد",
+      "lead": "ليد",
+      "organ": "أرغن",
+      "drums": "طبول",
+      "glitch": "غليتش",
+      "meme": "ميم"
+    },
+    "effect": {
+      "reverb": "ريفيرب",
+      "delay": "ديلاي",
+      "distortion": "تشويه",
+      "chorus": "كورس",
+      "filter": "فلتر",
+      "bitcrusher": "كراش",
+      "compressor": "كومب"
+    }
+  },
   "common": {
     "loading": "جاري التحميل…",
     "save": "حفظ",
