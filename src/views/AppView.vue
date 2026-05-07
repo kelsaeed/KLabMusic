@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import AppNav from '@/components/AppNav.vue'
 import ModuleTabs from '@/components/ModuleTabs.vue'
 import AudioStage from '@/components/instruments/AudioStage.vue'
+import RecorderDrawer from '@/components/recorder/RecorderDrawer.vue'
 import type { ModuleTab } from '@/lib/types'
 
 const { t } = useI18n()
@@ -23,6 +24,8 @@ const active = ref<ModuleTab>('live')
         <p>Module coming up in the next phase.</p>
       </section>
     </main>
+
+    <RecorderDrawer />
   </div>
 </template>
 
@@ -35,7 +38,7 @@ const active = ref<ModuleTab>('live')
 }
 .stage {
   flex: 1;
-  padding: 1.5rem;
+  padding: 1.5rem 1.5rem 5rem;
   display: flex;
   justify-content: center;
 }

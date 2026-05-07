@@ -72,6 +72,28 @@
       "compressor": "كومب"
     }
   },
+  "recorder": {
+    "title": "المسجل",
+    "clips": "المقاطع",
+    "noClips": "لا توجد مقاطع. سجل أو أسقط ملفًا.",
+    "dropOrRecord": "أسقط ملفًا هنا، أو اضغط تسجيل.",
+    "record": "تسجيل",
+    "stopRec": "إيقاف {t}ث",
+    "upload": "رفع",
+    "play": "تشغيل",
+    "stop": "إيقاف",
+    "delete": "حذف",
+    "pitch": "النغمة",
+    "speed": "السرعة",
+    "fadeIn": "تلاشي داخل",
+    "fadeOut": "تلاشي خارج",
+    "reverse": "عكس",
+    "loop": "تكرار",
+    "normalize": "تسوية",
+    "detectBpm": "كشف الإيقاع",
+    "exportWav": "تصدير WAV",
+    "saveCloud": "حفظ سحابي"
+  },
   "common": {
     "loading": "جاري التحميل…",
     "save": "حفظ",

@@ -1,0 +1,355 @@
+import * as Tone from 'tone'
+import { useRecorderStore } from '@/stores/recorder'
+import { supabase, isSupabaseConfigured } from '@/lib/supabase'
+import { useUserStore } from '@/stores/user'
+import type { Clip } from '@/lib/types'
+
+const WAVEFORM_BUCKETS = 600
+
+let mediaRecorder: MediaRecorder | null = null
+let recorderChunks: Blob[] = []
+let micStream: MediaStream | null = null
+let recordTimer: ReturnType<typeof setInterval> | null = null
+let recordStartedAt = 0
+let activePlayer: Tone.Player | null = null
+let activePitchNode: Tone.PitchShift | null = null
+let playbackTimer: ReturnType<typeof setInterval> | null = null
+
+function rawContext(): AudioContext {
+  return Tone.getContext().rawContext as AudioContext
+}
+
+function uid(): string {
+  return Math.random().toString(36).slice(2, 10)
+}
+
+function buildWaveform(buffer: AudioBuffer): number[] {
+  const channel = buffer.getChannelData(0)
+  const bucketSize = Math.max(1, Math.floor(channel.length / WAVEFORM_BUCKETS))
+  const peaks: number[] = []
+  for (let i = 0; i < WAVEFORM_BUCKETS; i++) {
+    const start = i * bucketSize
+    const end = Math.min(channel.length, start + bucketSize)
+    let peak = 0
+    for (let j = start; j < end; j++) {
+      const abs = Math.abs(channel[j])
+      if (abs > peak) peak = abs
+    }
+    peaks.push(peak)
+  }
+  return peaks
+}
+
+function detectBpm(buffer: AudioBuffer): number | null {
+  const sr = buffer.sampleRate
+  const channel = buffer.getChannelData(0)
+  const window = Math.floor(sr * 0.02)
+  const energies: number[] = []
+  for (let i = 0; i + window < channel.length; i += window) {
+    let sum = 0
+    for (let j = 0; j < window; j++) sum += channel[i + j] * channel[i + j]
+    energies.push(sum / window)
+  }
+  const mean = energies.reduce((a, b) => a + b, 0) / energies.length
+  const threshold = mean * 1.6
+  const onsets: number[] = []
+  for (let i = 1; i < energies.length - 1; i++) {
+    if (energies[i] > threshold && energies[i] > energies[i - 1] && energies[i] > energies[i + 1]) {
+      onsets.push((i * window) / sr)
+    }
+  }
+  if (onsets.length < 4) return null
+  const intervals: number[] = []
+  for (let i = 1; i < onsets.length; i++) intervals.push(onsets[i] - onsets[i - 1])
+  intervals.sort((a, b) => a - b)
+  const median = intervals[Math.floor(intervals.length / 2)]
+  if (!median || median <= 0) return null
+  let bpm = 60 / median
+  while (bpm < 60) bpm *= 2
+  while (bpm > 180) bpm /= 2
+  return Math.round(bpm)
+}
+
+async function blobToBuffer(blob: Blob): Promise<AudioBuffer> {
+  const arr = await blob.arrayBuffer()
+  return rawContext().decodeAudioData(arr.slice(0))
+}
+
+function bufferToWavBlob(buffer: AudioBuffer): Blob {
+  const numChannels = buffer.numberOfChannels
+  const sampleRate = buffer.sampleRate
+  const length = buffer.length * numChannels * 2 + 44
+  const view = new DataView(new ArrayBuffer(length))
+  const writeStr = (off: number, s: string) => {
+    for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i))
+  }
+  writeStr(0, 'RIFF')
+  view.setUint32(4, length - 8, true)
+  writeStr(8, 'WAVE')
+  writeStr(12, 'fmt ')
+  view.setUint32(16, 16, true)
+  view.setUint16(20, 1, true)
+  view.setUint16(22, numChannels, true)
+  view.setUint32(24, sampleRate, true)
+  view.setUint32(28, sampleRate * numChannels * 2, true)
+  view.setUint16(32, numChannels * 2, true)
+  view.setUint16(34, 16, true)
+  writeStr(36, 'data')
+  view.setUint32(40, buffer.length * numChannels * 2, true)
+
+  let offset = 44
+  const channels: Float32Array[] = []
+  for (let c = 0; c < numChannels; c++) channels.push(buffer.getChannelData(c))
+  for (let i = 0; i < buffer.length; i++) {
+    for (let c = 0; c < numChannels; c++) {
+      const sample = Math.max(-1, Math.min(1, channels[c][i]))
+      view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true)
+      offset += 2
+    }
+  }
+  return new Blob([view], { type: 'audio/wav' })
+}
+
+async function clipFromBlob(blob: Blob, source: 'mic' | 'upload', name: string): Promise<Clip> {
+  const buffer = await blobToBuffer(blob)
+  return {
+    id: uid(),
+    name,
+    source,
+    buffer,
+    blob,
+    duration: buffer.duration,
+    waveform: buildWaveform(buffer),
+    trimStart: 0,
+    trimEnd: 1,
+    pitchSemitones: 0,
+    speed: 1,
+    reverse: false,
+    loop: false,
+    fadeIn: 0,
+    fadeOut: 0,
+    bpm: null,
+    createdAt: Date.now(),
+  }
+}
+
+function clearPlayback() {
+  if (activePlayer) {
+    activePlayer.stop()
+    activePlayer.dispose()
+    activePlayer = null
+  }
+  if (activePitchNode) {
+    activePitchNode.dispose()
+    activePitchNode = null
+  }
+  if (playbackTimer) {
+    clearInterval(playbackTimer)
+    playbackTimer = null
+  }
+}
+
+export function useRecorder() {
+  const store = useRecorderStore()
+  const userStore = useUserStore()
+
+  async function startRecording() {
+    if (store.isRecording) return
+    if (!micStream) {
+      micStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    }
+    recorderChunks = []
+    mediaRecorder = new MediaRecorder(micStream)
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data.size > 0) recorderChunks.push(e.data)
+    }
+    mediaRecorder.start()
+    recordStartedAt = performance.now()
+    store.isRecording = true
+    store.recordSeconds = 0
+    recordTimer = setInterval(() => {
+      store.recordSeconds = (performance.now() - recordStartedAt) / 1000
+    }, 100)
+  }
+
+  async function stopRecording(): Promise<Clip | null> {
+    if (!mediaRecorder || !store.isRecording) return null
+    return new Promise<Clip | null>((resolve) => {
+      mediaRecorder!.onstop = async () => {
+        if (recordTimer) {
+          clearInterval(recordTimer)
+          recordTimer = null
+        }
+        store.isRecording = false
+        const blob = new Blob(recorderChunks, { type: 'audio/webm' })
+        const clip = await clipFromBlob(blob, 'mic', `Take ${store.clips.length + 1}`)
+        store.addClip(clip)
+        resolve(clip)
+      }
+      mediaRecorder!.stop()
+    })
+  }
+
+  async function uploadFile(file: File): Promise<Clip | null> {
+    if (!file.type.startsWith('audio/') && !file.name.match(/\.(wav|mp3|ogg|m4a|aiff?)$/i)) {
+      return null
+    }
+    const clip = await clipFromBlob(file, 'upload', file.name.replace(/\.[^.]+$/, ''))
+    store.addClip(clip)
+    return clip
+  }
+
+  async function playClip(clipId: string) {
+    const clip = store.clips.find((c) => c.id === clipId)
+    if (!clip) return
+    await Tone.start()
+    clearPlayback()
+
+    const buffer = clip.reverse ? reverseBuffer(clip.buffer) : clip.buffer
+    activePitchNode = new Tone.PitchShift({ pitch: clip.pitchSemitones, wet: 1 }).toDestination()
+    activePlayer = new Tone.Player(buffer)
+    activePlayer.connect(activePitchNode)
+    activePlayer.playbackRate = clip.speed
+    activePlayer.loop = clip.loop
+    activePlayer.fadeIn = clip.fadeIn
+    activePlayer.fadeOut = clip.fadeOut
+
+    const startSec = clip.trimStart * clip.duration
+    const endSec = clip.trimEnd * clip.duration
+    activePlayer.loopStart = startSec
+    activePlayer.loopEnd = endSec
+    activePlayer.start(undefined, startSec, clip.loop ? undefined : endSec - startSec)
+
+    store.isPlaying = true
+    store.playheadSeconds = startSec
+    const t0 = performance.now()
+    playbackTimer = setInterval(() => {
+      const elapsed = ((performance.now() - t0) / 1000) * clip.speed
+      let pos = startSec + elapsed
+      if (clip.loop) {
+        const len = endSec - startSec
+        pos = startSec + (elapsed % len)
+      } else if (pos >= endSec) {
+        store.isPlaying = false
+        store.playheadSeconds = endSec
+        clearPlayback()
+        return
+      }
+      store.playheadSeconds = pos
+    }, 30)
+  }
+
+  function stopPlayback() {
+    clearPlayback()
+    store.isPlaying = false
+  }
+
+  function reverseBuffer(buffer: AudioBuffer): AudioBuffer {
+    const ctx = rawContext()
+    const out = ctx.createBuffer(buffer.numberOfChannels, buffer.length, buffer.sampleRate)
+    for (let c = 0; c < buffer.numberOfChannels; c++) {
+      const src = buffer.getChannelData(c)
+      const dst = out.getChannelData(c)
+      for (let i = 0; i < src.length; i++) dst[i] = src[src.length - 1 - i]
+    }
+    return out
+  }
+
+  function normalize(clipId: string) {
+    const clip = store.clips.find((c) => c.id === clipId)
+    if (!clip) return
+    const buf = clip.buffer
+    let peak = 0
+    for (let c = 0; c < buf.numberOfChannels; c++) {
+      const data = buf.getChannelData(c)
+      for (let i = 0; i < data.length; i++) {
+        const abs = Math.abs(data[i])
+        if (abs > peak) peak = abs
+      }
+    }
+    if (peak === 0 || peak >= 0.99) return
+    const gain = 0.99 / peak
+    const ctx = rawContext()
+    const next = ctx.createBuffer(buf.numberOfChannels, buf.length, buf.sampleRate)
+    for (let c = 0; c < buf.numberOfChannels; c++) {
+      const src = buf.getChannelData(c)
+      const dst = next.getChannelData(c)
+      for (let i = 0; i < src.length; i++) dst[i] = src[i] * gain
+    }
+    const blob = bufferToWavBlob(next)
+    store.replaceClipBuffer(clip.id, next, buildWaveform(next), blob)
+  }
+
+  function detectClipBpm(clipId: string) {
+    const clip = store.clips.find((c) => c.id === clipId)
+    if (!clip) return
+    const bpm = detectBpm(clip.buffer)
+    store.patchClip(clip.id, { bpm })
+  }
+
+  function exportClipWav(clipId: string) {
+    const clip = store.clips.find((c) => c.id === clipId)
+    if (!clip) return
+    const blob = bufferToWavBlob(clip.buffer)
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${clip.name || 'clip'}.wav`
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
+
+  async function saveToCloud(clipId: string): Promise<{ ok: boolean; message: string }> {
+    if (!isSupabaseConfigured) return { ok: false, message: 'Supabase not configured' }
+    if (!userStore.isLoggedIn || !userStore.profile) {
+      return { ok: false, message: 'Sign in to save to cloud' }
+    }
+    const clip = store.clips.find((c) => c.id === clipId)
+    if (!clip) return { ok: false, message: 'Clip not found' }
+    try {
+      const path = `${userStore.profile.id}/${clip.id}.wav`
+      const wav = bufferToWavBlob(clip.buffer)
+      const { error: upErr } = await supabase.storage.from('user-clips').upload(path, wav, {
+        contentType: 'audio/wav',
+        upsert: true,
+      })
+      if (upErr) return { ok: false, message: upErr.message }
+      const { data } = supabase.storage.from('user-clips').getPublicUrl(path)
+      const { error: dbErr } = await supabase.from('clips').upsert({
+        id: clip.id,
+        user_id: userStore.profile.id,
+        name: clip.name,
+        url: data.publicUrl,
+        duration: clip.duration,
+        metadata: {
+          trimStart: clip.trimStart,
+          trimEnd: clip.trimEnd,
+          pitchSemitones: clip.pitchSemitones,
+          speed: clip.speed,
+          reverse: clip.reverse,
+          loop: clip.loop,
+          fadeIn: clip.fadeIn,
+          fadeOut: clip.fadeOut,
+          bpm: clip.bpm,
+        },
+      })
+      if (dbErr) return { ok: false, message: dbErr.message }
+      store.patchClip(clip.id, { remoteUrl: data.publicUrl })
+      return { ok: true, message: 'Saved' }
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : 'Upload failed' }
+    }
+  }
+
+  return {
+    startRecording,
+    stopRecording,
+    uploadFile,
+    playClip,
+    stopPlayback,
+    normalize,
+    detectClipBpm,
+    exportClipWav,
+    saveToCloud,
+  }
+}

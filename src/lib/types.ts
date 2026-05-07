@@ -60,3 +60,42 @@ export type EffectId =
   | 'compressor'
 
 export type LoadState = 'idle' | 'loading' | 'ready' | 'error'
+
+export interface Clip {
+  id: string
+  name: string
+  source: 'mic' | 'upload'
+  buffer: AudioBuffer
+  blob: Blob
+  duration: number
+  waveform: number[]
+  trimStart: number
+  trimEnd: number
+  pitchSemitones: number
+  speed: number
+  reverse: boolean
+  loop: boolean
+  fadeIn: number
+  fadeOut: number
+  bpm: number | null
+  remoteUrl?: string
+  createdAt: number
+}
+
+export type ClipPatch = Partial<
+  Pick<
+    Clip,
+    | 'name'
+    | 'trimStart'
+    | 'trimEnd'
+    | 'pitchSemitones'
+    | 'speed'
+    | 'reverse'
+    | 'loop'
+    | 'fadeIn'
+    | 'fadeOut'
+    | 'bpm'
+    | 'remoteUrl'
+  >
+>
+

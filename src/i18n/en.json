@@ -72,6 +72,28 @@
       "compressor": "Comp"
     }
   },
+  "recorder": {
+    "title": "Recorder",
+    "clips": "Clips",
+    "noClips": "No clips yet. Record or drop a file.",
+    "dropOrRecord": "Drop a file here, or hit record.",
+    "record": "Record",
+    "stopRec": "Stop {t}s",
+    "upload": "Upload",
+    "play": "Play",
+    "stop": "Stop",
+    "delete": "Delete",
+    "pitch": "Pitch",
+    "speed": "Speed",
+    "fadeIn": "Fade in",
+    "fadeOut": "Fade out",
+    "reverse": "Reverse",
+    "loop": "Loop",
+    "normalize": "Normalize",
+    "detectBpm": "Detect BPM",
+    "exportWav": "Export WAV",
+    "saveCloud": "Save to cloud"
+  },
   "common": {
     "loading": "Loading…",
     "save": "Save",
