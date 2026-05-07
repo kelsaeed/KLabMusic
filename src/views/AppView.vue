@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import AppNav from '@/components/AppNav.vue'
 import ModuleTabs from '@/components/ModuleTabs.vue'
 import AudioStage from '@/components/instruments/AudioStage.vue'
+import BeatMakerStage from '@/components/beatmaker/BeatMakerStage.vue'
 import RecorderDrawer from '@/components/recorder/RecorderDrawer.vue'
 import type { ModuleTab } from '@/lib/types'
 
@@ -18,6 +19,7 @@ const active = ref<ModuleTab>('live')
 
     <main class="stage">
       <AudioStage v-if="active === 'live'" />
+      <BeatMakerStage v-else-if="active === 'beat'" />
 
       <section v-else class="placeholder">
         <h2>{{ t(`modules.${active}`) }}</h2>

@@ -133,3 +133,29 @@ export interface BindingSet {
   remoteId?: string
 }
 
+export type StepCount = 16 | 32
+
+export interface Step {
+  active: boolean
+  velocity: number
+  microShift: number
+}
+
+export interface BeatTrack {
+  id: string
+  instrument: InstrumentId
+  note: string
+  steps: Step[]
+  volume: number
+  muted: boolean
+  soloed: boolean
+  clipId?: string
+  color?: string
+}
+
+export interface Pattern {
+  id: string
+  name: string
+  tracks: BeatTrack[]
+}
+

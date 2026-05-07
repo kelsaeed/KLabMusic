@@ -5,6 +5,7 @@ import { useAudio } from '@/composables/useAudio'
 import { useAudioStore } from '@/stores/audio'
 import { useRecorder } from '@/composables/useRecorder'
 import { useRecorderStore } from '@/stores/recorder'
+import { useBeatMaker } from '@/composables/useBeatMaker'
 import { useUserStore } from '@/stores/user'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import { normalizeKey } from '@/lib/keybindings'
@@ -34,6 +35,7 @@ export function useKeyBindings() {
   const userStore = useUserStore()
   const { playOn, stopOn, stopAll } = useAudio()
   const { startRecording, stopRecording } = useRecorder()
+  const { toggle: toggleBeatMaker } = useBeatMaker()
 
   function fireBinding(b: KeyBinding, eventKey: string) {
     if (b.type === 'note' || b.type === 'sample') {
@@ -84,10 +86,7 @@ export function useKeyBindings() {
         else void startRecording()
         return
       case 'play-stop':
-        void Tone.start().then(() => {
-          if (Tone.getTransport().state === 'started') Tone.getTransport().stop()
-          else Tone.getTransport().start()
-        })
+        toggleBeatMaker()
         return
       case 'tap-bpm':
         return tapBpm()
