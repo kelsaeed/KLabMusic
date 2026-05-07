@@ -8,6 +8,7 @@ import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import type { BeatTrack } from '@/lib/types'
 
 let loop: Tone.Loop | null = null
+let stepCursor = 0
 let watchersWired = false
 const tapBuffer: number[] = []
 const clipPlayers = new Map<string, Tone.Player>()
@@ -48,8 +49,8 @@ export function useBeatMaker() {
     }
     loop = new Tone.Loop((time) => {
       const pattern = store.activePattern
-      const idx = store.currentStep
       const stepCount = store.stepCount
+      const idx = stepCursor % stepCount
 
       for (const track of pattern.tracks) {
         if (!store.shouldPlayTrack(track)) continue
@@ -71,7 +72,7 @@ export function useBeatMaker() {
         const targetId = store.songSequence[songNext]
         if (targetId) store.setActivePattern(targetId)
       }
-      store.currentStep = next
+      stepCursor = next
     }, subdivision(store.stepCount))
 
     loop.start(0)
@@ -109,6 +110,7 @@ export function useBeatMaker() {
     watch(
       () => store.stepCount,
       () => {
+        stepCursor = 0
         store.currentStep = 0
         if (store.playing) {
           buildLoop()
@@ -117,7 +119,10 @@ export function useBeatMaker() {
     )
     watch(
       () => store.activePatternId,
-      () => { store.currentStep = 0 },
+      () => {
+        stepCursor = 0
+        store.currentStep = 0
+      },
     )
     watch(
       () => recorderStore.clips.map((c) => c.id),
@@ -146,6 +151,7 @@ export function useBeatMaker() {
   function stop() {
     Tone.getTransport().stop()
     store.playing = false
+    stepCursor = 0
     store.currentStep = 0
   }
 
