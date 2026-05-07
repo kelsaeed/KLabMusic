@@ -94,6 +94,18 @@
     "exportWav": "Export WAV",
     "saveCloud": "Save to cloud"
   },
+  "auth": {
+    "signIn": "Sign in",
+    "signUp": "Sign up",
+    "signOut": "Sign out",
+    "email": "Email",
+    "password": "Password",
+    "displayName": "Display name",
+    "continueGoogle": "Continue with Google",
+    "noAccount": "No account?",
+    "haveAccount": "Already have one?",
+    "notConfigured": "Sign-in needs Supabase env vars set."
+  },
   "help": {
     "title": "Keyboard shortcuts",
     "footer": "Press ? to toggle this panel",

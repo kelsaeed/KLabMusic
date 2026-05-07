@@ -7,14 +7,19 @@ import LocaleSwitcher from './LocaleSwitcher.vue'
 import BindingsModal from './keybindings/BindingsModal.vue'
 import AIPanel from './ai/AIPanel.vue'
 import ShortcutsHelp from './ShortcutsHelp.vue'
+import AuthModal from './auth/AuthModal.vue'
+import UserMenu from './auth/UserMenu.vue'
+import { useUserStore } from '@/stores/user'
 
 const { t } = useI18n()
 const route = useRoute()
+const userStore = useUserStore()
 const isHome = computed(() => route.name === 'home')
 const isInRoom = computed(() => route.name === 'room' || route.name === 'room-lobby')
 const bindingsOpen = ref(false)
 const aiOpen = ref(false)
 const helpOpen = ref(false)
+const authOpen = ref(false)
 
 function onKey(e: KeyboardEvent) {
   const tag = (e.target as HTMLElement | null)?.tagName
@@ -81,6 +86,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       <RouterLink v-if="isHome" to="/app" class="cta">
         {{ t('nav.open') }}
       </RouterLink>
+      <UserMenu v-if="userStore.isLoggedIn" />
+      <button v-else class="icon-btn auth" @click="authOpen = true">
+        <span class="kbd-icon">👤</span>
+        <span class="hide-sm">{{ t('auth.signIn') }}</span>
+      </button>
       <LocaleSwitcher />
       <ThemeSwitcher />
     </nav>
@@ -88,6 +98,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
     <BindingsModal :open="bindingsOpen" @close="bindingsOpen = false" />
     <AIPanel :open="aiOpen" @close="aiOpen = false" />
     <ShortcutsHelp :open="helpOpen" @close="helpOpen = false" />
+    <AuthModal :open="authOpen" @close="authOpen = false" />
   </header>
 </template>
 

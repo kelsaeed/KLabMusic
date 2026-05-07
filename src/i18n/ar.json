@@ -94,6 +94,18 @@
     "exportWav": "تصدير WAV",
     "saveCloud": "حفظ سحابي"
   },
+  "auth": {
+    "signIn": "تسجيل الدخول",
+    "signUp": "إنشاء حساب",
+    "signOut": "تسجيل الخروج",
+    "email": "البريد الإلكتروني",
+    "password": "كلمة المرور",
+    "displayName": "الاسم الظاهر",
+    "continueGoogle": "المتابعة بحساب جوجل",
+    "noAccount": "ليس لديك حساب؟",
+    "haveAccount": "لديك حساب بالفعل؟",
+    "notConfigured": "تسجيل الدخول يحتاج إلى إعداد Supabase."
+  },
   "help": {
     "title": "اختصارات لوحة المفاتيح",
     "footer": "اضغط ؟ لفتح أو إغلاق هذه اللوحة",

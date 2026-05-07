@@ -3,15 +3,18 @@ import { onMounted } from 'vue'
 import { useTheme } from '@/composables/useTheme'
 import { useLocale } from '@/i18n'
 import { useKeyBindings } from '@/composables/useKeyBindings'
+import { useAuth } from '@/composables/useAuth'
 
 const { initTheme } = useTheme()
 const { initLocale } = useLocale()
 const { init: initBindings } = useKeyBindings()
+const { init: initAuth } = useAuth()
 
 onMounted(() => {
   initTheme()
   initLocale()
   initBindings()
+  void initAuth()
 })
 </script>
 
