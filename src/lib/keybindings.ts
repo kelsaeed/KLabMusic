@@ -53,6 +53,7 @@ export const PRESET_PIANO: BindingSet = {
 export const PRESET_DRUMS: BindingSet = {
   id: 'preset-drums',
   name: 'preset.drums',
+  isDefault: true,
   bindings: [
     sample('q', 'drums', 'kick'),
     sample('w', 'drums', 'snare'),
@@ -69,6 +70,7 @@ export const PRESET_DRUMS: BindingSet = {
 export const PRESET_DJ: BindingSet = {
   id: 'preset-dj',
   name: 'preset.dj',
+  isDefault: true,
   bindings: [
     note('q', 'lead', 'C4'),
     note('w', 'lead', 'E4'),
@@ -90,6 +92,7 @@ export const PRESET_DJ: BindingSet = {
 export const PRESET_MEME: BindingSet = {
   id: 'preset-meme',
   name: 'preset.meme',
+  isDefault: true,
   bindings: [
     sample('1', 'meme', 'airhorn'),
     sample('2', 'meme', 'bruh'),
@@ -103,6 +106,7 @@ export const PRESET_MEME: BindingSet = {
 export const PRESET_FREE: BindingSet = {
   id: 'preset-free',
   name: 'preset.free',
+  isDefault: true,
   bindings: [],
 }
 
