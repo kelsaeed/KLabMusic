@@ -29,6 +29,11 @@ function shouldIgnore(target: EventTarget | null): boolean {
   return false
 }
 
+function inStudio(): boolean {
+  const path = window.location.pathname
+  return path === '/app' || path.startsWith('/room')
+}
+
 export function useKeyBindings() {
   const store = useKeyBindingsStore()
   const audioStore = useAudioStore()
@@ -127,6 +132,7 @@ export function useKeyBindings() {
   }
 
   function onKeyDown(e: KeyboardEvent) {
+    if (!inStudio()) return
     if (shouldIgnore(e.target)) return
     const k = normalizeKey(e.key)
     if (pressedKeys.has(k)) return

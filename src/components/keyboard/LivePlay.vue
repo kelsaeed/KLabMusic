@@ -78,6 +78,14 @@ function onPianoRelease(note: string) {
         {{ t('live.showLabels') }}
       </label>
 
+      <button
+        class="notation-btn mono"
+        :title="t('guitar.notationHint')"
+        @click="audioStore.setNotation(audioStore.notation === 'solfege' ? 'letters' : 'solfege')"
+      >
+        {{ audioStore.notation === 'solfege' ? 'Do Re Mi' : 'C D E' }}
+      </button>
+
       <PitchBend class="bend" />
       <ModWheel class="mod" />
     </div>
@@ -169,6 +177,12 @@ function onPianoRelease(note: string) {
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+.notation-btn {
+  font-size: 0.7rem;
+  padding: 0.4rem 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 .bend {
   flex: 1;

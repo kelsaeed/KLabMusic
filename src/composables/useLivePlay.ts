@@ -7,13 +7,18 @@ import { useMultiplayer } from '@/composables/useMultiplayer'
 
 export type PlayMode = 'normal' | 'chord' | 'strum'
 
+interface ChordHold {
+  notes: string[]
+  cancelled: boolean
+}
+
 const startOctave = ref(3)
 const octaveCount = ref(3)
 const showLabels = ref(true)
 const playMode = ref<PlayMode>('normal')
 const pitchBend = ref(0)
 const modWheel = ref(0)
-const activeKeyChords = new Map<string, string[]>()
+const activeKeyChords = new Map<string, ChordHold>()
 let watchersWired = false
 
 export function useLivePlay() {
@@ -28,6 +33,15 @@ export function useLivePlay() {
     watch(
       () => audioStore.octaveShift,
       (v) => { startOctave.value = Math.max(0, Math.min(6, 3 + v)) },
+    )
+    // Clearing active notes on instrument switch prevents stale "lit" piano keys
+    watch(
+      () => audioStore.activeInstrument,
+      () => {
+        for (const hold of activeKeyChords.values()) hold.cancelled = true
+        activeKeyChords.clear()
+        audioStore.activeNotes = new Set()
+      },
     )
   }
 
@@ -51,7 +65,8 @@ export function useLivePlay() {
       return
     }
     const notes = chordFor(rootNote)
-    activeKeyChords.set(rootNote, notes)
+    const hold: ChordHold = { notes, cancelled: false }
+    activeKeyChords.set(rootNote, hold)
     if (playMode.value === 'chord') {
       for (const n of notes) await playNote(n, velocity)
       for (const n of notes) broadcastNote(audioStore.activeInstrument, n, velocity)
@@ -59,6 +74,7 @@ export function useLivePlay() {
       for (let i = 0; i < notes.length; i++) {
         const note = notes[i]
         setTimeout(() => {
+          if (hold.cancelled) return
           void playNote(note, velocity)
           broadcastNote(audioStore.activeInstrument, note, velocity)
         }, i * 70)
@@ -67,9 +83,10 @@ export function useLivePlay() {
   }
 
   function release(rootNote: string) {
-    const chord = activeKeyChords.get(rootNote)
-    if (chord) {
-      for (const n of chord) {
+    const hold = activeKeyChords.get(rootNote)
+    if (hold) {
+      hold.cancelled = true
+      for (const n of hold.notes) {
         stopNote(n)
         broadcastNoteStop(audioStore.activeInstrument, n)
       }

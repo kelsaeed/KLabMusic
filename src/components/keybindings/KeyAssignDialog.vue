@@ -3,8 +3,10 @@ import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useKeyBindingsStore } from '@/stores/keybindings'
 import { useRecorderStore } from '@/stores/recorder'
-import { INSTRUMENTS, INSTRUMENT_ORDER } from '@/lib/instruments'
+import { useAudioStore } from '@/stores/audio'
+import { INSTRUMENTS, INSTRUMENT_ORDER, DEFAULT_NOTE_FOR, noteOptionsFor } from '@/lib/instruments'
 import { BINDING_ACTIONS, keyDisplay } from '@/lib/keybindings'
+import { formatNote } from '@/lib/notation'
 import type { BindingType, InstrumentId, BindingActionId, KeyBinding } from '@/lib/types'
 
 const props = defineProps<{ keyName: string }>()
@@ -12,24 +14,14 @@ const emit = defineEmits<{ (e: 'close'): void; (e: 'saved'): void }>()
 
 const store = useKeyBindingsStore()
 const recorderStore = useRecorderStore()
+const audioStore = useAudioStore()
 const { t } = useI18n()
 
 const existing = computed(() => store.getBinding(props.keyName))
 
-const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const
-const OCTAVES = [0, 1, 2, 3, 4, 5, 6, 7, 8] as const
-
-function splitNote(n: string): { name: string; octave: number } {
-  const match = /^([A-G]#?)(-?\d)$/.exec(n)
-  if (!match) return { name: 'C', octave: 4 }
-  return { name: match[1], octave: Number(match[2]) }
-}
-
 const type = ref<BindingType>('note')
 const instrument = ref<InstrumentId>('piano')
 const noteValue = ref('C4')
-const noteName = ref('C')
-const noteOctave = ref(4)
 const chordNotes = ref<string[]>(['C4', 'E4', 'G4'])
 const clipId = ref<string>('')
 const action = ref<BindingActionId>('damp')
@@ -44,10 +36,7 @@ watch(
     if (b) {
       type.value = b.type
       instrument.value = b.instrument ?? 'piano'
-      noteValue.value = b.note ?? 'C4'
-      const split = splitNote(noteValue.value)
-      noteName.value = split.name
-      noteOctave.value = split.octave
+      noteValue.value = b.note ?? DEFAULT_NOTE_FOR[instrument.value]
       chordNotes.value = b.chord ?? ['C4', 'E4', 'G4']
       clipId.value = b.clipId ?? ''
       action.value = b.action ?? 'damp'
@@ -57,9 +46,7 @@ watch(
     } else {
       type.value = 'note'
       instrument.value = 'piano'
-      noteValue.value = 'C4'
-      noteName.value = 'C'
-      noteOctave.value = 4
+      noteValue.value = DEFAULT_NOTE_FOR.piano
       chordNotes.value = ['C4', 'E4', 'G4']
       clipId.value = ''
       action.value = 'damp'
@@ -71,11 +58,22 @@ watch(
   { immediate: true },
 )
 
-watch([noteName, noteOctave], ([n, o]) => {
-  noteValue.value = `${n}${o}`
+watch(instrument, (id) => {
+  if (type.value === 'note') {
+    const range = noteOptionsFor(id)
+    if (range.length > 0 && !range.includes(noteValue.value)) {
+      noteValue.value = DEFAULT_NOTE_FOR[id] ?? range[0]
+    }
+  } else if (type.value === 'sample') {
+    const samples = INSTRUMENTS[id].samples ?? []
+    if (samples.length > 0 && !samples.includes(noteValue.value)) {
+      noteValue.value = samples[0]
+    }
+  }
 })
 
 const sampleSuggestions = computed(() => INSTRUMENTS[instrument.value].samples ?? [])
+const noteOptions = computed(() => noteOptionsFor(instrument.value))
 
 function save() {
   const binding: KeyBinding = {
@@ -149,16 +147,12 @@ function removeChordNote(idx: number) {
         </select>
       </label>
       <label v-if="type === 'note'">
-        <span class="lbl">{{ t('binding.note') }}</span>
-        <div class="note-picker">
-          <select v-model="noteName">
-            <option v-for="n in NOTE_NAMES" :key="n" :value="n">{{ n }}</option>
-          </select>
-          <select v-model.number="noteOctave">
-            <option v-for="o in OCTAVES" :key="o" :value="o">{{ o }}</option>
-          </select>
-          <span class="picker-preview mono">{{ noteValue }}</span>
-        </div>
+        <span class="lbl">{{ t('binding.note') }} ({{ t(`audio.instrument.${instrument}`) }})</span>
+        <select v-model="noteValue">
+          <option v-for="n in noteOptions" :key="n" :value="n">
+            {{ formatNote(n, audioStore.notation) }}
+          </option>
+        </select>
       </label>
       <label v-else>
         <span class="lbl">{{ t('binding.note') }}</span>

@@ -18,6 +18,22 @@ const dragging = ref(false)
 
 const normalized = computed(() => (props.modelValue - props.min) / (props.max - props.min))
 const angle = computed(() => -135 + normalized.value * 270)
+const valueLabel = computed(() => {
+  const v = props.modelValue
+  const range = props.max - props.min
+  if (range <= 1.5) return Math.round(normalized.value * 100) + '%'
+  return v.toFixed(0)
+})
+
+// Min/max indicator coordinates (start of arc at -135°, end at +135°)
+const minMarker = computed(() => {
+  const a = (-135 * Math.PI) / 180
+  return { x: 50 + 46 * Math.sin(a), y: 50 - 46 * Math.cos(a) }
+})
+const maxMarker = computed(() => {
+  const a = (135 * Math.PI) / 180
+  return { x: 50 + 46 * Math.sin(a), y: 50 - 46 * Math.cos(a) }
+})
 
 function clamp(v: number) {
   return Math.min(props.max, Math.max(props.min, v))
@@ -27,13 +43,14 @@ function startDrag(e: PointerEvent) {
   if (props.disabled) return
   dragging.value = true
   ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
-  const startY = e.clientY
+  const startX = e.clientX
   const startVal = props.modelValue
   const range = props.max - props.min
 
   function onMove(ev: PointerEvent) {
-    const dy = startY - ev.clientY
-    const next = clamp(startVal + (dy / 140) * range)
+    // Horizontal drag rotates the knob: right = increase, left = decrease.
+    const dx = ev.clientX - startX
+    const next = clamp(startVal + (dx / 160) * range)
     emit('update:modelValue', next)
   }
   function onUp() {
@@ -70,6 +87,9 @@ function onWheel(e: WheelEvent) {
     >
       <svg viewBox="0 0 100 100">
         <circle cx="50" cy="50" r="42" class="track" />
+        <!-- min/max guide ticks -->
+        <circle :cx="minMarker.x" :cy="minMarker.y" r="3" class="tick min-tick" />
+        <circle :cx="maxMarker.x" :cy="maxMarker.y" r="3" class="tick max-tick" />
         <path
           class="fill"
           :d="`M 50 50 L 50 8 A 42 42 0 ${normalized > 0.5 ? 1 : 0} 1 ${
@@ -86,6 +106,11 @@ function onWheel(e: WheelEvent) {
         <circle cx="50" cy="50" r="6" class="cap" />
       </svg>
     </div>
+    <div class="ranges mono">
+      <span class="r-min">MIN</span>
+      <span class="r-val">{{ valueLabel }}</span>
+      <span class="r-max">MAX</span>
+    </div>
     <span v-if="label" class="label">{{ label }}</span>
   </div>
 </template>
@@ -95,7 +120,7 @@ function onWheel(e: WheelEvent) {
   display: inline-flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.25rem;
   user-select: none;
 }
 .knob-wrap.disabled {
@@ -103,9 +128,10 @@ function onWheel(e: WheelEvent) {
   pointer-events: none;
 }
 .knob {
-  cursor: ns-resize;
+  cursor: ew-resize;
   touch-action: none;
 }
+.knob:active { cursor: grabbing; }
 .knob:focus-visible {
   outline: 2px solid var(--accent-primary);
   outline-offset: 2px;
@@ -129,6 +155,26 @@ function onWheel(e: WheelEvent) {
   fill: var(--bg-base);
   stroke: var(--accent-primary);
   stroke-width: 2;
+}
+.tick { stroke: var(--text-muted); stroke-width: 1; }
+.min-tick { fill: var(--accent-secondary); }
+.max-tick { fill: var(--accent-primary); }
+.ranges {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.4rem;
+  align-items: baseline;
+  font-size: 0.55rem;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  width: 100%;
+}
+.r-min { color: var(--accent-secondary); }
+.r-max { color: var(--accent-primary); }
+.r-val {
+  text-align: center;
+  font-size: 0.7rem;
+  color: var(--text-primary);
 }
 .label {
   font-size: 0.7rem;
