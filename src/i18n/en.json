@@ -288,6 +288,11 @@
   },
   "live": {
     "title": "Piano",
+    "heading": {
+      "piano": "Piano",
+      "drums": "Drum pad",
+      "guitar": "Classical guitar"
+    },
     "octaveUp": "Octave up",
     "octaveDown": "Octave down",
     "showLabels": "Show keys",
@@ -298,6 +303,18 @@
       "chord": "Chord",
       "strum": "Strum"
     }
+  },
+  "drums": {
+    "hint": "Click harder (lower on the pad) for higher velocity"
+  },
+  "guitar": {
+    "strings": "Open strings",
+    "chords": "Chords",
+    "strumHint": "Down-strum (▼) or up-strum (▲)",
+    "strumDown": "Down-strum",
+    "strumUp": "Up-strum",
+    "damp": "Mute",
+    "dampHint": "Stop all ringing strings instantly"
   },
   "binding": {
     "title": "Key Bindings",

@@ -352,19 +352,23 @@ function buildDrums(): VoiceAdapter {
 }
 
 function buildGlitch(): VoiceAdapter {
-  const noise = new Tone.Noise('pink')
-  const env = new Tone.AmplitudeEnvelope({ attack: 0.01, decay: 0.2, sustain: 0.3, release: 0.4 })
+  // One-shot pink-noise burst through a bit-crusher. NoiseSynth auto-stops,
+  // so this can never hang on the system if a release event is missed.
+  const synth = new Tone.NoiseSynth({
+    noise: { type: 'pink' },
+    envelope: { attack: 0.005, decay: 0.18, sustain: 0 },
+  })
   const crush = new Tone.BitCrusher(4)
-  noise.connect(env).connect(crush)
-  noise.start()
+  synth.connect(crush)
   return {
-    attack: (_note, vel) => env.triggerAttack(undefined, Math.max(0.01, vel / 127)),
-    release: () => env.triggerRelease(),
-    damp: () => env.triggerRelease(),
+    attack: (_note, vel) =>
+      synth.triggerAttackRelease('16n', Tone.now(), Math.max(0.01, vel / 127)),
+    release: () => { /* one-shot; nothing to release */ },
+    damp: () => { /* one-shot; auto-decays */ },
     output: crush,
-    setVolumeDb: (db) => { noise.volume.value = db },
+    setVolumeDb: (db) => { synth.volume.value = db },
     setBendCents: () => { /* noise has no pitch */ },
-    dispose: () => { noise.dispose(); env.dispose(); crush.dispose() },
+    dispose: () => { synth.dispose(); crush.dispose() },
   }
 }
 

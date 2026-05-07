@@ -2,10 +2,14 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useLivePlay, type PlayMode } from '@/composables/useLivePlay'
+import { useAudioStore } from '@/stores/audio'
 import Piano from './Piano.vue'
+import DrumPad from './DrumPad.vue'
+import GuitarPad from './GuitarPad.vue'
 import PitchBend from './PitchBend.vue'
 import ModWheel from './ModWheel.vue'
 
+const audioStore = useAudioStore()
 const {
   startOctave,
   octaveCount,
@@ -17,6 +21,13 @@ const {
   octaveDown,
 } = useLivePlay()
 const { t } = useI18n()
+
+const layout = computed<'piano' | 'drums' | 'guitar'>(() => {
+  const id = audioStore.activeInstrument
+  if (id === 'drums') return 'drums'
+  if (id === 'guitar') return 'guitar'
+  return 'piano'
+})
 
 const octaveRange = computed(
   () => `C${startOctave.value} – B${startOctave.value + octaveCount.value - 1}`,
@@ -39,11 +50,11 @@ function onPianoRelease(note: string) {
 <template>
   <section class="live">
     <header class="head">
-      <h3>{{ t('live.title') }}</h3>
-      <span class="hint mono">{{ octaveRange }}</span>
+      <h3>{{ t(`live.heading.${layout}`) }}</h3>
+      <span v-if="layout === 'piano'" class="hint mono">{{ octaveRange }}</span>
     </header>
 
-    <div class="toolbar">
+    <div v-if="layout === 'piano'" class="toolbar">
       <div class="oct">
         <button class="oct-btn" :title="t('live.octaveDown')" @click="octaveDown">−</button>
         <span class="oct-label mono">{{ startOctave }}</span>
@@ -71,7 +82,10 @@ function onPianoRelease(note: string) {
       <ModWheel class="mod" />
     </div>
 
+    <DrumPad v-if="layout === 'drums'" />
+    <GuitarPad v-else-if="layout === 'guitar'" />
     <Piano
+      v-else
       :start-octave="startOctave"
       :octave-count="octaveCount"
       :show-labels="showLabels"
