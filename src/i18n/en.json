@@ -94,6 +94,58 @@
     "exportWav": "Export WAV",
     "saveCloud": "Save to cloud"
   },
+  "loop": {
+    "title": "Loop Station",
+    "record": "Record",
+    "stopRec": "Stop {t}s",
+    "source": {
+      "mic": "Mic",
+      "master": "Master"
+    },
+    "halfSpeed": "Half speed",
+    "undo": "Undo",
+    "clearAll": "Clear all",
+    "export": "Export mix",
+    "baseLength": "Loop length",
+    "empty": "No layers yet. Pick a source and tap record."
+  },
+  "chaos": {
+    "xyPad": "XY Pad",
+    "xyHint": "Drag",
+    "filter": "Filter cutoff",
+    "reverb": "Reverb",
+    "visualizer": "Visualizer",
+    "chaosKnob": "Chaos",
+    "chaosHint": "Adds random pitch jitter to anything currently playing.",
+    "glitch": "Glitch",
+    "autoArp": "Auto-arp",
+    "chordNotes": "Chord notes (space-separated)",
+    "arpSpeed": "Step",
+    "arpGate": "Gate",
+    "arpMode": {
+      "up": "Up",
+      "down": "Down",
+      "random": "Random",
+      "chord": "Chord"
+    },
+    "randomMelody": "Random melody",
+    "key": "Key",
+    "scale": "Scale",
+    "length": "Length",
+    "mood": "Mood",
+    "moodCalm": "Calm",
+    "moodWild": "Wild",
+    "stepLength": "Step",
+    "generate": "Generate",
+    "playMelody": "Play",
+    "scaleName": {
+      "major": "Major",
+      "minor": "Minor",
+      "pentatonic": "Pentatonic",
+      "blues": "Blues",
+      "dorian": "Dorian"
+    }
+  },
   "beat": {
     "play": "Play",
     "stop": "Stop",

@@ -94,6 +94,58 @@
     "exportWav": "تصدير WAV",
     "saveCloud": "حفظ سحابي"
   },
+  "loop": {
+    "title": "محطة اللوب",
+    "record": "تسجيل",
+    "stopRec": "إيقاف {t}ث",
+    "source": {
+      "mic": "ميكروفون",
+      "master": "الماستر"
+    },
+    "halfSpeed": "نصف السرعة",
+    "undo": "تراجع",
+    "clearAll": "مسح الكل",
+    "export": "تصدير المزيج",
+    "baseLength": "طول اللوب",
+    "empty": "لا توجد طبقات. اختر مصدرًا واضغط تسجيل."
+  },
+  "chaos": {
+    "xyPad": "لوحة XY",
+    "xyHint": "اسحب",
+    "filter": "قطع الفلتر",
+    "reverb": "ريفيرب",
+    "visualizer": "المرئي",
+    "chaosKnob": "الفوضى",
+    "chaosHint": "يضيف اهتزاز نغمة عشوائي لما يُعزف الآن.",
+    "glitch": "غليتش",
+    "autoArp": "أربيجو تلقائي",
+    "chordNotes": "نوتات الأوتار (مفصولة بمسافة)",
+    "arpSpeed": "الخطوة",
+    "arpGate": "البوابة",
+    "arpMode": {
+      "up": "أعلى",
+      "down": "أسفل",
+      "random": "عشوائي",
+      "chord": "أوتار"
+    },
+    "randomMelody": "لحن عشوائي",
+    "key": "المفتاح",
+    "scale": "السلم",
+    "length": "الطول",
+    "mood": "الحالة",
+    "moodCalm": "هادئ",
+    "moodWild": "جامح",
+    "stepLength": "الخطوة",
+    "generate": "توليد",
+    "playMelody": "تشغيل",
+    "scaleName": {
+      "major": "ماجور",
+      "minor": "مينور",
+      "pentatonic": "خماسي",
+      "blues": "بلوز",
+      "dorian": "دوريان"
+    }
+  },
   "beat": {
     "play": "تشغيل",
     "stop": "إيقاف",

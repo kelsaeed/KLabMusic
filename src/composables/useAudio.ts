@@ -58,12 +58,18 @@ const DRUM_URLS: Record<string, string> = {
 
 const nodes = new Map<InstrumentId, InstrumentNode>()
 const masterVolume = new Tone.Volume(-6)
+const chaosFilter = new Tone.Filter({ frequency: 20000, type: 'lowpass', Q: 1 })
+const chaosReverb = new Tone.Reverb({ decay: 4, wet: 0 })
+const chaosCrush = new Tone.BitCrusher(16)
+chaosCrush.wet.value = 0
+const masterAnalyser = new Tone.Analyser('waveform', 1024)
+const masterFft = new Tone.Analyser('fft', 64)
 let masterReady = false
 let toneStarted = false
 
 function ensureMaster() {
   if (masterReady) return
-  masterVolume.toDestination()
+  masterVolume.chain(chaosFilter, chaosReverb, chaosCrush, masterAnalyser, masterFft, Tone.getDestination())
   masterReady = true
 }
 
@@ -377,6 +383,27 @@ export function useAudio() {
     for (const node of nodes.values()) node.voice.setBendCents(cents)
   }
 
+  function setChaosX(value: number) {
+    const clamped = Math.max(0, Math.min(1, value))
+    const freq = 200 + (1 - clamped) * 19800
+    chaosFilter.frequency.rampTo(freq, 0.05)
+  }
+  function setChaosY(value: number) {
+    const clamped = Math.max(0, Math.min(1, value))
+    chaosReverb.wet.rampTo(clamped, 0.05)
+  }
+  function glitchBurst(durationSec = 1) {
+    chaosCrush.bits.value = 3
+    chaosCrush.wet.rampTo(1, 0.02)
+    setTimeout(() => {
+      chaosCrush.wet.rampTo(0, 0.1)
+      chaosCrush.bits.value = 16
+    }, durationSec * 1000)
+  }
+  function getMasterAnalyser(): Tone.Analyser { return masterAnalyser }
+  function getMasterFft(): Tone.Analyser { return masterFft }
+  function getMasterOutput(): Tone.ToneAudioNode { return masterVolume }
+
   async function setInstrument(id: InstrumentId) {
     store.activeInstrument = id
     store.ensureEffectsFor(id)
@@ -403,6 +430,12 @@ export function useAudio() {
     stopOn,
     stopAll,
     setMasterBend,
+    setChaosX,
+    setChaosY,
+    glitchBurst,
+    getMasterAnalyser,
+    getMasterFft,
+    getMasterOutput,
     setInstrument,
     setEffect,
     toggleEffect,
