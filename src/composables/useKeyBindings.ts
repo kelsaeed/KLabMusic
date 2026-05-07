@@ -34,7 +34,7 @@ export function useKeyBindings() {
   const audioStore = useAudioStore()
   const recorderStore = useRecorderStore()
   const userStore = useUserStore()
-  const { playOn, stopOn, stopAll } = useAudio()
+  const { playOn, stopOn, stopAll, dampInstrument } = useAudio()
   const { startRecording, stopRecording } = useRecorder()
   const { toggle: toggleBeatMaker } = useBeatMaker()
   const { broadcastNote, broadcastNoteStop } = useMultiplayer()
@@ -88,7 +88,7 @@ export function useKeyBindings() {
         heldNotes.clear()
         return
       case 'damp-instrument':
-        if (b.instrument) stopOn(b.instrument)
+        if (b.instrument) dampInstrument(b.instrument)
         return
       case 'record':
         if (recorderStore.isRecording) void stopRecording()

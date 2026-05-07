@@ -21,7 +21,12 @@ function loop() {
 
   ctx.clearRect(0, 0, w, h)
 
-  const fft = getMasterFft().getValue() as Float32Array
+  const fftAnalyser = getMasterFft()
+  if (!fftAnalyser) {
+    raf = requestAnimationFrame(loop)
+    return
+  }
+  const fft = fftAnalyser.getValue() as Float32Array
   const barWidth = w / fft.length
   for (let i = 0; i < fft.length; i++) {
     const v = (fft[i] + 100) / 100
@@ -35,7 +40,12 @@ function loop() {
   ctx.strokeStyle = accentSec
   ctx.lineWidth = 2
   ctx.beginPath()
-  const wave = getMasterAnalyser().getValue() as Float32Array
+  const waveAnalyser = getMasterAnalyser()
+  if (!waveAnalyser) {
+    raf = requestAnimationFrame(loop)
+    return
+  }
+  const wave = waveAnalyser.getValue() as Float32Array
   for (let i = 0; i < wave.length; i++) {
     const x = (i / wave.length) * w
     const y = h / 2 + wave[i] * h * 0.4

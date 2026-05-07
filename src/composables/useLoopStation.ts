@@ -128,7 +128,9 @@ export function useLoopStation() {
     player.loop = true
     player.loopStart = 0
     player.loopEnd = store.baseDuration
-    player.connect(getMasterOutput())
+    const masterOut = getMasterOutput()
+    if (masterOut) player.connect(masterOut)
+    else player.toDestination()
     player.sync().start(0)
     if (Tone.getTransport().state !== 'started') {
       Tone.getTransport().start()
@@ -186,7 +188,9 @@ export function useLoopStation() {
     player.playbackRate = layer.halfSpeed ? 0.5 : 1
     player.volume.value = Tone.gainToDb(Math.max(0.001, layer.volume))
     player.mute = wasMuted
-    player.connect(getMasterOutput())
+    const masterOut = getMasterOutput()
+    if (masterOut) player.connect(masterOut)
+    else player.toDestination()
     player.sync().start(0)
     layer.player = markRaw(player)
   }

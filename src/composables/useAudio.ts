@@ -2,11 +2,12 @@ import * as Tone from 'tone'
 import { watch } from 'vue'
 import type { InstrumentId, EffectId } from '@/lib/types'
 import { useAudioStore } from '@/stores/audio'
-import { INSTRUMENTS } from '@/lib/instruments'
+import { INSTRUMENTS, EFFECT_ORDER } from '@/lib/instruments'
 
 interface VoiceAdapter {
   attack: (note: string, velocity: number) => void
   release: (note?: string) => void
+  damp: () => void
   output: Tone.ToneAudioNode
   setVolumeDb: (db: number) => void
   setBendCents: (cents: number) => void
@@ -25,7 +26,6 @@ interface FxChain {
 
 interface InstrumentNode {
   voice: VoiceAdapter
-  fx: FxChain
   channelVolume: Tone.Volume
 }
 
@@ -43,21 +43,15 @@ const PIANO_URLS: Record<string, string> = {
 }
 
 const nodes = new Map<InstrumentId, InstrumentNode>()
-const masterVolume = new Tone.Volume(-6)
-const chaosFilter = new Tone.Filter({ frequency: 20000, type: 'lowpass', Q: 1 })
-const chaosReverb = new Tone.Reverb({ decay: 4, wet: 0 })
-const chaosCrush = new Tone.BitCrusher(16)
-chaosCrush.wet.value = 0
-const masterAnalyser = new Tone.Analyser('waveform', 1024)
-const masterFft = new Tone.Analyser('fft', 64)
+let masterVolume: Tone.Volume | null = null
+let chaosFilter: Tone.Filter | null = null
+let chaosReverb: Tone.Reverb | null = null
+let chaosCrush: Tone.BitCrusher | null = null
+let masterAnalyser: Tone.Analyser | null = null
+let masterFft: Tone.Analyser | null = null
+let globalFx: FxChain | null = null
 let masterReady = false
 let toneStarted = false
-
-function ensureMaster() {
-  if (masterReady) return
-  masterVolume.chain(chaosFilter, chaosReverb, chaosCrush, masterAnalyser, masterFft, Tone.getDestination())
-  masterReady = true
-}
 
 async function ensureToneStarted() {
   if (toneStarted) return
@@ -65,11 +59,11 @@ async function ensureToneStarted() {
   toneStarted = true
 }
 
-function buildFx(): FxChain {
-  const reverb = new Tone.Reverb({ decay: 3, wet: 0 })
+function buildGlobalFx(): FxChain {
+  const reverb = new Tone.Reverb({ decay: 1.8, wet: 0 })
   const delay = new Tone.FeedbackDelay({ delayTime: 0.25, feedback: 0.4, wet: 0 })
   const distortion = new Tone.Distortion({ distortion: 0, wet: 0 })
-  const chorus = new Tone.Chorus({ frequency: 4, depth: 0.5, wet: 0 }).start()
+  const chorus = new Tone.Chorus({ frequency: 4, depth: 0.5, wet: 0 })
   const filter = new Tone.Filter({ frequency: 20000, type: 'lowpass', Q: 1 })
   const bitcrusher = new Tone.BitCrusher(16)
   bitcrusher.wet.value = 0
@@ -77,10 +71,53 @@ function buildFx(): FxChain {
   return { reverb, delay, distortion, chorus, filter, bitcrusher, compressor }
 }
 
-function buildPiano(): VoiceAdapter {
-  const s = new Tone.Sampler({ urls: PIANO_URLS, baseUrl: PIANO_BASE })
-  return wrapPolyphonic(s)
+function ensureMaster() {
+  if (masterReady) return
+  masterVolume = new Tone.Volume(-6)
+  chaosFilter = new Tone.Filter({ frequency: 20000, type: 'lowpass', Q: 1 })
+  chaosReverb = new Tone.Reverb({ decay: 3, wet: 0 })
+  chaosCrush = new Tone.BitCrusher(16)
+  chaosCrush.wet.value = 0
+  masterAnalyser = new Tone.Analyser('waveform', 1024)
+  masterFft = new Tone.Analyser('fft', 64)
+  globalFx = buildGlobalFx()
+  masterVolume.chain(
+    globalFx.reverb,
+    globalFx.delay,
+    globalFx.distortion,
+    globalFx.chorus,
+    globalFx.filter,
+    globalFx.bitcrusher,
+    globalFx.compressor,
+    chaosFilter,
+    chaosReverb,
+    chaosCrush,
+    masterAnalyser,
+    masterFft,
+    Tone.getDestination(),
+  )
+  masterReady = true
 }
+
+function wrapPolyphonic(s: Tone.Sampler): VoiceAdapter {
+  return {
+    attack: (note, vel) => s.triggerAttack(note, undefined, Math.max(0.01, vel / 127)),
+    release: (note) => (note ? s.triggerRelease(note) : s.releaseAll()),
+    damp: () => s.releaseAll(),
+    output: s,
+    setVolumeDb: (db) => { s.volume.value = db },
+    setBendCents: (c) => {
+      const detune = (s as unknown as { detune?: { value: number } }).detune
+      if (detune) detune.value = c
+    },
+    dispose: () => s.dispose(),
+  }
+}
+
+function buildPiano(): VoiceAdapter {
+  return wrapPolyphonic(new Tone.Sampler({ urls: PIANO_URLS, baseUrl: PIANO_BASE }))
+}
+
 function buildElectricPiano(): VoiceAdapter {
   const synth = new Tone.PolySynth(Tone.AMSynth, {
     harmonicity: 2.5,
@@ -92,6 +129,7 @@ function buildElectricPiano(): VoiceAdapter {
   return {
     attack: (note, vel) => synth.triggerAttack(note, undefined, Math.max(0.01, vel / 127)),
     release: (note) => (note ? synth.triggerRelease(note) : synth.releaseAll()),
+    damp: () => synth.releaseAll(),
     output: synth,
     setVolumeDb: (db) => { synth.volume.value = db },
     setBendCents: (c) => synth.set({ detune: c }),
@@ -100,30 +138,38 @@ function buildElectricPiano(): VoiceAdapter {
 }
 
 function buildGuitar(): VoiceAdapter {
-  const synth = new Tone.PolySynth(Tone.Synth, {
-    oscillator: { type: 'triangle' },
-    envelope: { attack: 0.003, decay: 0.6, sustain: 0.05, release: 0.6 },
-  })
-  return {
-    attack: (note, vel) => synth.triggerAttack(note, undefined, Math.max(0.01, vel / 127)),
-    release: (note) => (note ? synth.triggerRelease(note) : synth.releaseAll()),
-    output: synth,
-    setVolumeDb: (db) => { synth.volume.value = db },
-    setBendCents: (c) => synth.set({ detune: c }),
-    dispose: () => synth.dispose(),
+  // Tone.PluckSynth voices for proper Karplus-Strong string ring; round-robin for polyphony.
+  const POLYPHONY = 6
+  const voices: Tone.PluckSynth[] = []
+  const out = new Tone.Gain(1)
+  for (let i = 0; i < POLYPHONY; i++) {
+    const p = new Tone.PluckSynth({ attackNoise: 1.4, dampening: 3500, resonance: 0.96 })
+    p.connect(out)
+    voices.push(p)
   }
-}
-function wrapPolyphonic(s: Tone.Sampler): VoiceAdapter {
+  let next = 0
+  const heldNotes = new Map<string, Tone.PluckSynth>()
+
   return {
-    attack: (note, vel) => s.triggerAttack(note, undefined, Math.max(0.01, vel / 127)),
-    release: (note) => (note ? s.triggerRelease(note) : s.releaseAll()),
-    output: s,
-    setVolumeDb: (db) => { s.volume.value = db },
-    setBendCents: (c) => {
-      const detune = (s as unknown as { detune?: { value: number } }).detune
-      if (detune) detune.value = c
+    attack: (note, vel) => {
+      const v = voices[next]
+      next = (next + 1) % POLYPHONY
+      v.volume.value = Tone.gainToDb(Math.max(0.05, vel / 127))
+      v.triggerAttack(note)
+      heldNotes.set(note, v)
     },
-    dispose: () => s.dispose(),
+    release: () => { /* PluckSynth has natural string decay; no release needed */ },
+    damp: () => {
+      for (const v of voices) v.volume.rampTo(-60, 0.04)
+      heldNotes.clear()
+    },
+    output: out,
+    setVolumeDb: (db) => { out.gain.value = Tone.dbToGain(db) },
+    setBendCents: () => { /* PluckSynth pitch is set per-trigger */ },
+    dispose: () => {
+      for (const v of voices) v.dispose()
+      out.dispose()
+    },
   }
 }
 
@@ -136,6 +182,7 @@ function buildBass(): VoiceAdapter {
   return {
     attack: (note, vel) => synth.triggerAttack(note, undefined, Math.max(0.01, vel / 127)),
     release: () => synth.triggerRelease(),
+    damp: () => synth.triggerRelease(),
     output: synth,
     setVolumeDb: (db) => { synth.volume.value = db },
     setBendCents: (c) => { synth.detune.value = c },
@@ -152,6 +199,7 @@ function buildPad(): VoiceAdapter {
   return {
     attack: (note, vel) => synth.triggerAttack(note, undefined, Math.max(0.01, vel / 127)),
     release: (note) => (note ? synth.triggerRelease(note) : synth.releaseAll()),
+    damp: () => synth.releaseAll(),
     output: synth,
     setVolumeDb: (db) => { synth.volume.value = db },
     setBendCents: (c) => synth.set({ detune: c }),
@@ -168,6 +216,7 @@ function buildLead(): VoiceAdapter {
   return {
     attack: (note, vel) => synth.triggerAttack(note, undefined, Math.max(0.01, vel / 127)),
     release: () => synth.triggerRelease(),
+    damp: () => synth.triggerRelease(),
     output: vibrato,
     setVolumeDb: (db) => { synth.volume.value = db },
     setBendCents: (c) => { synth.detune.value = c },
@@ -184,6 +233,7 @@ function buildOrgan(): VoiceAdapter {
   return {
     attack: (note, vel) => synth.triggerAttack(note, undefined, Math.max(0.01, vel / 127)),
     release: (note) => (note ? synth.triggerRelease(note) : synth.releaseAll()),
+    damp: () => synth.releaseAll(),
     output: synth,
     setVolumeDb: (db) => { synth.volume.value = db },
     setBendCents: (c) => synth.set({ detune: c }),
@@ -193,94 +243,107 @@ function buildOrgan(): VoiceAdapter {
 
 function buildDrums(): VoiceAdapter {
   const out = new Tone.Gain(1)
+
   const kick = new Tone.MembraneSynth({
     pitchDecay: 0.05,
-    octaves: 8,
-    envelope: { attack: 0.001, decay: 0.4, sustain: 0, release: 0.1 },
-  }).connect(out)
+    octaves: 6,
+    envelope: { attack: 0.001, decay: 0.45, sustain: 0, release: 0.1 },
+  })
+  kick.volume.value = 4
+  kick.connect(out)
+
   const tom = new Tone.MembraneSynth({
-    pitchDecay: 0.08,
-    octaves: 4,
-    envelope: { attack: 0.002, decay: 0.35, sustain: 0, release: 0.1 },
-  }).connect(out)
+    pitchDecay: 0.1,
+    octaves: 3,
+    envelope: { attack: 0.001, decay: 0.4, sustain: 0, release: 0.1 },
+  })
+  tom.connect(out)
+
   const snareNoise = new Tone.NoiseSynth({
     noise: { type: 'white' },
     envelope: { attack: 0.001, decay: 0.18, sustain: 0 },
   })
-  const snareFilter = new Tone.Filter(1800, 'bandpass').connect(out)
+  snareNoise.volume.value = -2
+  const snareFilter = new Tone.Filter(1800, 'highpass')
   snareNoise.connect(snareFilter)
-  const hihat = new Tone.MetalSynth({
+  snareFilter.connect(out)
+
+  const hihatClosed = new Tone.MetalSynth({
     envelope: { attack: 0.001, decay: 0.06, release: 0.02 },
     harmonicity: 5.1,
     modulationIndex: 32,
     resonance: 4000,
     octaves: 1.5,
-  }).connect(out)
-  hihat.volume.value = -16
-  const hihatO = new Tone.MetalSynth({
-    envelope: { attack: 0.001, decay: 0.4, release: 0.1 },
+  })
+  hihatClosed.volume.value = -22
+  hihatClosed.connect(out)
+
+  const hihatOpen = new Tone.MetalSynth({
+    envelope: { attack: 0.001, decay: 0.4, release: 0.2 },
     harmonicity: 5.1,
     modulationIndex: 32,
     resonance: 4000,
     octaves: 1.5,
-  }).connect(out)
-  hihatO.volume.value = -16
+  })
+  hihatOpen.volume.value = -22
+  hihatOpen.connect(out)
+
   const ride = new Tone.MetalSynth({
-    envelope: { attack: 0.001, decay: 0.8, release: 0.3 },
+    envelope: { attack: 0.001, decay: 0.9, release: 0.4 },
     harmonicity: 8,
-    modulationIndex: 24,
+    modulationIndex: 18,
     resonance: 3000,
     octaves: 2,
-  }).connect(out)
-  ride.volume.value = -18
-  const clapNoise = new Tone.NoiseSynth({
-    noise: { type: 'pink' },
-    envelope: { attack: 0.001, decay: 0.15, sustain: 0 },
   })
-  const clapFilter = new Tone.Filter(1200, 'bandpass').connect(out)
-  clapNoise.connect(clapFilter)
+  ride.volume.value = -22
+  ride.connect(out)
+
+  const clap = new Tone.NoiseSynth({
+    noise: { type: 'pink' },
+    envelope: { attack: 0.001, decay: 0.13, sustain: 0 },
+  })
+  clap.volume.value = -2
+  const clapFilter = new Tone.Filter(1100, 'bandpass')
+  clap.connect(clapFilter)
+  clapFilter.connect(out)
 
   return {
     attack: (name, vel) => {
-      const v = Math.max(0.01, vel / 127)
-      const dbBoost = Tone.gainToDb(v)
+      const v = Math.max(0.05, vel / 127)
       switch (name) {
         case 'kick':
-          kick.volume.value = dbBoost
-          kick.triggerAttackRelease('C1', '8n')
-          return
-        case 'tom':
-          tom.volume.value = dbBoost
-          tom.triggerAttackRelease('A1', '8n')
+          kick.triggerAttackRelease('C2', '8n', Tone.now(), v)
           return
         case 'snare':
-          snareNoise.volume.value = dbBoost - 4
-          snareNoise.triggerAttackRelease('16n')
+          snareNoise.triggerAttackRelease('16n', Tone.now(), v)
           return
         case 'hihat':
-          hihat.triggerAttackRelease('C4', '32n', Tone.now(), v)
+          hihatClosed.triggerAttackRelease('32n', Tone.now(), v)
           return
         case 'hihatO':
-          hihatO.triggerAttackRelease('C4', '8n', Tone.now(), v)
+          hihatOpen.triggerAttackRelease('8n', Tone.now(), v)
+          return
+        case 'tom':
+          tom.triggerAttackRelease('A2', '8n', Tone.now(), v)
           return
         case 'ride':
-          ride.triggerAttackRelease('C4', '4n', Tone.now(), v)
+          ride.triggerAttackRelease('4n', Tone.now(), v)
           return
         case 'clap':
-          clapNoise.volume.value = dbBoost - 3
-          clapNoise.triggerAttackRelease('16n')
+          clap.triggerAttackRelease('16n', Tone.now(), v)
           return
       }
     },
-    release: () => {},
+    release: () => { /* one-shots */ },
+    damp: () => { /* one-shots, nothing to damp */ },
     output: out,
     setVolumeDb: (db) => { out.gain.value = Tone.dbToGain(db) },
-    setBendCents: () => {},
+    setBendCents: () => { /* no pitch bend on drums */ },
     dispose: () => {
       kick.dispose(); tom.dispose()
       snareNoise.dispose(); snareFilter.dispose()
-      hihat.dispose(); hihatO.dispose(); ride.dispose()
-      clapNoise.dispose(); clapFilter.dispose()
+      hihatClosed.dispose(); hihatOpen.dispose(); ride.dispose()
+      clap.dispose(); clapFilter.dispose()
       out.dispose()
     },
   }
@@ -293,13 +356,12 @@ function buildGlitch(): VoiceAdapter {
   noise.connect(env).connect(crush)
   noise.start()
   return {
-    attack: (_note, vel) => {
-      env.triggerAttack(undefined, Math.max(0.01, vel / 127))
-    },
+    attack: (_note, vel) => env.triggerAttack(undefined, Math.max(0.01, vel / 127)),
     release: () => env.triggerRelease(),
+    damp: () => env.triggerRelease(),
     output: crush,
     setVolumeDb: (db) => { noise.volume.value = db },
-    setBendCents: () => {},
+    setBendCents: () => { /* noise has no pitch */ },
     dispose: () => { noise.dispose(); env.dispose(); crush.dispose() },
   }
 }
@@ -317,26 +379,12 @@ const BUILDERS: Record<InstrumentId, () => VoiceAdapter | null> = {
   meme: () => null,
 }
 
-function chainNode(voice: VoiceAdapter, fx: FxChain, channel: Tone.Volume) {
-  voice.output.disconnect()
-  voice.output.chain(
-    fx.reverb,
-    fx.delay,
-    fx.distortion,
-    fx.chorus,
-    fx.filter,
-    fx.bitcrusher,
-    fx.compressor,
-    channel,
-  )
-}
-
 function applyEffect(fx: FxChain, id: EffectId, enabled: boolean, amount: number) {
   const v = enabled ? amount : 0
   switch (id) {
     case 'reverb':
       fx.reverb.wet.value = v
-      fx.reverb.decay = 1 + amount * 6
+      fx.reverb.decay = 1 + amount * 4
       break
     case 'delay':
       fx.delay.wet.value = v
@@ -349,6 +397,8 @@ function applyEffect(fx: FxChain, id: EffectId, enabled: boolean, amount: number
     case 'chorus':
       fx.chorus.wet.value = v
       fx.chorus.depth = amount
+      if (enabled) fx.chorus.start()
+      else fx.chorus.stop()
       break
     case 'filter': {
       const freq = enabled ? 200 + (1 - amount) * 19800 : 20000
@@ -365,6 +415,17 @@ function applyEffect(fx: FxChain, id: EffectId, enabled: boolean, amount: number
   }
 }
 
+function applyAllEffectsForActive() {
+  if (!globalFx) return
+  const store = useAudioStore()
+  const controls = store.effects[store.activeInstrument]
+  if (!controls) return
+  for (const id of EFFECT_ORDER) {
+    const ctl = controls[id]
+    if (ctl) applyEffect(globalFx, id, ctl.enabled, ctl.amount)
+  }
+}
+
 async function ensureInstrument(id: InstrumentId): Promise<InstrumentNode | null> {
   ensureMaster()
   if (nodes.has(id)) return nodes.get(id)!
@@ -375,20 +436,19 @@ async function ensureInstrument(id: InstrumentId): Promise<InstrumentNode | null
   store.setLoadState(id, 'loading')
 
   const voice = BUILDERS[id]()
-  if (!voice) {
+  if (!voice || !masterVolume) {
     store.setLoadState(id, 'error')
     return null
   }
 
-  const fx = buildFx()
   const channel = new Tone.Volume(0).connect(masterVolume)
-  chainNode(voice, fx, channel)
+  voice.output.connect(channel)
 
-  if (meta.category === 'sampled' || meta.category === 'percussion') {
+  if (meta.category === 'sampled') {
     await Tone.loaded()
   }
 
-  const node: InstrumentNode = { voice, fx, channelVolume: channel }
+  const node: InstrumentNode = { voice, channelVolume: channel }
   nodes.set(id, node)
   store.ensureEffectsFor(id)
   store.setLoadState(id, 'ready')
@@ -402,25 +462,21 @@ function wireWatchers() {
   const store = useAudioStore()
   watch(
     () => store.masterVolumeDb,
-    (db) => { masterVolume.volume.rampTo(db, 0.05) },
+    (db) => {
+      if (masterVolume) masterVolume.volume.rampTo(db, 0.05)
+    },
     { immediate: true },
   )
   watch(
     () => store.masterMuted,
-    (muted) => { masterVolume.mute = muted },
+    (muted) => {
+      if (masterVolume) masterVolume.mute = muted
+    },
     { immediate: true },
   )
   watch(
-    () => store.effects,
-    (effectsByInstrument) => {
-      for (const [id, controls] of Object.entries(effectsByInstrument)) {
-        const node = nodes.get(id as InstrumentId)
-        if (!node) continue
-        for (const [effectId, ctl] of Object.entries(controls)) {
-          applyEffect(node.fx, effectId as EffectId, ctl.enabled, ctl.amount)
-        }
-      }
-    },
+    () => [store.activeInstrument, store.effects],
+    () => applyAllEffectsForActive(),
     { deep: true },
   )
 }
@@ -462,8 +518,19 @@ export function useAudio() {
     if (note) store.noteOff(note)
   }
 
+  function dampInstrument(id?: InstrumentId) {
+    if (!id) {
+      stopAll()
+      return
+    }
+    const node = nodes.get(id)
+    if (!node) return
+    node.voice.damp()
+    store.activeNotes = new Set()
+  }
+
   function stopAll() {
-    for (const node of nodes.values()) node.voice.release()
+    for (const node of nodes.values()) node.voice.damp()
     store.activeNotes = new Set()
   }
 
@@ -472,25 +539,28 @@ export function useAudio() {
   }
 
   function setChaosX(value: number) {
+    if (!chaosFilter) return
     const clamped = Math.max(0, Math.min(1, value))
     const freq = 200 + (1 - clamped) * 19800
     chaosFilter.frequency.rampTo(freq, 0.05)
   }
   function setChaosY(value: number) {
-    const clamped = Math.max(0, Math.min(1, value))
-    chaosReverb.wet.rampTo(clamped, 0.05)
+    if (!chaosReverb) return
+    chaosReverb.wet.rampTo(Math.max(0, Math.min(1, value)), 0.05)
   }
   function glitchBurst(durationSec = 1) {
+    if (!chaosCrush) return
     chaosCrush.bits.value = 3
     chaosCrush.wet.rampTo(1, 0.02)
     setTimeout(() => {
+      if (!chaosCrush) return
       chaosCrush.wet.rampTo(0, 0.1)
       chaosCrush.bits.value = 16
     }, durationSec * 1000)
   }
-  function getMasterAnalyser(): Tone.Analyser { return masterAnalyser }
-  function getMasterFft(): Tone.Analyser { return masterFft }
-  function getMasterOutput(): Tone.ToneAudioNode { return masterVolume }
+  function getMasterAnalyser(): Tone.Analyser | null { return masterAnalyser }
+  function getMasterFft(): Tone.Analyser | null { return masterFft }
+  function getMasterOutput(): Tone.ToneAudioNode | null { return masterVolume }
 
   async function setInstrument(id: InstrumentId) {
     store.activeInstrument = id
@@ -517,6 +587,7 @@ export function useAudio() {
     playOn,
     stopOn,
     stopAll,
+    dampInstrument,
     setMasterBend,
     setChaosX,
     setChaosY,
