@@ -21,6 +21,8 @@ cp .env.example .env   # fill in your Supabase keys
 npm run dev
 ```
 
+Full deployment walkthrough (Supabase project + Vercel) is in [SETUP.md](SETUP.md).
+
 ## Scripts
 
 - `npm run dev` — Vite dev server on http://localhost:5173
