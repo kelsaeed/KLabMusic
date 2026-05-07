@@ -59,6 +59,14 @@ async function ensureToneStarted() {
   if (toneStarted) return
   await Tone.start()
   toneStarted = true
+  // Master starts at -100 dB (silent). Fade in over 0.4 s after the first
+  // user gesture to avoid the AudioContext-resume "zzz" click.
+  if (masterVolume) {
+    const target = useAudioStore().masterVolumeDb
+    masterVolume.volume.cancelScheduledValues(Tone.now())
+    masterVolume.volume.setValueAtTime(-100, Tone.now())
+    masterVolume.volume.linearRampToValueAtTime(target, Tone.now() + 0.4)
+  }
 }
 
 function buildGlobalFx(): FxChain {
@@ -75,7 +83,8 @@ function buildGlobalFx(): FxChain {
 
 function ensureMaster() {
   if (masterReady) return
-  masterVolume = new Tone.Volume(-6)
+  // Boot silent. ensureToneStarted ramps in once the user gestures.
+  masterVolume = new Tone.Volume(-100)
   chaosFilter = new Tone.Filter({ frequency: 20000, type: 'lowpass', Q: 1 })
   chaosReverb = new Tone.Reverb({ decay: 3, wet: 0 })
   chaosCrush = new Tone.BitCrusher(16)
@@ -409,9 +418,10 @@ function wireWatchers() {
   watch(
     () => store.masterVolumeDb,
     (db) => {
-      if (masterVolume) masterVolume.volume.rampTo(db, 0.05)
+      // Skip ramping until Tone has started — otherwise we override the silent
+      // boot fade-in and reintroduce the startup click.
+      if (masterVolume && toneStarted) masterVolume.volume.rampTo(db, 0.05)
     },
-    { immediate: true },
   )
   watch(
     () => store.masterMuted,
