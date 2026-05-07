@@ -3,6 +3,7 @@ import { ref, watch } from 'vue'
 import { useAudio } from '@/composables/useAudio'
 import { useAudioStore } from '@/stores/audio'
 import { useKeyBindingsStore } from '@/stores/keybindings'
+import { useMultiplayer } from '@/composables/useMultiplayer'
 
 export type PlayMode = 'normal' | 'chord' | 'strum'
 
@@ -19,6 +20,7 @@ export function useLivePlay() {
   const audioStore = useAudioStore()
   const bindingStore = useKeyBindingsStore()
   const { playNote, stopNote, setMasterBend } = useAudio()
+  const { broadcastNote, broadcastNoteStop } = useMultiplayer()
 
   if (!watchersWired) {
     watchersWired = true
@@ -45,16 +47,21 @@ export function useLivePlay() {
   async function press(rootNote: string, velocity: number) {
     if (playMode.value === 'normal') {
       await playNote(rootNote, velocity)
+      broadcastNote(audioStore.activeInstrument, rootNote, velocity)
       return
     }
     const notes = chordFor(rootNote)
     activeKeyChords.set(rootNote, notes)
     if (playMode.value === 'chord') {
       for (const n of notes) await playNote(n, velocity)
+      for (const n of notes) broadcastNote(audioStore.activeInstrument, n, velocity)
     } else {
       for (let i = 0; i < notes.length; i++) {
         const note = notes[i]
-        setTimeout(() => void playNote(note, velocity), i * 70)
+        setTimeout(() => {
+          void playNote(note, velocity)
+          broadcastNote(audioStore.activeInstrument, note, velocity)
+        }, i * 70)
       }
     }
   }
@@ -62,11 +69,15 @@ export function useLivePlay() {
   function release(rootNote: string) {
     const chord = activeKeyChords.get(rootNote)
     if (chord) {
-      for (const n of chord) stopNote(n)
+      for (const n of chord) {
+        stopNote(n)
+        broadcastNoteStop(audioStore.activeInstrument, n)
+      }
       activeKeyChords.delete(rootNote)
       return
     }
     stopNote(rootNote)
+    broadcastNoteStop(audioStore.activeInstrument, rootNote)
   }
 
   function octaveUp() {

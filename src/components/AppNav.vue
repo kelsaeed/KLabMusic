@@ -9,6 +9,7 @@ import BindingsModal from './keybindings/BindingsModal.vue'
 const { t } = useI18n()
 const route = useRoute()
 const isHome = computed(() => route.name === 'home')
+const isInRoom = computed(() => route.name === 'room' || route.name === 'room-lobby')
 const bindingsOpen = ref(false)
 </script>
 
@@ -29,6 +30,15 @@ const bindingsOpen = ref(false)
         <span class="kbd-icon mono">⌨︎</span>
         <span class="hide-sm">{{ t('binding.short') }}</span>
       </button>
+      <RouterLink
+        v-if="!isHome && !isInRoom"
+        to="/room"
+        class="icon-btn jam"
+        :title="t('mp.jam')"
+      >
+        <span class="kbd-icon">🎤</span>
+        <span class="hide-sm">{{ t('mp.jam') }}</span>
+      </RouterLink>
       <RouterLink v-if="isHome" to="/app" class="cta">
         {{ t('nav.open') }}
       </RouterLink>
@@ -91,6 +101,14 @@ const bindingsOpen = ref(false)
   padding: 0.4rem 0.7rem;
   font-size: 0.8rem;
   background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+}
+.icon-btn.jam:hover {
+  border-color: var(--accent-secondary);
+  color: var(--accent-secondary);
+  opacity: 1;
 }
 .kbd-icon {
   font-size: 1rem;

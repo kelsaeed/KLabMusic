@@ -159,3 +159,29 @@ export interface Pattern {
   tracks: BeatTrack[]
 }
 
+export interface RoomPlayer {
+  id: string
+  name: string
+  instrument: InstrumentId
+  color: string
+  isHost: boolean
+  joinedAt: number
+}
+
+export interface ChatMessage {
+  id: string
+  authorId: string
+  authorName: string
+  authorColor: string
+  text: string
+  isEmoji: boolean
+  timestamp: number
+}
+
+export interface FloatingReaction {
+  id: string
+  emoji: string
+  authorColor: string
+  x: number
+}
+

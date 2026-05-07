@@ -94,6 +94,25 @@
     "exportWav": "تصدير WAV",
     "saveCloud": "حفظ سحابي"
   },
+  "mp": {
+    "lobby": "اللعب الجماعي",
+    "jam": "جلسة",
+    "yourName": "اسمك",
+    "namePlaceholder": "اختر اسمًا للعرض",
+    "namePrompt": "أدخل اسمك أولًا",
+    "fillBoth": "نحتاج الاسم والرمز",
+    "instrument": "الآلة",
+    "createRoom": "إنشاء غرفة جديدة",
+    "or": "— أو —",
+    "roomCode": "رمز الغرفة",
+    "joinRoom": "انضم للغرفة",
+    "leave": "مغادرة",
+    "copyCode": "اضغط للنسخ",
+    "chat": "الدردشة",
+    "chatPlaceholder": "قل شيئًا…",
+    "noMessages": "لا توجد رسائل بعد. أرسل 🔥.",
+    "notConfigured": "اللعب الجماعي يحتاج إلى إعداد Supabase."
+  },
   "loop": {
     "title": "محطة اللوب",
     "record": "تسجيل",

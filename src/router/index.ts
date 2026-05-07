@@ -14,6 +14,11 @@ export const router = createRouter({
       component: () => import('@/views/AppView.vue'),
     },
     {
+      path: '/room',
+      name: 'room-lobby',
+      component: () => import('@/views/RoomView.vue'),
+    },
+    {
       path: '/room/:code',
       name: 'room',
       component: () => import('@/views/RoomView.vue'),

@@ -94,6 +94,25 @@
     "exportWav": "Export WAV",
     "saveCloud": "Save to cloud"
   },
+  "mp": {
+    "lobby": "Multiplayer",
+    "jam": "Jam",
+    "yourName": "Your name",
+    "namePlaceholder": "Pick a stage name",
+    "namePrompt": "Enter your name first",
+    "fillBoth": "Need both name and code",
+    "instrument": "Instrument",
+    "createRoom": "Create new room",
+    "or": "— or —",
+    "roomCode": "Room code",
+    "joinRoom": "Join room",
+    "leave": "Leave",
+    "copyCode": "Click to copy",
+    "chat": "Chat",
+    "chatPlaceholder": "Say something…",
+    "noMessages": "No messages yet. Drop a 🔥.",
+    "notConfigured": "Multiplayer needs Supabase env vars set."
+  },
   "loop": {
     "title": "Loop Station",
     "record": "Record",

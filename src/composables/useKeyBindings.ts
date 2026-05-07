@@ -6,6 +6,7 @@ import { useAudioStore } from '@/stores/audio'
 import { useRecorder } from '@/composables/useRecorder'
 import { useRecorderStore } from '@/stores/recorder'
 import { useBeatMaker } from '@/composables/useBeatMaker'
+import { useMultiplayer } from '@/composables/useMultiplayer'
 import { useUserStore } from '@/stores/user'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import { normalizeKey } from '@/lib/keybindings'
@@ -36,19 +37,24 @@ export function useKeyBindings() {
   const { playOn, stopOn, stopAll } = useAudio()
   const { startRecording, stopRecording } = useRecorder()
   const { toggle: toggleBeatMaker } = useBeatMaker()
+  const { broadcastNote, broadcastNoteStop } = useMultiplayer()
 
   function fireBinding(b: KeyBinding, eventKey: string) {
     if (b.type === 'note' || b.type === 'sample') {
       if (!b.instrument || !b.note) return
       const vel = b.velocity ?? 100
       void playOn(b.instrument, b.note, vel)
+      broadcastNote(b.instrument, b.note, vel)
       heldNotes.set(eventKey, { instrument: b.instrument, notes: [b.note] })
       return
     }
     if (b.type === 'chord') {
       if (!b.instrument || !b.chord || b.chord.length === 0) return
       const vel = b.velocity ?? 100
-      for (const n of b.chord) void playOn(b.instrument, n, vel)
+      for (const n of b.chord) {
+        void playOn(b.instrument, n, vel)
+        broadcastNote(b.instrument, n, vel)
+      }
       heldNotes.set(eventKey, { instrument: b.instrument, notes: [...b.chord] })
       return
     }
@@ -68,7 +74,10 @@ export function useKeyBindings() {
     if (b.sustainMode) return
     const held = heldNotes.get(eventKey)
     if (!held) return
-    for (const n of held.notes) stopOn(held.instrument as KeyBinding['instrument'], n)
+    for (const n of held.notes) {
+      stopOn(held.instrument as KeyBinding['instrument'], n)
+      if (held.instrument) broadcastNoteStop(held.instrument as Parameters<typeof broadcastNoteStop>[0], n)
+    }
     heldNotes.delete(eventKey)
   }
 
