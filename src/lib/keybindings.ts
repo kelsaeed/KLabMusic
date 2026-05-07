@@ -67,6 +67,36 @@ export const PRESET_DRUMS: BindingSet = {
   ],
 }
 
+export const PRESET_GUITAR: BindingSet = {
+  id: 'preset-guitar',
+  name: 'preset.guitar',
+  isDefault: true,
+  bindings: [
+    // Open strings on Z-row (low to high)
+    note('z', 'guitar', 'E2'),
+    note('x', 'guitar', 'A2'),
+    note('c', 'guitar', 'D3'),
+    note('v', 'guitar', 'G3'),
+    note('b', 'guitar', 'B3'),
+    note('n', 'guitar', 'E4'),
+    // C-major scale on home row: do re mi fa sol la si do
+    note('a', 'guitar', 'C4'),
+    note('s', 'guitar', 'D4'),
+    note('d', 'guitar', 'E4'),
+    note('f', 'guitar', 'F4'),
+    note('g', 'guitar', 'G4'),
+    note('h', 'guitar', 'A4'),
+    note('j', 'guitar', 'B4'),
+    note('k', 'guitar', 'C5'),
+    {
+      key: 'shift',
+      type: 'action',
+      action: 'damp-instrument',
+      instrument: 'guitar',
+    },
+  ],
+}
+
 export const PRESET_DJ: BindingSet = {
   id: 'preset-dj',
   name: 'preset.dj',
@@ -112,6 +142,7 @@ export const PRESET_FREE: BindingSet = {
 
 export const PRESETS: readonly BindingSet[] = [
   PRESET_PIANO,
+  PRESET_GUITAR,
   PRESET_DRUMS,
   PRESET_DJ,
   PRESET_MEME,

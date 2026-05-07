@@ -254,13 +254,14 @@ function buildDrums(): VoiceAdapter {
   ride.volume.value = -18
   ride.connect(out)
 
-  const SAMPLE_MAP: Record<string, string> = {
-    kick: 'bd',
-    snare: 'sd',
-    hihat: 'ch',
-    hihatO: 'oh',
-    clap: 'cp',
-    tom: 'lt',
+  // Use General-MIDI drum note numbers — universal across drum machines/kits.
+  const SAMPLE_MIDI: Record<string, number> = {
+    kick: 36,
+    snare: 38,
+    hihat: 42,
+    hihatO: 46,
+    clap: 39,
+    tom: 47,
   }
 
   return {
@@ -270,9 +271,9 @@ function buildDrums(): VoiceAdapter {
         ride.triggerAttackRelease('C4', '4n', Tone.now(), v)
         return
       }
-      const sample = SAMPLE_MAP[name]
-      if (!sample) return
-      drums.start({ note: sample, velocity: vel })
+      const note = SAMPLE_MIDI[name]
+      if (note === undefined) return
+      drums.start({ note, velocity: vel })
     },
     release: () => { /* one-shots */ },
     damp: () => { /* one-shots */ },

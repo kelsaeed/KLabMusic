@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useAudioStore } from '@/stores/audio'
 import { useKeyBindingsStore } from '@/stores/keybindings'
+import { formatNote } from '@/lib/notation'
 
 const props = defineProps<{
   startOctave: number
@@ -108,7 +109,7 @@ function onUp(note: string) {
         <span v-if="showLabels && bindingKeyFor(k.note)" class="kb-hint mono">
           {{ bindingKeyFor(k.note) }}
         </span>
-        <span class="note-name mono">{{ k.note }}</span>
+        <span class="note-name mono">{{ formatNote(k.note, audioStore.notation) }}</span>
       </button>
 
       <button

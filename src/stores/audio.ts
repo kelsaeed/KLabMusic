@@ -23,6 +23,9 @@ export const useAudioStore = defineStore('audio', () => {
   const masterVolumeDb = ref(-6)
   const masterMuted = ref(false)
   const octaveShift = ref(0)
+  const notation = ref<'solfege' | 'letters'>(
+    (localStorage.getItem('klm:notation') as 'solfege' | 'letters') || 'solfege',
+  )
   const loadState = reactive<Record<InstrumentId, LoadState>>({} as Record<InstrumentId, LoadState>)
   const effects = reactive<Record<InstrumentId, Record<EffectId, EffectControl>>>(
     {} as Record<InstrumentId, Record<EffectId, EffectControl>>,
@@ -53,11 +56,17 @@ export const useAudioStore = defineStore('audio', () => {
     activeNotes.value = new Set(activeNotes.value)
   }
 
+  function setNotation(next: 'solfege' | 'letters') {
+    notation.value = next
+    localStorage.setItem('klm:notation', next)
+  }
+
   return {
     activeInstrument,
     masterVolumeDb,
     masterMuted,
     octaveShift,
+    notation,
     loadState,
     effects,
     activeNotes,
@@ -66,6 +75,7 @@ export const useAudioStore = defineStore('audio', () => {
     ensureEffectsFor,
     setLoadState,
     getLoadState,
+    setNotation,
     noteOn,
     noteOff,
   }

@@ -314,7 +314,14 @@
     "strumDown": "Down-strum",
     "strumUp": "Up-strum",
     "damp": "Mute",
-    "dampHint": "Stop all ringing strings instantly"
+    "dampHint": "Stop all ringing strings instantly",
+    "stringLabel": "String {n}",
+    "notationHint": "Toggle between Do Re Mi and C D E note names",
+    "mode": {
+      "fretboard": "Fretboard",
+      "strings": "Open strings",
+      "chords": "Chords"
+    }
   },
   "binding": {
     "title": "Key Bindings",
@@ -362,6 +369,7 @@
     },
     "preset": {
       "piano": "Piano mode",
+      "guitar": "Guitar mode",
       "drums": "Drum pad",
       "dj": "DJ mode",
       "meme": "Meme mode",
