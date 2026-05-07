@@ -78,17 +78,15 @@ async function* streamCompletion(
       if (!line.startsWith('data: ')) continue
       const data = line.slice(6).trim()
       if (!data || data === '[DONE]') continue
+      let event: { text?: string; done?: boolean; error?: string }
       try {
-        const event = JSON.parse(data) as {
-          type?: string
-          delta?: { type?: string; text?: string }
-        }
-        if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
-          yield event.delta.text ?? ''
-        }
+        event = JSON.parse(data) as { text?: string; done?: boolean; error?: string }
       } catch {
-        /* skip non-JSON lines */
+        continue
       }
+      if (event.error) throw new Error(event.error)
+      if (event.done) return
+      if (event.text) yield event.text
     }
   }
 }

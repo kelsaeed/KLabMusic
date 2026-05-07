@@ -64,30 +64,45 @@ Project → **Domains → Add** → point your DNS at Vercel. They'll handle SSL
 
 ---
 
-## 4. Supabase Edge Function for AI
+## 4. Supabase Edge Function for AI (free, no payment method)
 
-The AI features call a Supabase Edge Function (`ai-music`) so the Anthropic key never reaches the browser. The function source is already in this repo at [`supabase/functions/ai-music/index.ts`](supabase/functions/ai-music/index.ts) — you just need to deploy it.
+The AI features call a Supabase Edge Function (`ai-music`) that proxies **Google Gemini** (free tier — 1500 requests/day, no credit card). Function source is already in this repo at [`supabase/functions/ai-music/index.ts`](supabase/functions/ai-music/index.ts).
 
-**One-time setup:**
-```
-npm install -g supabase                              # or npx everything below
-supabase login                                        # opens browser to auth
-supabase link --project-ref <ref>                     # <ref> is the part of your project URL: https://<ref>.supabase.co
-supabase secrets set ANTHROPIC_API_KEY=sk-ant-...    # paste your Anthropic key
-```
+**Everything below is web-UI only — no terminal needed.**
 
-**Deploy (run after editing `index.ts`, or any time you want to redeploy):**
-```
-supabase functions deploy ai-music
-```
+### 4a. Get a free Gemini API key
+1. Go to https://aistudio.google.com/apikey
+2. Sign in with any Google account.
+3. Click **Create API key** → "Create API key in new project" if asked.
+4. Copy the `AIza...` key.
 
-You should see something like `Deployed Function ai-music` and a URL like `https://<ref>.supabase.co/functions/v1/ai-music`.
+### 4b. Deploy the Edge Function from the Supabase dashboard
+1. https://supabase.com/dashboard → your KLabMusic project.
+2. Left sidebar → **⚡ Edge Functions** → **Deploy a new function**.
+3. **Function name:** `ai-music` (must be exact — the frontend calls this URL).
+4. In the in-browser code editor, **delete everything and paste** the full contents of [`supabase/functions/ai-music/index.ts`](supabase/functions/ai-music/index.ts).
+5. **Deploy function**. Wait ~10 sec until status is green.
 
-**Test it from the browser:** open the live site, click the **🤖 AI** button in the top nav (or press **Ctrl+A**), pick a tab, and run something. The Chat tab streams a response token-by-token; the other tabs return structured JSON.
+### 4c. Add the Gemini key as a secret
+1. Project Settings (gear, bottom-left) → **Edge Functions** → **Secrets**.
+   *(Or: Edge Functions page → click `ai-music` → "Manage Secrets".)*
+2. **Add new secret**.
+   - Name: `GEMINI_API_KEY`
+   - Value: paste your `AIza...` key
+3. Save.
 
-If you see "AI service 401" → the Anthropic key is missing or invalid. Re-run `supabase secrets set ANTHROPIC_API_KEY=...`.
+### 4d. Test it
+1. Open your Vercel URL → click **🤖 AI** in the top nav (or press **Ctrl+A**).
+2. Chat tab → ask "give me a sad chord progression in A minor" → Enter.
+3. Reply streams in token-by-token.
 
-If you see CORS errors → the function CORS headers should already allow any origin; check that you actually deployed the latest version.
+Errors and what they mean:
+- `GEMINI_API_KEY not set...` → secret didn't save, redo step 4c.
+- `Gemini API 400` → bad request shape; tell me the message.
+- `Gemini API 429` → you hit the free 1500/day quota; resets in 24h.
+
+### Want to swap providers later?
+Edit the function source, change the upstream URL + body (Groq, OpenRouter, Anthropic, OpenAI all work), redeploy via the web UI. The frontend doesn't change — it consumes a generic `{text}` SSE shape that the function normalizes.
 
 ---
 
