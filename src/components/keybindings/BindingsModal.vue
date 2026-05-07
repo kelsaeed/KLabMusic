@@ -73,53 +73,76 @@ function onSaved() {
 </script>
 
 <template>
-  <Transition name="fade">
-    <div v-if="open" class="overlay" @click.self="onClose">
-      <div class="panel">
-        <header class="head">
-          <h2>{{ t('binding.title') }}</h2>
-          <button class="close" @click="onClose">×</button>
-        </header>
+  <Teleport to="body">
+    <Transition name="fade">
+      <div v-if="open" class="overlay" @click.self="onClose">
+        <div class="panel">
+          <header class="head">
+            <h2>{{ t('binding.title') }}</h2>
+            <button class="close" @click="onClose">×</button>
+          </header>
 
-        <div class="bar">
-          <label class="set-pick">
-            <span class="lbl">{{ t('binding.set') }}</span>
-            <select :value="store.activeSetId" @change="store.setActiveSet(($event.target as HTMLSelectElement).value)">
-              <option v-for="s in store.sets" :key="s.id" :value="s.id">
-                {{ s.isDefault ? t(`binding.${s.name}`) : s.name }}
-              </option>
-            </select>
-          </label>
+          <div class="bar">
+            <label class="set-pick">
+              <span class="lbl">{{ t('binding.set') }}</span>
+              <select
+                :value="store.activeSetId"
+                @change="store.setActiveSet(($event.target as HTMLSelectElement).value)"
+              >
+                <option v-for="s in store.sets" :key="s.id" :value="s.id">
+                  {{ s.isDefault ? t(`binding.${s.name}`) : s.name }}
+                </option>
+              </select>
+            </label>
 
-          <input
-            v-model="newSetName"
-            class="new-name"
-            :placeholder="t('binding.newSetName')"
-            @keyup.enter="newSet"
-          />
-          <button @click="newSet">{{ t('binding.newSet') }}</button>
-          <button :disabled="isPreset" @click="deleteCurrent">{{ t('binding.deleteSet') }}</button>
-          <div class="spacer" />
-          <button @click="doExport">{{ t('binding.export') }}</button>
-          <button @click="fileInput?.click()">{{ t('binding.import') }}</button>
-          <input ref="fileInput" type="file" accept="application/json" hidden @change="onImport" />
-          <button class="primary" @click="onSaveCloud">{{ t('binding.saveCloud') }}</button>
-        </div>
-
-        <p v-if="status" class="status">{{ status }}</p>
-
-        <QwertyKeyboard editable />
-
-        <p class="hint">{{ t('binding.clickToAssign') }}</p>
-
-        <Transition name="dialog">
-          <div v-if="store.editingKey" class="dialog-host" @click.self="store.editingKey = null">
-            <KeyAssignDialog :key-name="store.editingKey" @close="onClose" @saved="onSaved" />
+            <input
+              v-model="newSetName"
+              class="new-name"
+              :placeholder="t('binding.newSetName')"
+              @keyup.enter="newSet"
+            />
+            <button @click="newSet">{{ t('binding.newSet') }}</button>
+            <button :disabled="isPreset" @click="deleteCurrent">
+              {{ t('binding.deleteSet') }}
+            </button>
+            <div class="spacer" />
+            <button @click="doExport">{{ t('binding.export') }}</button>
+            <button @click="fileInput?.click()">{{ t('binding.import') }}</button>
+            <input
+              ref="fileInput"
+              type="file"
+              accept="application/json"
+              hidden
+              @change="onImport"
+            />
+            <button class="primary" @click="onSaveCloud">
+              {{ t('binding.saveCloud') }}
+            </button>
           </div>
-        </Transition>
+
+          <p v-if="status" class="status">{{ status }}</p>
+
+          <QwertyKeyboard editable />
+
+          <p class="hint">{{ t('binding.clickToAssign') }}</p>
+        </div>
       </div>
-    </div>
-  </Transition>
+    </Transition>
+
+    <Transition name="dialog">
+      <div
+        v-if="open && store.editingKey"
+        class="dialog-host"
+        @click.self="store.editingKey = null"
+      >
+        <KeyAssignDialog
+          :key-name="store.editingKey"
+          @close="onClose"
+          @saved="onSaved"
+        />
+      </div>
+    </Transition>
+  </Teleport>
 </template>
 
 <style scoped>
