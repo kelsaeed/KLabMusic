@@ -94,6 +94,58 @@
     "exportWav": "تصدير WAV",
     "saveCloud": "حفظ سحابي"
   },
+  "binding": {
+    "title": "ربط المفاتيح",
+    "short": "الربط",
+    "set": "المجموعة",
+    "newSet": "جديدة",
+    "newSetName": "الاسم…",
+    "deleteSet": "حذف المجموعة",
+    "export": "تصدير",
+    "import": "استيراد",
+    "saveCloud": "حفظ سحابي",
+    "imported": "تم الاستيراد",
+    "importFailed": "فشل الاستيراد",
+    "unnamed": "مجموعتي",
+    "clickToAssign": "انقر أي مفتاح لربطه بصوت أو مقطع أو أوتار أو إجراء.",
+    "assign": "ربط",
+    "instrument": "الآلة",
+    "note": "النوتة",
+    "chord": "نوتات الأوتار",
+    "addNote": "أضف نوتة",
+    "clip": "مقطع",
+    "pickClip": "اختر مقطعًا…",
+    "velocity": "القوة",
+    "sustain": "إمساك (استمرار للنغمة)",
+    "label": "التسمية",
+    "labelHint": "تسمية اختيارية تظهر على المفتاح",
+    "clear": "مسح",
+    "type": {
+      "note": "نوتة",
+      "sample": "عينة",
+      "chord": "أوتار",
+      "clip": "مقطع",
+      "action": "إجراء"
+    },
+    "action": {
+      "label": "الإجراء",
+      "damp": "إيقاف الكل",
+      "damp-instrument": "إيقاف الآلة",
+      "record": "تبديل التسجيل",
+      "play-stop": "تشغيل / إيقاف",
+      "tap-bpm": "نقر الإيقاع",
+      "loop-toggle": "تبديل اللوب",
+      "octave-up": "أوكتاف لأعلى",
+      "octave-down": "أوكتاف لأسفل"
+    },
+    "preset": {
+      "piano": "وضع البيانو",
+      "drums": "لوحة الإيقاع",
+      "dj": "وضع DJ",
+      "meme": "وضع الميم",
+      "free": "حر (فارغ)"
+    }
+  },
   "common": {
     "loading": "جاري التحميل…",
     "save": "حفظ",

@@ -341,6 +341,22 @@ export function useAudio() {
     if (note) store.noteOff(note)
   }
 
+  async function playOn(id: InstrumentId, note: string, velocity = 100) {
+    await ensureToneStarted()
+    const node = await ensureInstrument(id)
+    if (!node) return
+    node.voice.attack(note, velocity)
+    if (INSTRUMENTS[id].playMode === 'note') store.noteOn(note)
+  }
+
+  function stopOn(id?: InstrumentId, note?: string) {
+    if (!id) return
+    const node = nodes.get(id)
+    if (!node) return
+    node.voice.release(note)
+    if (note) store.noteOff(note)
+  }
+
   function stopAll() {
     for (const node of nodes.values()) node.voice.release()
     store.activeNotes = new Set()
@@ -368,6 +384,8 @@ export function useAudio() {
   return {
     playNote,
     stopNote,
+    playOn,
+    stopOn,
     stopAll,
     setInstrument,
     setEffect,

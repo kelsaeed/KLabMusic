@@ -94,6 +94,58 @@
     "exportWav": "Export WAV",
     "saveCloud": "Save to cloud"
   },
+  "binding": {
+    "title": "Key Bindings",
+    "short": "Bindings",
+    "set": "Set",
+    "newSet": "New set",
+    "newSetName": "Name…",
+    "deleteSet": "Delete set",
+    "export": "Export",
+    "import": "Import",
+    "saveCloud": "Save to cloud",
+    "imported": "Set imported",
+    "importFailed": "Import failed",
+    "unnamed": "My bindings",
+    "clickToAssign": "Click any key to assign a sound, clip, chord, or action.",
+    "assign": "Assign",
+    "instrument": "Instrument",
+    "note": "Note",
+    "chord": "Chord notes",
+    "addNote": "Add note",
+    "clip": "Clip",
+    "pickClip": "Pick a clip…",
+    "velocity": "Velocity",
+    "sustain": "Sustain (hold to ring)",
+    "label": "Label",
+    "labelHint": "Optional label shown on the key",
+    "clear": "Clear",
+    "type": {
+      "note": "Note",
+      "sample": "Sample",
+      "chord": "Chord",
+      "clip": "Clip",
+      "action": "Action"
+    },
+    "action": {
+      "label": "Action",
+      "damp": "Damp all",
+      "damp-instrument": "Damp instrument",
+      "record": "Toggle record",
+      "play-stop": "Play / stop",
+      "tap-bpm": "Tap BPM",
+      "loop-toggle": "Toggle loop",
+      "octave-up": "Octave up",
+      "octave-down": "Octave down"
+    },
+    "preset": {
+      "piano": "Piano mode",
+      "drums": "Drum pad",
+      "dj": "DJ mode",
+      "meme": "Meme mode",
+      "free": "Free (empty)"
+    }
+  },
   "common": {
     "loading": "Loading…",
     "save": "Save",

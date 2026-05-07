@@ -2,13 +2,16 @@
 import { onMounted } from 'vue'
 import { useTheme } from '@/composables/useTheme'
 import { useLocale } from '@/i18n'
+import { useKeyBindings } from '@/composables/useKeyBindings'
 
 const { initTheme } = useTheme()
 const { initLocale } = useLocale()
+const { init: initBindings } = useKeyBindings()
 
 onMounted(() => {
   initTheme()
   initLocale()
+  initBindings()
 })
 </script>
 

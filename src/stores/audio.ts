@@ -22,6 +22,7 @@ export const useAudioStore = defineStore('audio', () => {
   const activeInstrument = ref<InstrumentId>('piano')
   const masterVolumeDb = ref(-6)
   const masterMuted = ref(false)
+  const octaveShift = ref(0)
   const loadState = reactive<Record<InstrumentId, LoadState>>({} as Record<InstrumentId, LoadState>)
   const effects = reactive<Record<InstrumentId, Record<EffectId, EffectControl>>>(
     {} as Record<InstrumentId, Record<EffectId, EffectControl>>,
@@ -56,6 +57,7 @@ export const useAudioStore = defineStore('audio', () => {
     activeInstrument,
     masterVolumeDb,
     masterMuted,
+    octaveShift,
     loadState,
     effects,
     activeNotes,

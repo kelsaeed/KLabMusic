@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink, useRoute } from 'vue-router'
 import ThemeSwitcher from './theme/ThemeSwitcher.vue'
 import LocaleSwitcher from './LocaleSwitcher.vue'
+import BindingsModal from './keybindings/BindingsModal.vue'
 
 const { t } = useI18n()
 const route = useRoute()
 const isHome = computed(() => route.name === 'home')
+const bindingsOpen = ref(false)
 </script>
 
 <template>
@@ -18,12 +20,23 @@ const isHome = computed(() => route.name === 'home')
     </RouterLink>
 
     <nav class="actions">
+      <button
+        v-if="!isHome"
+        class="icon-btn"
+        :title="t('binding.title')"
+        @click="bindingsOpen = true"
+      >
+        <span class="kbd-icon mono">⌨︎</span>
+        <span class="hide-sm">{{ t('binding.short') }}</span>
+      </button>
       <RouterLink v-if="isHome" to="/app" class="cta">
         {{ t('nav.open') }}
       </RouterLink>
       <LocaleSwitcher />
       <ThemeSwitcher />
     </nav>
+
+    <BindingsModal :open="bindingsOpen" @close="bindingsOpen = false" />
   </header>
 </template>
 
@@ -71,6 +84,17 @@ const isHome = computed(() => route.name === 'home')
   gap: 0.6rem;
 }
 
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.7rem;
+  font-size: 0.8rem;
+  background: var(--bg-elevated);
+}
+.kbd-icon {
+  font-size: 1rem;
+}
 .cta {
   background: var(--accent-primary);
   color: var(--text-inverse);
@@ -83,5 +107,8 @@ const isHome = computed(() => route.name === 'home')
   transform: translateY(-1px);
   box-shadow: 0 4px 16px var(--accent-glow);
   opacity: 1;
+}
+@media (max-width: 600px) {
+  .hide-sm { display: none; }
 }
 </style>

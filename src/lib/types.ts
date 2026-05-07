@@ -99,3 +99,37 @@ export type ClipPatch = Partial<
   >
 >
 
+export type BindingType = 'note' | 'sample' | 'chord' | 'clip' | 'action'
+
+export type BindingActionId =
+  | 'damp'
+  | 'damp-instrument'
+  | 'record'
+  | 'play-stop'
+  | 'tap-bpm'
+  | 'loop-toggle'
+  | 'octave-up'
+  | 'octave-down'
+
+export interface KeyBinding {
+  key: string
+  type: BindingType
+  instrument?: InstrumentId
+  note?: string
+  chord?: string[]
+  clipId?: string
+  action?: BindingActionId
+  color?: string
+  label?: string
+  velocity?: number
+  sustainMode?: boolean
+}
+
+export interface BindingSet {
+  id: string
+  name: string
+  bindings: KeyBinding[]
+  isDefault?: boolean
+  remoteId?: string
+}
+
