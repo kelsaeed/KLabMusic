@@ -138,13 +138,14 @@ function buildElectricPiano(): VoiceAdapter {
 }
 
 function buildGuitar(): VoiceAdapter {
-  // Tone.PluckSynth voices for proper Karplus-Strong string ring; round-robin for polyphony.
+  // Classical / nylon-string guitar: softer attack, warmer dampening, body resonance via low-pass.
   const POLYPHONY = 6
   const voices: Tone.PluckSynth[] = []
   const out = new Tone.Gain(1)
+  const body = new Tone.Filter({ frequency: 3200, type: 'lowpass', Q: 0.8 }).connect(out)
   for (let i = 0; i < POLYPHONY; i++) {
-    const p = new Tone.PluckSynth({ attackNoise: 1.4, dampening: 3500, resonance: 0.96 })
-    p.connect(out)
+    const p = new Tone.PluckSynth({ attackNoise: 0.55, dampening: 2400, resonance: 0.94 })
+    p.connect(body)
     voices.push(p)
   }
   let next = 0
@@ -154,11 +155,11 @@ function buildGuitar(): VoiceAdapter {
     attack: (note, vel) => {
       const v = voices[next]
       next = (next + 1) % POLYPHONY
-      v.volume.value = Tone.gainToDb(Math.max(0.05, vel / 127))
+      v.volume.value = Tone.gainToDb(Math.max(0.05, vel / 127)) + 4
       v.triggerAttack(note)
       heldNotes.set(note, v)
     },
-    release: () => { /* PluckSynth has natural string decay; no release needed */ },
+    release: () => { /* nylon strings decay naturally; no release needed */ },
     damp: () => {
       for (const v of voices) v.volume.rampTo(-60, 0.04)
       heldNotes.clear()
@@ -168,6 +169,7 @@ function buildGuitar(): VoiceAdapter {
     setBendCents: () => { /* PluckSynth pitch is set per-trigger */ },
     dispose: () => {
       for (const v of voices) v.dispose()
+      body.dispose()
       out.dispose()
     },
   }
