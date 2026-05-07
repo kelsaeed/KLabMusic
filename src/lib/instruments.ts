@@ -108,3 +108,43 @@ export const DEFAULT_TEST_NOTES = [
   'B4',
   'C5',
 ] as const
+
+const CHROMATIC = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const
+
+function noteRange(lowOctave: number, highOctave: number): string[] {
+  const out: string[] = []
+  for (let o = lowOctave; o <= highOctave; o++) {
+    for (const n of CHROMATIC) out.push(`${n}${o}`)
+  }
+  return out
+}
+
+const NOTE_RANGES: Record<InstrumentId, readonly string[]> = {
+  piano: noteRange(2, 6),
+  electricPiano: noteRange(3, 5),
+  guitar: noteRange(2, 5),
+  bass: noteRange(1, 3),
+  pad: noteRange(2, 5),
+  lead: noteRange(4, 6),
+  organ: noteRange(2, 5),
+  drums: [],
+  glitch: noteRange(3, 5),
+  meme: [],
+}
+
+export function noteOptionsFor(id: InstrumentId): readonly string[] {
+  return NOTE_RANGES[id]
+}
+
+export const DEFAULT_NOTE_FOR: Record<InstrumentId, string> = {
+  piano: 'C4',
+  electricPiano: 'C4',
+  guitar: 'E3',
+  bass: 'E2',
+  pad: 'C3',
+  lead: 'C5',
+  organ: 'C4',
+  drums: 'kick',
+  glitch: 'C4',
+  meme: 'airhorn',
+}

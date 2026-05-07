@@ -11,6 +11,11 @@ const { t } = useI18n()
 function setSteps(count: StepCount) {
   store.setStepCount(count)
 }
+
+function bumpBpm(delta: number) {
+  const next = Math.max(40, Math.min(220, store.bpm + delta))
+  store.bpm = next
+}
 </script>
 
 <template>
@@ -22,7 +27,9 @@ function setSteps(count: StepCount) {
 
     <div class="bpm">
       <span class="lbl mono">BPM</span>
-      <input v-model.number="store.bpm" type="number" min="40" max="220" />
+      <button class="step mono" :disabled="store.bpm <= 40" @click="bumpBpm(-1)">−</button>
+      <span class="bpm-value mono">{{ store.bpm }}</span>
+      <button class="step mono" :disabled="store.bpm >= 220" @click="bumpBpm(1)">+</button>
       <button class="tap mono" :title="t('beat.tapTempo')" @click="tapTempo">{{ t('beat.tap') }}</button>
     </div>
 
@@ -72,10 +79,18 @@ function setSteps(count: StepCount) {
 .play .lbl { font-size: 0.75rem; letter-spacing: 0.05em; text-transform: uppercase; }
 
 .bpm, .swing { display: flex; align-items: center; gap: 0.5rem; }
-.bpm input[type='number'] {
-  width: 70px;
+.bpm .step {
+  width: 28px;
+  padding: 0.3rem 0;
+  font-size: 0.9rem;
+  line-height: 1;
+}
+.bpm .step:disabled { opacity: 0.35; cursor: not-allowed; }
+.bpm .bpm-value {
+  min-width: 38px;
   text-align: center;
-  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  color: var(--text-primary);
 }
 .bpm .tap { font-size: 0.75rem; padding: 0.4rem 0.7rem; }
 .swing { flex: 1; min-width: 200px; }

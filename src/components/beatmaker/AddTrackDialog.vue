@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useBeatMakerStore } from '@/stores/beatmaker'
 import { useRecorderStore } from '@/stores/recorder'
-import { INSTRUMENTS, INSTRUMENT_ORDER } from '@/lib/instruments'
+import { INSTRUMENTS, INSTRUMENT_ORDER, DEFAULT_NOTE_FOR, noteOptionsFor } from '@/lib/instruments'
 import type { InstrumentId } from '@/lib/types'
 
 defineProps<{ open: boolean }>()
@@ -14,7 +14,7 @@ const recorderStore = useRecorderStore()
 const { t } = useI18n()
 
 const instrument = ref<InstrumentId>('drums')
-const note = ref('kick')
+const note = ref(DEFAULT_NOTE_FOR.drums)
 const useClip = ref(false)
 const clipId = ref('')
 
@@ -29,9 +29,7 @@ function add() {
 
 function pickInstrument(id: InstrumentId) {
   instrument.value = id
-  if (id === 'drums') note.value = 'kick'
-  else if (id === 'bass') note.value = 'C2'
-  else note.value = 'C4'
+  note.value = DEFAULT_NOTE_FOR[id]
 }
 </script>
 
@@ -75,7 +73,9 @@ function pickInstrument(id: InstrumentId) {
             <select v-if="INSTRUMENTS[instrument].playMode === 'sample'" v-model="note">
               <option v-for="s in INSTRUMENTS[instrument].samples" :key="s" :value="s">{{ s }}</option>
             </select>
-            <input v-else v-model="note" />
+            <select v-else v-model="note">
+              <option v-for="n in noteOptionsFor(instrument)" :key="n" :value="n">{{ n }}</option>
+            </select>
           </label>
 
           <label v-else class="note-row">
