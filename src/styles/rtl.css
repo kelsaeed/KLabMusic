@@ -1,0 +1,28 @@
+html[dir='rtl'] {
+  font-family: 'Cairo', var(--font-body);
+}
+
+html[dir='rtl'] .row,
+html[dir='rtl'] .flex-row {
+  flex-direction: row-reverse;
+}
+
+html[dir='rtl'] .ml-auto {
+  margin-left: 0;
+  margin-right: auto;
+}
+
+html[dir='rtl'] .mr-auto {
+  margin-right: 0;
+  margin-left: auto;
+}
+
+html[dir='rtl'] .sidebar-left {
+  left: auto;
+  right: 0;
+}
+
+html[dir='rtl'] .sidebar-right {
+  right: auto;
+  left: 0;
+}

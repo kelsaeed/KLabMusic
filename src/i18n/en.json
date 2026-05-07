@@ -1,0 +1,49 @@
+{
+  "app": {
+    "name": "KLabMusic",
+    "tagline": "Make Music. Break Rules."
+  },
+  "nav": {
+    "home": "Home",
+    "open": "Open Studio",
+    "language": "Language",
+    "theme": "Theme"
+  },
+  "modules": {
+    "live": "Live Play",
+    "beat": "Beat Maker",
+    "loop": "Loop Station",
+    "chaos": "Chaos"
+  },
+  "home": {
+    "ctaPrimary": "Open the Studio",
+    "ctaSecondary": "Join a Room",
+    "blurb": "A free, browser-based DAW for everyone. No paywalls. No locks. Just play.",
+    "featuresTitle": "Everything is free",
+    "features": {
+      "play": "Live Play with custom key bindings",
+      "beat": "16-step Beat Maker with custom samples",
+      "loop": "8-layer Loop Station",
+      "chaos": "Chaos Machine — XY pad, granular, glitch",
+      "record": "Record from mic or upload your own",
+      "multi": "Jam together — 8-player rooms",
+      "ai": "AI chord & melody suggestions",
+      "themes": "5 themes plus your own"
+    }
+  },
+  "theme": {
+    "cyberpunk": "Cyberpunk",
+    "studio-pro": "Studio Pro",
+    "acid-rave": "Acid Rave",
+    "analog-tape": "Analog Tape",
+    "midnight-jazz": "Midnight Jazz",
+    "custom": "Custom"
+  },
+  "common": {
+    "loading": "Loading…",
+    "save": "Save",
+    "cancel": "Cancel",
+    "close": "Close",
+    "back": "Back"
+  }
+}
