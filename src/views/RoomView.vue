@@ -1,20 +1,21 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, defineAsyncComponent, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useMultiplayerStore } from '@/stores/multiplayer'
 import { useMultiplayer } from '@/composables/useMultiplayer'
 import AppNav from '@/components/AppNav.vue'
 import ModuleTabs from '@/components/ModuleTabs.vue'
-import AudioStage from '@/components/instruments/AudioStage.vue'
-import BeatMakerStage from '@/components/beatmaker/BeatMakerStage.vue'
-import LoopStationStage from '@/components/loopstation/LoopStationStage.vue'
-import ChaosStage from '@/components/chaos/ChaosStage.vue'
 import RecorderDrawer from '@/components/recorder/RecorderDrawer.vue'
 import RoomLobbyForm from '@/components/multiplayer/RoomLobbyForm.vue'
 import RoomHeader from '@/components/multiplayer/RoomHeader.vue'
 import ChatPanel from '@/components/multiplayer/ChatPanel.vue'
 import ReactionsLayer from '@/components/multiplayer/ReactionsLayer.vue'
 import type { ModuleTab } from '@/lib/types'
+
+const AudioStage = defineAsyncComponent(() => import('@/components/instruments/AudioStage.vue'))
+const BeatMakerStage = defineAsyncComponent(() => import('@/components/beatmaker/BeatMakerStage.vue'))
+const LoopStationStage = defineAsyncComponent(() => import('@/components/loopstation/LoopStationStage.vue'))
+const ChaosStage = defineAsyncComponent(() => import('@/components/chaos/ChaosStage.vue'))
 
 const props = defineProps<{ code?: string }>()
 
@@ -49,10 +50,15 @@ onBeforeUnmount(() => {
       <RoomHeader />
       <ModuleTabs :active="active" @change="(tab) => (active = tab)" />
       <main class="stage">
-        <AudioStage v-if="active === 'live'" />
-        <BeatMakerStage v-else-if="active === 'beat'" />
-        <LoopStationStage v-else-if="active === 'loop'" />
-        <ChaosStage v-else-if="active === 'chaos'" />
+        <Suspense>
+          <AudioStage v-if="active === 'live'" />
+          <BeatMakerStage v-else-if="active === 'beat'" />
+          <LoopStationStage v-else-if="active === 'loop'" />
+          <ChaosStage v-else-if="active === 'chaos'" />
+          <template #fallback>
+            <div class="loading mono">Loading…</div>
+          </template>
+        </Suspense>
       </main>
       <ChatPanel />
       <ReactionsLayer />
@@ -91,6 +97,12 @@ onBeforeUnmount(() => {
   padding-inline-end: calc(1.5rem + 36px);
   display: flex;
   justify-content: center;
+}
+.loading {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 @media (max-width: 720px) {
   .stage { padding-inline-end: 1.5rem; padding-bottom: calc(60vh + 60px); }

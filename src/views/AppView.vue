@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, defineAsyncComponent } from 'vue'
 import AppNav from '@/components/AppNav.vue'
 import ModuleTabs from '@/components/ModuleTabs.vue'
-import AudioStage from '@/components/instruments/AudioStage.vue'
-import BeatMakerStage from '@/components/beatmaker/BeatMakerStage.vue'
-import LoopStationStage from '@/components/loopstation/LoopStationStage.vue'
-import ChaosStage from '@/components/chaos/ChaosStage.vue'
 import RecorderDrawer from '@/components/recorder/RecorderDrawer.vue'
 import type { ModuleTab } from '@/lib/types'
+
+const AudioStage = defineAsyncComponent(() => import('@/components/instruments/AudioStage.vue'))
+const BeatMakerStage = defineAsyncComponent(() => import('@/components/beatmaker/BeatMakerStage.vue'))
+const LoopStationStage = defineAsyncComponent(() => import('@/components/loopstation/LoopStationStage.vue'))
+const ChaosStage = defineAsyncComponent(() => import('@/components/chaos/ChaosStage.vue'))
 
 const active = ref<ModuleTab>('live')
 </script>
@@ -18,10 +19,15 @@ const active = ref<ModuleTab>('live')
     <ModuleTabs :active="active" @change="(tab) => (active = tab)" />
 
     <main class="stage">
-      <AudioStage v-if="active === 'live'" />
-      <BeatMakerStage v-else-if="active === 'beat'" />
-      <LoopStationStage v-else-if="active === 'loop'" />
-      <ChaosStage v-else-if="active === 'chaos'" />
+      <Suspense>
+        <AudioStage v-if="active === 'live'" />
+        <BeatMakerStage v-else-if="active === 'beat'" />
+        <LoopStationStage v-else-if="active === 'loop'" />
+        <ChaosStage v-else-if="active === 'chaos'" />
+        <template #fallback>
+          <div class="loading mono">Loading…</div>
+        </template>
+      </Suspense>
     </main>
 
     <RecorderDrawer />
@@ -40,5 +46,11 @@ const active = ref<ModuleTab>('live')
   padding: 1.5rem 1.5rem 5rem;
   display: flex;
   justify-content: center;
+}
+.loading {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 </style>

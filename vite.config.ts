@@ -13,4 +13,16 @@ export default defineConfig({
     port: 5173,
     open: true,
   },
+  build: {
+    chunkSizeWarningLimit: 800,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          tone: ['tone'],
+          supabase: ['@supabase/supabase-js'],
+          vue: ['vue', 'vue-router', 'pinia', 'vue-i18n'],
+        },
+      },
+    },
+  },
 })
