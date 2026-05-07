@@ -1,5 +1,6 @@
 import * as Tone from 'tone'
 import { watch } from 'vue'
+import { Soundfont, DrumMachine } from 'smplr'
 import type { InstrumentId, EffectId } from '@/lib/types'
 import { useAudioStore } from '@/stores/audio'
 import { INSTRUMENTS, EFFECT_ORDER } from '@/lib/instruments'
@@ -11,6 +12,7 @@ interface VoiceAdapter {
   output: Tone.ToneAudioNode
   setVolumeDb: (db: number) => void
   setBendCents: (cents: number) => void
+  loaded?: Promise<void>
   dispose: () => void
 }
 
@@ -138,38 +140,29 @@ function buildElectricPiano(): VoiceAdapter {
 }
 
 function buildGuitar(): VoiceAdapter {
-  // Classical / nylon-string guitar: softer attack, warmer dampening, body resonance via low-pass.
-  const POLYPHONY = 6
-  const voices: Tone.PluckSynth[] = []
+  // Real classical / nylon-string guitar samples via smplr's Soundfont (General MIDI).
+  const ctx = Tone.getContext().rawContext as unknown as AudioContext
   const out = new Tone.Gain(1)
-  const body = new Tone.Filter({ frequency: 3200, type: 'lowpass', Q: 0.8 }).connect(out)
-  for (let i = 0; i < POLYPHONY; i++) {
-    const p = new Tone.PluckSynth({ attackNoise: 0.55, dampening: 2400, resonance: 0.94 })
-    p.connect(body)
-    voices.push(p)
-  }
-  let next = 0
-  const heldNotes = new Map<string, Tone.PluckSynth>()
+  const guitar = new Soundfont(ctx, {
+    instrument: 'acoustic_guitar_nylon',
+    destination: out.input as unknown as AudioNode,
+  })
 
   return {
     attack: (note, vel) => {
-      const v = voices[next]
-      next = (next + 1) % POLYPHONY
-      v.volume.value = Tone.gainToDb(Math.max(0.05, vel / 127)) + 4
-      v.triggerAttack(note)
-      heldNotes.set(note, v)
+      void guitar.start({ note, velocity: Math.max(1, vel) })
     },
-    release: () => { /* nylon strings decay naturally; no release needed */ },
-    damp: () => {
-      for (const v of voices) v.volume.rampTo(-60, 0.04)
-      heldNotes.clear()
+    release: (note) => {
+      if (note) guitar.stop({ stopId: note })
+      else guitar.stop()
     },
+    damp: () => guitar.stop(),
     output: out,
     setVolumeDb: (db) => { out.gain.value = Tone.dbToGain(db) },
-    setBendCents: () => { /* PluckSynth pitch is set per-trigger */ },
+    setBendCents: () => { /* sample-based; pitch baked in */ },
+    loaded: guitar.loaded().then(() => undefined),
     dispose: () => {
-      for (const v of voices) v.dispose()
-      body.dispose()
+      guitar.disconnect()
       out.dispose()
     },
   }
@@ -244,52 +237,13 @@ function buildOrgan(): VoiceAdapter {
 }
 
 function buildDrums(): VoiceAdapter {
+  // TR-808 sample kit via smplr. Ride cymbal isn't in TR-808, so we synth it.
+  const ctx = Tone.getContext().rawContext as unknown as AudioContext
   const out = new Tone.Gain(1)
-
-  const kick = new Tone.MembraneSynth({
-    pitchDecay: 0.05,
-    octaves: 6,
-    envelope: { attack: 0.001, decay: 0.45, sustain: 0, release: 0.1 },
+  const drums = new DrumMachine(ctx, {
+    instrument: 'TR-808',
+    destination: out.input as unknown as AudioNode,
   })
-  kick.volume.value = 4
-  kick.connect(out)
-
-  const tom = new Tone.MembraneSynth({
-    pitchDecay: 0.1,
-    octaves: 3,
-    envelope: { attack: 0.001, decay: 0.4, sustain: 0, release: 0.1 },
-  })
-  tom.connect(out)
-
-  const snareNoise = new Tone.NoiseSynth({
-    noise: { type: 'white' },
-    envelope: { attack: 0.001, decay: 0.18, sustain: 0 },
-  })
-  snareNoise.volume.value = -2
-  const snareFilter = new Tone.Filter(1800, 'highpass')
-  snareNoise.connect(snareFilter)
-  snareFilter.connect(out)
-
-  const hihatClosed = new Tone.MetalSynth({
-    envelope: { attack: 0.001, decay: 0.06, release: 0.02 },
-    harmonicity: 5.1,
-    modulationIndex: 32,
-    resonance: 4000,
-    octaves: 1.5,
-  })
-  hihatClosed.volume.value = -22
-  hihatClosed.connect(out)
-
-  const hihatOpen = new Tone.MetalSynth({
-    envelope: { attack: 0.001, decay: 0.4, release: 0.2 },
-    harmonicity: 5.1,
-    modulationIndex: 32,
-    resonance: 4000,
-    octaves: 1.5,
-  })
-  hihatOpen.volume.value = -22
-  hihatOpen.connect(out)
-
   const ride = new Tone.MetalSynth({
     envelope: { attack: 0.001, decay: 0.9, release: 0.4 },
     harmonicity: 8,
@@ -297,55 +251,38 @@ function buildDrums(): VoiceAdapter {
     resonance: 3000,
     octaves: 2,
   })
-  ride.volume.value = -22
+  ride.volume.value = -18
   ride.connect(out)
 
-  const clap = new Tone.NoiseSynth({
-    noise: { type: 'pink' },
-    envelope: { attack: 0.001, decay: 0.13, sustain: 0 },
-  })
-  clap.volume.value = -2
-  const clapFilter = new Tone.Filter(1100, 'bandpass')
-  clap.connect(clapFilter)
-  clapFilter.connect(out)
+  const SAMPLE_MAP: Record<string, string> = {
+    kick: 'bd',
+    snare: 'sd',
+    hihat: 'ch',
+    hihatO: 'oh',
+    clap: 'cp',
+    tom: 'lt',
+  }
 
   return {
     attack: (name, vel) => {
-      const v = Math.max(0.05, vel / 127)
-      switch (name) {
-        case 'kick':
-          kick.triggerAttackRelease('C2', '8n', Tone.now(), v)
-          return
-        case 'snare':
-          snareNoise.triggerAttackRelease('16n', Tone.now(), v)
-          return
-        case 'hihat':
-          hihatClosed.triggerAttackRelease('32n', Tone.now(), v)
-          return
-        case 'hihatO':
-          hihatOpen.triggerAttackRelease('8n', Tone.now(), v)
-          return
-        case 'tom':
-          tom.triggerAttackRelease('A2', '8n', Tone.now(), v)
-          return
-        case 'ride':
-          ride.triggerAttackRelease('4n', Tone.now(), v)
-          return
-        case 'clap':
-          clap.triggerAttackRelease('16n', Tone.now(), v)
-          return
+      if (name === 'ride') {
+        const v = Math.max(0.05, vel / 127)
+        ride.triggerAttackRelease('C4', '4n', Tone.now(), v)
+        return
       }
+      const sample = SAMPLE_MAP[name]
+      if (!sample) return
+      drums.start({ note: sample, velocity: vel })
     },
     release: () => { /* one-shots */ },
-    damp: () => { /* one-shots, nothing to damp */ },
+    damp: () => { /* one-shots */ },
     output: out,
     setVolumeDb: (db) => { out.gain.value = Tone.dbToGain(db) },
     setBendCents: () => { /* no pitch bend on drums */ },
+    loaded: drums.loaded().then(() => undefined),
     dispose: () => {
-      kick.dispose(); tom.dispose()
-      snareNoise.dispose(); snareFilter.dispose()
-      hihatClosed.dispose(); hihatOpen.dispose(); ride.dispose()
-      clap.dispose(); clapFilter.dispose()
+      drums.disconnect()
+      ride.dispose()
       out.dispose()
     },
   }
@@ -450,7 +387,9 @@ async function ensureInstrument(id: InstrumentId): Promise<InstrumentNode | null
   const channel = new Tone.Volume(0).connect(masterVolume)
   voice.output.connect(channel)
 
-  if (meta.category === 'sampled') {
+  if (voice.loaded) {
+    await voice.loaded
+  } else if (meta.category === 'sampled') {
     await Tone.loaded()
   }
 
@@ -508,12 +447,12 @@ export function useAudio() {
     if (note) store.noteOff(note)
   }
 
-  async function playOn(id: InstrumentId, note: string, velocity = 100) {
+  async function playOn(id: InstrumentId, note: string, velocity = 100, silent = false) {
     await ensureToneStarted()
     const node = await ensureInstrument(id)
     if (!node) return
     node.voice.attack(note, velocity)
-    if (INSTRUMENTS[id].playMode === 'note') store.noteOn(note)
+    if (!silent && INSTRUMENTS[id].playMode === 'note') store.noteOn(note)
   }
 
   function stopOn(id?: InstrumentId, note?: string) {

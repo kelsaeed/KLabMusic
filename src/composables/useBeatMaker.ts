@@ -86,7 +86,7 @@ export function useBeatMaker() {
       player.start(time)
       return
     }
-    void playOn(track.instrument, track.note, velocity)
+    void playOn(track.instrument, track.note, velocity, true)
     void time
   }
 

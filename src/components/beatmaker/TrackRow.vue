@@ -74,13 +74,20 @@ function remove() { store.removeTrack(props.track.id) }
 
     <div class="steps" :class="`count-${track.steps.length}`">
       <div
+        v-if="store.playing"
+        class="playhead-bar"
+        :style="{
+          width: 100 / track.steps.length + '%',
+          transform: `translateX(${store.currentStep * 100}%)`,
+        }"
+      />
+      <div
         v-for="(step, i) in track.steps"
         :key="i"
         class="step-cell"
         :class="{
           active: step.active,
           downbeat: i % 4 === 0,
-          playhead: store.playing && store.currentStep === i,
         }"
         @pointerdown="onPointerDown(i, $event)"
         @pointerenter="(e) => e.buttons === 1 && emit('paint', { trackId: track.id, stepIndex: i, active: step.active })"
@@ -186,9 +193,18 @@ function remove() { store.removeTrack(props.track.id) }
   background: var(--accent-primary);
   border-color: var(--accent-primary);
 }
-.step-cell.playhead {
-  box-shadow: 0 0 0 2px var(--accent-secondary), 0 0 12px var(--accent-secondary);
-  z-index: 1;
+.playhead-bar {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  left: 0;
+  pointer-events: none;
+  border: 2px solid var(--accent-secondary);
+  border-radius: 6px;
+  box-shadow: 0 0 14px var(--accent-secondary);
+  background: rgba(255, 0, 110, 0.12);
+  z-index: 2;
+  will-change: transform;
 }
 .dot {
   position: absolute;

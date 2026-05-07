@@ -19,6 +19,7 @@ export default defineConfig({
       output: {
         manualChunks: {
           tone: ['tone'],
+          smplr: ['smplr'],
           supabase: ['@supabase/supabase-js'],
           vue: ['vue', 'vue-router', 'pinia', 'vue-i18n'],
         },
