@@ -94,6 +94,19 @@
     "exportWav": "تصدير WAV",
     "saveCloud": "حفظ سحابي"
   },
+  "live": {
+    "title": "البيانو",
+    "octaveUp": "أوكتاف لأعلى",
+    "octaveDown": "أوكتاف لأسفل",
+    "showLabels": "إظهار المفاتيح",
+    "bend": "بِند",
+    "mod": "مود",
+    "mode": {
+      "normal": "مفرد",
+      "chord": "أوتار",
+      "strum": "نقش"
+    }
+  },
   "binding": {
     "title": "ربط المفاتيح",
     "short": "الربط",

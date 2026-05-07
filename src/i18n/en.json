@@ -94,6 +94,19 @@
     "exportWav": "Export WAV",
     "saveCloud": "Save to cloud"
   },
+  "live": {
+    "title": "Piano",
+    "octaveUp": "Octave up",
+    "octaveDown": "Octave down",
+    "showLabels": "Show keys",
+    "bend": "Pitch bend",
+    "mod": "Mod",
+    "mode": {
+      "normal": "Single",
+      "chord": "Chord",
+      "strum": "Strum"
+    }
+  },
   "binding": {
     "title": "Key Bindings",
     "short": "Bindings",

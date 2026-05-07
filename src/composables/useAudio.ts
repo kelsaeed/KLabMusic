@@ -9,6 +9,7 @@ interface VoiceAdapter {
   release: (note?: string) => void
   output: Tone.ToneAudioNode
   setVolumeDb: (db: number) => void
+  setBendCents: (cents: number) => void
   dispose: () => void
 }
 
@@ -102,6 +103,10 @@ function wrapPolyphonic(s: Tone.Sampler): VoiceAdapter {
     release: (note) => (note ? s.triggerRelease(note) : s.releaseAll()),
     output: s,
     setVolumeDb: (db) => { s.volume.value = db },
+    setBendCents: (c) => {
+      const detune = (s as unknown as { detune?: { value: number } }).detune
+      if (detune) detune.value = c
+    },
     dispose: () => s.dispose(),
   }
 }
@@ -117,6 +122,7 @@ function buildBass(): VoiceAdapter {
     release: () => synth.triggerRelease(),
     output: synth,
     setVolumeDb: (db) => { synth.volume.value = db },
+    setBendCents: (c) => { synth.detune.value = c },
     dispose: () => synth.dispose(),
   }
 }
@@ -132,6 +138,7 @@ function buildPad(): VoiceAdapter {
     release: (note) => (note ? synth.triggerRelease(note) : synth.releaseAll()),
     output: synth,
     setVolumeDb: (db) => { synth.volume.value = db },
+    setBendCents: (c) => synth.set({ detune: c }),
     dispose: () => synth.dispose(),
   }
 }
@@ -147,6 +154,7 @@ function buildLead(): VoiceAdapter {
     release: () => synth.triggerRelease(),
     output: vibrato,
     setVolumeDb: (db) => { synth.volume.value = db },
+    setBendCents: (c) => { synth.detune.value = c },
     dispose: () => { synth.dispose(); vibrato.dispose() },
   }
 }
@@ -162,6 +170,7 @@ function buildOrgan(): VoiceAdapter {
     release: (note) => (note ? synth.triggerRelease(note) : synth.releaseAll()),
     output: synth,
     setVolumeDb: (db) => { synth.volume.value = db },
+    setBendCents: (c) => synth.set({ detune: c }),
     dispose: () => synth.dispose(),
   }
 }
@@ -178,6 +187,7 @@ function buildDrums(): VoiceAdapter {
     release: () => {},
     output: players,
     setVolumeDb: (db) => { players.volume.value = db },
+    setBendCents: () => {},
     dispose: () => players.dispose(),
   }
 }
@@ -195,6 +205,7 @@ function buildGlitch(): VoiceAdapter {
     release: () => env.triggerRelease(),
     output: crush,
     setVolumeDb: (db) => { noise.volume.value = db },
+    setBendCents: () => {},
     dispose: () => { noise.dispose(); env.dispose(); crush.dispose() },
   }
 }
@@ -362,6 +373,10 @@ export function useAudio() {
     store.activeNotes = new Set()
   }
 
+  function setMasterBend(cents: number) {
+    for (const node of nodes.values()) node.voice.setBendCents(cents)
+  }
+
   async function setInstrument(id: InstrumentId) {
     store.activeInstrument = id
     store.ensureEffectsFor(id)
@@ -387,6 +402,7 @@ export function useAudio() {
     playOn,
     stopOn,
     stopAll,
+    setMasterBend,
     setInstrument,
     setEffect,
     toggleEffect,

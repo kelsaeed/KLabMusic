@@ -5,7 +5,7 @@ import { useAudioStore } from '@/stores/audio'
 import InstrumentSelector from './InstrumentSelector.vue'
 import EffectsPanel from './EffectsPanel.vue'
 import MasterControls from './MasterControls.vue'
-import TestPad from './TestPad.vue'
+import LivePlay from '@/components/keyboard/LivePlay.vue'
 
 const store = useAudioStore()
 const { ensureInstrument } = useAudio()
@@ -20,7 +20,7 @@ onMounted(() => {
   <div class="stage">
     <div class="col-main">
       <InstrumentSelector />
-      <TestPad />
+      <LivePlay />
     </div>
     <aside class="col-aside">
       <MasterControls />
