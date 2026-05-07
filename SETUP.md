@@ -64,21 +64,30 @@ Project → **Domains → Add** → point your DNS at Vercel. They'll handle SSL
 
 ---
 
-## 4. Supabase Edge Function for AI (Phase 9 prep — skip if you're not building AI yet)
+## 4. Supabase Edge Function for AI
 
-The AI features in Phase 9 will need an Edge Function so the Anthropic API key never reaches the browser.
+The AI features call a Supabase Edge Function (`ai-music`) so the Anthropic key never reaches the browser. The function source is already in this repo at [`supabase/functions/ai-music/index.ts`](supabase/functions/ai-music/index.ts) — you just need to deploy it.
 
+**One-time setup:**
 ```
-npx supabase init                       # one-time, scaffolds /supabase locally
-npx supabase login
-npx supabase link --project-ref <ref>   # ref is in your Supabase URL
-npx supabase functions new ai-music
-# ...edit supabase/functions/ai-music/index.ts (Phase 9 will commit one)
-npx supabase functions deploy ai-music
-npx supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
+npm install -g supabase                              # or npx everything below
+supabase login                                        # opens browser to auth
+supabase link --project-ref <ref>                     # <ref> is the part of your project URL: https://<ref>.supabase.co
+supabase secrets set ANTHROPIC_API_KEY=sk-ant-...    # paste your Anthropic key
 ```
 
-Phase 9 will commit the `ai-music` function source so you only need to run `deploy` + `secrets set`.
+**Deploy (run after editing `index.ts`, or any time you want to redeploy):**
+```
+supabase functions deploy ai-music
+```
+
+You should see something like `Deployed Function ai-music` and a URL like `https://<ref>.supabase.co/functions/v1/ai-music`.
+
+**Test it from the browser:** open the live site, click the **🤖 AI** button in the top nav (or press **Ctrl+A**), pick a tab, and run something. The Chat tab streams a response token-by-token; the other tabs return structured JSON.
+
+If you see "AI service 401" → the Anthropic key is missing or invalid. Re-run `supabase secrets set ANTHROPIC_API_KEY=...`.
+
+If you see CORS errors → the function CORS headers should already allow any origin; check that you actually deployed the latest version.
 
 ---
 

@@ -94,6 +94,38 @@
     "exportWav": "Export WAV",
     "saveCloud": "Save to cloud"
   },
+  "ai": {
+    "title": "AI Assistant",
+    "short": "AI",
+    "tab": {
+      "chat": "Chat",
+      "suggest": "Suggest",
+      "generate": "Generate",
+      "analyze": "Analyze"
+    },
+    "chatEmpty": "Ask anything about music. Try \"how do I make a sad chord progression?\"",
+    "chatPlaceholder": "Type a question…",
+    "you": "You",
+    "bot": "AI",
+    "clearChat": "Clear chat",
+    "thinking": "Thinking…",
+    "generate": "Generate",
+    "mood": "Mood",
+    "chords": "Chords",
+    "melody": "Melody",
+    "rhythm": "Rhythm",
+    "describe": "Describe the track",
+    "describePlaceholder": "e.g. trap beat at 140 bpm with snappy snares",
+    "applyToBeat": "Apply to Beat Maker",
+    "genReady": "Track ready below — review and apply.",
+    "genFailed": "AI returned no usable data. Try again with more detail.",
+    "genApplied": "New pattern added.",
+    "analyze": "Analyze recent",
+    "analyzeHint": "Reads the most recent notes you've played and tells you the scale, chord names, and mood.",
+    "noNotes": "Play some notes first.",
+    "genre": "Genre",
+    "notConfigured": "AI needs the ai-music Edge Function deployed. See SETUP.md."
+  },
   "mp": {
     "lobby": "Multiplayer",
     "jam": "Jam",

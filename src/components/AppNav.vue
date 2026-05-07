@@ -1,16 +1,30 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink, useRoute } from 'vue-router'
 import ThemeSwitcher from './theme/ThemeSwitcher.vue'
 import LocaleSwitcher from './LocaleSwitcher.vue'
 import BindingsModal from './keybindings/BindingsModal.vue'
+import AIPanel from './ai/AIPanel.vue'
 
 const { t } = useI18n()
 const route = useRoute()
 const isHome = computed(() => route.name === 'home')
 const isInRoom = computed(() => route.name === 'room' || route.name === 'room-lobby')
 const bindingsOpen = ref(false)
+const aiOpen = ref(false)
+
+function onKey(e: KeyboardEvent) {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+    const tag = (e.target as HTMLElement | null)?.tagName
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return
+    e.preventDefault()
+    aiOpen.value = !aiOpen.value
+  }
+}
+
+onMounted(() => window.addEventListener('keydown', onKey))
+onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 </script>
 
 <template>
@@ -21,6 +35,16 @@ const bindingsOpen = ref(false)
     </RouterLink>
 
     <nav class="actions">
+      <button
+        v-if="!isHome"
+        class="icon-btn ai"
+        :class="{ on: aiOpen }"
+        :title="t('ai.title') + ' (Ctrl+A)'"
+        @click="aiOpen = !aiOpen"
+      >
+        <span class="kbd-icon">🤖</span>
+        <span class="hide-sm">{{ t('ai.short') }}</span>
+      </button>
       <button
         v-if="!isHome"
         class="icon-btn"
@@ -47,6 +71,7 @@ const bindingsOpen = ref(false)
     </nav>
 
     <BindingsModal :open="bindingsOpen" @close="bindingsOpen = false" />
+    <AIPanel :open="aiOpen" @close="aiOpen = false" />
   </header>
 </template>
 
@@ -109,6 +134,11 @@ const bindingsOpen = ref(false)
   border-color: var(--accent-secondary);
   color: var(--accent-secondary);
   opacity: 1;
+}
+.icon-btn.ai.on {
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+  box-shadow: 0 0 12px var(--accent-glow);
 }
 .kbd-icon {
   font-size: 1rem;
