@@ -49,6 +49,11 @@
     "testPadHint": "Click + hold to play",
     "pickInstrument": "Pick an instrument to load its effect chain.",
     "notAvailable": "Add sound files to /public/sounds/meme/",
+    "loading": "Loading {name}…",
+    "loadingShort": "Loading…",
+    "loadingSubtitle": "Downloading samples — first time only",
+    "loaded": "{name} ready",
+    "loadFailed": "{name} failed to load",
     "activeNotes": "{n} active",
     "instrument": {
       "piano": "Piano",
@@ -92,7 +97,8 @@
     "normalize": "Normalize",
     "detectBpm": "Detect BPM",
     "exportWav": "Export WAV",
-    "saveCloud": "Save to cloud"
+    "saveCloud": "Save to cloud",
+    "cloudUploading": "Uploading clip to cloud…"
   },
   "export": {
     "short": "Export",

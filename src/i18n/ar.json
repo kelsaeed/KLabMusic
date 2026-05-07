@@ -49,6 +49,11 @@
     "testPadHint": "اضغط واستمر للعزف",
     "pickInstrument": "اختر آلة لتحميل سلسلة التأثيرات.",
     "notAvailable": "أضف ملفات الصوت إلى /public/sounds/meme/",
+    "loading": "جاري تحميل {name}…",
+    "loadingShort": "تحميل…",
+    "loadingSubtitle": "جاري تنزيل العينات — أول مرة فقط",
+    "loaded": "{name} جاهز",
+    "loadFailed": "فشل تحميل {name}",
     "activeNotes": "{n} نشط",
     "instrument": {
       "piano": "بيانو",
@@ -92,7 +97,8 @@
     "normalize": "تسوية",
     "detectBpm": "كشف الإيقاع",
     "exportWav": "تصدير WAV",
-    "saveCloud": "حفظ سحابي"
+    "saveCloud": "حفظ سحابي",
+    "cloudUploading": "جاري رفع المقطع إلى السحابة…"
   },
   "export": {
     "short": "تصدير",

@@ -2,16 +2,53 @@
 import { useI18n } from 'vue-i18n'
 import { useAudioStore } from '@/stores/audio'
 import { useAudio } from '@/composables/useAudio'
+import { useToast } from '@/composables/useToast'
 import { INSTRUMENTS, INSTRUMENT_ORDER } from '@/lib/instruments'
 import type { InstrumentId } from '@/lib/types'
 
 const store = useAudioStore()
-const { setInstrument } = useAudio()
+const { setInstrument, ensureInstrument } = useAudio()
+const { show, update } = useToast()
 const { t } = useI18n()
 
 async function pick(id: InstrumentId) {
   if (!INSTRUMENTS[id].available) return
-  await setInstrument(id)
+  // Already loaded → instant select, no toast.
+  if (store.getLoadState(id) === 'ready') {
+    await setInstrument(id)
+    return
+  }
+  const label = t(`audio.instrument.${id}`)
+  const toastId = show({
+    type: 'loading',
+    title: t('audio.loading', { name: label }),
+    subtitle: t('audio.loadingSubtitle'),
+  })
+  store.activeInstrument = id
+  store.ensureEffectsFor(id)
+  const node = await ensureInstrument(id)
+  if (node) {
+    update(toastId, {
+      type: 'success',
+      title: t('audio.loaded', { name: label }),
+      subtitle: undefined,
+      duration: 1400,
+    })
+  } else {
+    update(toastId, {
+      type: 'error',
+      title: t('audio.loadFailed', { name: label }),
+      subtitle: undefined,
+      duration: 3000,
+    })
+  }
+}
+
+function prefetch(id: InstrumentId) {
+  if (!INSTRUMENTS[id].available) return
+  if (store.getLoadState(id) !== 'idle' && store.getLoadState(id) !== undefined) return
+  // Fire-and-forget: start downloading samples on hover so they're ready by click.
+  void ensureInstrument(id)
 }
 </script>
 
@@ -30,16 +67,28 @@ async function pick(id: InstrumentId) {
         :class="{
           active: store.activeInstrument === id,
           loading: store.getLoadState(id) === 'loading',
+          ready: store.getLoadState(id) === 'ready',
           unavailable: !INSTRUMENTS[id].available,
         }"
         :disabled="!INSTRUMENTS[id].available"
         :title="!INSTRUMENTS[id].available ? t('audio.notAvailable') : ''"
         @click="pick(id)"
+        @pointerenter="prefetch(id)"
       >
         <span class="icon" aria-hidden="true">{{ INSTRUMENTS[id].icon }}</span>
         <span class="name">{{ t(`audio.instrument.${id}`) }}</span>
-        <span v-if="store.getLoadState(id) === 'loading'" class="dot loading-dot" />
-        <span v-else-if="store.getLoadState(id) === 'ready'" class="dot ready-dot" />
+
+        <span
+          v-if="store.getLoadState(id) === 'loading'"
+          class="overlay"
+          aria-label="loading"
+        >
+          <span class="spinner" />
+          <span class="overlay-label mono">{{ t('audio.loadingShort') }}</span>
+        </span>
+
+        <span v-if="store.getLoadState(id) === 'ready'" class="dot ready-dot" />
+        <span v-if="store.getLoadState(id) === 'error'" class="dot error-dot">!</span>
       </button>
     </div>
   </section>
@@ -85,6 +134,7 @@ async function pick(id: InstrumentId) {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   color: var(--text-primary);
+  overflow: hidden;
   transition:
     border-color var(--transition-fast),
     transform var(--transition-fast),
@@ -99,38 +149,73 @@ async function pick(id: InstrumentId) {
   color: var(--accent-primary);
   box-shadow: 0 0 16px var(--accent-glow);
 }
-.card.loading {
-  opacity: 0.75;
-}
 .card.unavailable {
   opacity: 0.45;
   cursor: not-allowed;
 }
 .icon {
   font-size: 1.5rem;
+  transition: opacity var(--transition-fast);
 }
 .name {
   font-size: 0.78rem;
   font-family: var(--font-mono);
+  transition: opacity var(--transition-fast);
 }
+.card.loading .icon,
+.card.loading .name {
+  opacity: 0.25;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 5, 16, 0.6);
+  backdrop-filter: blur(2px);
+  border-radius: var(--radius);
+}
+.spinner {
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.overlay-label {
+  font-size: 0.6rem;
+  color: var(--accent-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
 .dot {
   position: absolute;
-  top: 0.5rem;
-  inset-inline-end: 0.5rem;
-  width: 8px;
-  height: 8px;
+  top: 0.45rem;
+  inset-inline-end: 0.45rem;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 0.55rem;
+  font-weight: 700;
+  line-height: 1;
 }
 .ready-dot {
   background: var(--accent-primary);
   box-shadow: 0 0 6px var(--accent-glow);
 }
-.loading-dot {
-  background: var(--text-muted);
-  animation: pulse 1s ease-in-out infinite;
-}
-@keyframes pulse {
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 1; }
+.error-dot {
+  background: var(--accent-secondary);
+  color: var(--text-inverse);
+  width: 14px;
+  height: 14px;
 }
 </style>

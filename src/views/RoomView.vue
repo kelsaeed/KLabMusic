@@ -6,6 +6,7 @@ import { useMultiplayer } from '@/composables/useMultiplayer'
 import AppNav from '@/components/AppNav.vue'
 import ModuleTabs from '@/components/ModuleTabs.vue'
 import RecorderDrawer from '@/components/recorder/RecorderDrawer.vue'
+import ToastStack from '@/components/ui/ToastStack.vue'
 import RoomLobbyForm from '@/components/multiplayer/RoomLobbyForm.vue'
 import RoomHeader from '@/components/multiplayer/RoomHeader.vue'
 import ChatPanel from '@/components/multiplayer/ChatPanel.vue'
@@ -65,6 +66,7 @@ onBeforeUnmount(() => {
     </template>
 
     <RecorderDrawer />
+    <ToastStack />
   </div>
 </template>
 

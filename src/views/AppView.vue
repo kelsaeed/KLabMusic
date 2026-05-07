@@ -3,6 +3,7 @@ import { ref, defineAsyncComponent } from 'vue'
 import AppNav from '@/components/AppNav.vue'
 import ModuleTabs from '@/components/ModuleTabs.vue'
 import RecorderDrawer from '@/components/recorder/RecorderDrawer.vue'
+import ToastStack from '@/components/ui/ToastStack.vue'
 import type { ModuleTab } from '@/lib/types'
 
 const AudioStage = defineAsyncComponent(() => import('@/components/instruments/AudioStage.vue'))
@@ -31,6 +32,7 @@ const active = ref<ModuleTab>('live')
     </main>
 
     <RecorderDrawer />
+    <ToastStack />
   </div>
 </template>
 

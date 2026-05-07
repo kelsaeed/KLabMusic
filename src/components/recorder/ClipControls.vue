@@ -3,17 +3,28 @@ import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRecorderStore } from '@/stores/recorder'
 import { useRecorder } from '@/composables/useRecorder'
+import { useToast } from '@/composables/useToast'
 import type { Clip } from '@/lib/types'
 
 defineProps<{ clip: Clip }>()
 const store = useRecorderStore()
 const { normalize, detectClipBpm, exportClipWav, saveToCloud, playClip, stopPlayback } = useRecorder()
+const { show, update } = useToast()
 const { t } = useI18n()
 const saveStatus = ref('')
 
 async function onSave(clipId: string) {
+  const toastId = show({
+    type: 'loading',
+    title: t('recorder.cloudUploading'),
+  })
   const result = await saveToCloud(clipId)
   saveStatus.value = result.message
+  update(toastId, {
+    type: result.ok ? 'success' : 'error',
+    title: result.message,
+    duration: result.ok ? 1800 : 3500,
+  })
   setTimeout(() => (saveStatus.value = ''), 3000)
 }
 
