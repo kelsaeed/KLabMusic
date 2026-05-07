@@ -6,6 +6,7 @@ import { makeTrack } from '@/lib/beatmaker'
 import type { Pattern, BeatTrack, StepCount } from '@/lib/types'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 export interface AIMessage {
   id: string
@@ -54,7 +55,11 @@ async function* streamCompletion(
   const url = `${SUPABASE_URL}/functions/v1/ai-music`
   const response = await fetch(url, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      apikey: SUPABASE_ANON_KEY,
+    },
     body: JSON.stringify({
       messages: messageList.map(({ role, content }) => ({ role, content })),
       system,
