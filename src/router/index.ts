@@ -25,6 +25,12 @@ export const router = createRouter({
       props: true,
     },
     {
+      path: '/s/:data',
+      name: 'shared',
+      component: () => import('@/views/SharedView.vue'),
+      props: true,
+    },
+    {
       path: '/:pathMatch(.*)*',
       name: 'not-found',
       component: () => import('@/views/NotFoundView.vue'),

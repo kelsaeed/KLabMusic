@@ -8,12 +8,14 @@ import PatternSlots from './PatternSlots.vue'
 import TrackRow from './TrackRow.vue'
 import SongMode from './SongMode.vue'
 import AddTrackDialog from './AddTrackDialog.vue'
+import ExportDialog from './ExportDialog.vue'
 
 const store = useBeatMakerStore()
 const { ensureWatchers, exportPatternsJson, importPatternsJson, saveToCloud } = useBeatMaker()
 const { t } = useI18n()
 
 const addOpen = ref(false)
+const exportOpen = ref(false)
 const status = ref('')
 const fileInput = ref<HTMLInputElement | null>(null)
 
@@ -62,6 +64,7 @@ onMounted(() => {
         <h3>{{ t('beat.tracks') }}</h3>
         <div class="grid-actions">
           <button class="ghost mono" @click="addOpen = true">+ {{ t('beat.addTrack') }}</button>
+          <button class="ghost mono" @click="exportOpen = true">{{ t('export.short') }}</button>
           <button class="ghost mono" @click="downloadJson">{{ t('binding.export') }}</button>
           <button class="ghost mono" @click="fileInput?.click()">{{ t('binding.import') }}</button>
           <input
@@ -92,6 +95,7 @@ onMounted(() => {
     </section>
 
     <AddTrackDialog :open="addOpen" @close="addOpen = false" />
+    <ExportDialog :open="exportOpen" @close="exportOpen = false" />
   </div>
 </template>
 

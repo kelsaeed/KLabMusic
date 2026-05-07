@@ -94,6 +94,30 @@
     "exportWav": "Export WAV",
     "saveCloud": "Save to cloud"
   },
+  "export": {
+    "short": "Export",
+    "title": "Export & share",
+    "audio": "Audio",
+    "audioHint": "Records the master output for one bar at the current BPM. Plays back briefly while exporting.",
+    "wav": "Export WAV",
+    "mp3": "Export MP3",
+    "recording": "Recording…",
+    "encoding": "Encoding…",
+    "midi": "MIDI",
+    "midiHint": "Exports the active pattern's melodic notes as a Standard MIDI File. Drum tracks are skipped.",
+    "exportMidi": "Export MIDI",
+    "share": "Share",
+    "shareHint": "Generates a link that loads this exact pattern in any browser. Includes a downloadable QR code.",
+    "generateShare": "Generate link",
+    "copy": "Copy",
+    "copied": "Copied!",
+    "downloadQr": "Download QR"
+  },
+  "share": {
+    "loading": "Loading shared pattern…",
+    "imported": "Pattern imported! Heading to the studio.",
+    "failed": "Couldn't read this share link. It may be malformed or out of date."
+  },
   "auth": {
     "signIn": "Sign in",
     "signUp": "Sign up",
