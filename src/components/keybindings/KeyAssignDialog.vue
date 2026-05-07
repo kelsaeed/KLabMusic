@@ -16,9 +16,20 @@ const { t } = useI18n()
 
 const existing = computed(() => store.getBinding(props.keyName))
 
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const
+const OCTAVES = [0, 1, 2, 3, 4, 5, 6, 7, 8] as const
+
+function splitNote(n: string): { name: string; octave: number } {
+  const match = /^([A-G]#?)(-?\d)$/.exec(n)
+  if (!match) return { name: 'C', octave: 4 }
+  return { name: match[1], octave: Number(match[2]) }
+}
+
 const type = ref<BindingType>('note')
 const instrument = ref<InstrumentId>('piano')
 const noteValue = ref('C4')
+const noteName = ref('C')
+const noteOctave = ref(4)
 const chordNotes = ref<string[]>(['C4', 'E4', 'G4'])
 const clipId = ref<string>('')
 const action = ref<BindingActionId>('damp')
@@ -34,6 +45,9 @@ watch(
       type.value = b.type
       instrument.value = b.instrument ?? 'piano'
       noteValue.value = b.note ?? 'C4'
+      const split = splitNote(noteValue.value)
+      noteName.value = split.name
+      noteOctave.value = split.octave
       chordNotes.value = b.chord ?? ['C4', 'E4', 'G4']
       clipId.value = b.clipId ?? ''
       action.value = b.action ?? 'damp'
@@ -44,6 +58,8 @@ watch(
       type.value = 'note'
       instrument.value = 'piano'
       noteValue.value = 'C4'
+      noteName.value = 'C'
+      noteOctave.value = 4
       chordNotes.value = ['C4', 'E4', 'G4']
       clipId.value = ''
       action.value = 'damp'
@@ -55,7 +71,10 @@ watch(
   { immediate: true },
 )
 
-const noteSuggestions = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+watch([noteName, noteOctave], ([n, o]) => {
+  noteValue.value = `${n}${o}`
+})
+
 const sampleSuggestions = computed(() => INSTRUMENTS[instrument.value].samples ?? [])
 
 function save() {
@@ -129,10 +148,21 @@ function removeChordNote(idx: number) {
           <option v-for="id in INSTRUMENT_ORDER" :key="id" :value="id">{{ t(`audio.instrument.${id}`) }}</option>
         </select>
       </label>
-      <label>
+      <label v-if="type === 'note'">
         <span class="lbl">{{ t('binding.note') }}</span>
-        <input v-if="type === 'note'" v-model="noteValue" :placeholder="noteSuggestions.join(' ')" />
-        <select v-else v-model="noteValue">
+        <div class="note-picker">
+          <select v-model="noteName">
+            <option v-for="n in NOTE_NAMES" :key="n" :value="n">{{ n }}</option>
+          </select>
+          <select v-model.number="noteOctave">
+            <option v-for="o in OCTAVES" :key="o" :value="o">{{ o }}</option>
+          </select>
+          <span class="picker-preview mono">{{ noteValue }}</span>
+        </div>
+      </label>
+      <label v-else>
+        <span class="lbl">{{ t('binding.note') }}</span>
+        <select v-model="noteValue">
           <option v-for="s in sampleSuggestions" :key="s" :value="s">{{ s }}</option>
         </select>
       </label>
@@ -277,6 +307,22 @@ function removeChordNote(idx: number) {
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
+}
+.note-picker {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 0.4rem;
+  align-items: center;
+}
+.picker-preview {
+  padding: 0.4rem 0.7rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--accent-primary);
+  color: var(--accent-primary);
+  border-radius: var(--radius);
+  font-size: 0.9rem;
+  text-align: center;
+  letter-spacing: 0.04em;
 }
 .lbl {
   font-size: 0.7rem;
