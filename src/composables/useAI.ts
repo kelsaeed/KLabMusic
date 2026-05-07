@@ -2,6 +2,7 @@ import { ref } from 'vue'
 import { isSupabaseConfigured } from '@/lib/supabase'
 import { useBeatMakerStore } from '@/stores/beatmaker'
 import { useAudioStore } from '@/stores/audio'
+import { useToast } from '@/composables/useToast'
 import { makeTrack } from '@/lib/beatmaker'
 import type { Pattern, BeatTrack, StepCount } from '@/lib/types'
 
@@ -120,6 +121,7 @@ const SYSTEM_CHAT =
 export function useAI() {
   const beatStore = useBeatMakerStore()
   const audioStore = useAudioStore()
+  const { show, update } = useToast()
 
   function reset() {
     messages.value = []
@@ -152,6 +154,11 @@ export function useAI() {
   async function suggestChords(key: string, mood: string): Promise<ChordSuggestion | null> {
     error.value = ''
     streaming.value = true
+    const toastId = show({
+      type: 'loading',
+      title: 'Suggesting chords…',
+      subtitle: `${mood} progression in ${key}`,
+    })
     try {
       const prompt =
         `Return ONLY a JSON object, no markdown fences, no commentary. ` +
@@ -159,9 +166,21 @@ export function useAI() {
         `Schema: {"chords": ["Cmaj7","Am7","Dm7","G7"], "melody": ["C4","E4","G4",...], "rhythm": [1,0,1,0,...]} ` +
         `chords: 4-8 chord names. melody: 8-16 notes with octave. rhythm: 16 ints (0 or 1).`
       const text = await collect(streamCompletion([{ id: uid(), role: 'user', content: prompt }]))
-      return extractJson<ChordSuggestion>(text)
+      const parsed = extractJson<ChordSuggestion>(text)
+      if (!parsed) {
+        update(toastId, { type: 'error', title: 'Could not parse AI response', duration: 3500 })
+      } else {
+        update(toastId, {
+          type: 'success',
+          title: 'Chord suggestion ready',
+          subtitle: parsed.chords.slice(0, 4).join(' · '),
+          duration: 1800,
+        })
+      }
+      return parsed
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed'
+      update(toastId, { type: 'error', title: 'AI request failed', subtitle: error.value, duration: 3500 })
       return null
     } finally {
       streaming.value = false
@@ -171,6 +190,11 @@ export function useAI() {
   async function generateBackingTrack(description: string): Promise<BackingTrack | null> {
     error.value = ''
     streaming.value = true
+    const toastId = show({
+      type: 'loading',
+      title: 'Building backing track…',
+      subtitle: description.slice(0, 60),
+    })
     try {
       const prompt =
         `Return ONLY a JSON object, no markdown fences, no commentary. ` +
@@ -180,9 +204,21 @@ export function useAI() {
         `"bassline":["C2","C2","A1","A1","F1","F1","G1","G1"]}. ` +
         `Step indices are 0-15. bassline has 8-16 notes.`
       const text = await collect(streamCompletion([{ id: uid(), role: 'user', content: prompt }]))
-      return extractJson<BackingTrack>(text)
+      const parsed = extractJson<BackingTrack>(text)
+      if (!parsed) {
+        update(toastId, { type: 'error', title: 'Could not parse AI response', duration: 3500 })
+      } else {
+        update(toastId, {
+          type: 'success',
+          title: 'Backing track ready',
+          subtitle: `${parsed.bpm ?? '?'} BPM · ${parsed.key ?? ''} ${parsed.scale ?? ''}`.trim(),
+          duration: 1800,
+        })
+      }
+      return parsed
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed'
+      update(toastId, { type: 'error', title: 'AI request failed', subtitle: error.value, duration: 3500 })
       return null
     } finally {
       streaming.value = false
@@ -193,15 +229,33 @@ export function useAI() {
     if (notes.length === 0) return null
     error.value = ''
     streaming.value = true
+    const toastId = show({
+      type: 'loading',
+      title: 'Analyzing your notes…',
+      subtitle: `${notes.length} note${notes.length === 1 ? '' : 's'}`,
+    })
     try {
       const prompt =
         `Return ONLY a JSON object, no markdown fences. ` +
         `Analyze these recent notes: [${notes.join(', ')}]. ` +
         `Schema: {"scale":"C major","genre":"jazz","mood":"melancholy","chordNames":["Cmaj7","Am7"],"notes":"short observation"}.`
       const text = await collect(streamCompletion([{ id: uid(), role: 'user', content: prompt }]))
-      return extractJson<AnalysisResult>(text)
+      const parsed = extractJson<AnalysisResult>(text)
+      if (!parsed) {
+        update(toastId, { type: 'error', title: 'Could not parse AI response', duration: 3500 })
+      } else {
+        const summary = [parsed.scale, parsed.genre, parsed.mood].filter(Boolean).join(' · ')
+        update(toastId, {
+          type: 'success',
+          title: 'Analysis ready',
+          subtitle: summary || undefined,
+          duration: 1800,
+        })
+      }
+      return parsed
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed'
+      update(toastId, { type: 'error', title: 'AI request failed', subtitle: error.value, duration: 3500 })
       return null
     } finally {
       streaming.value = false

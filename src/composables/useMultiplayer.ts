@@ -3,6 +3,7 @@ import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import { useMultiplayerStore } from '@/stores/multiplayer'
 import { useBeatMakerStore } from '@/stores/beatmaker'
 import { useAudio } from '@/composables/useAudio'
+import { useToast } from '@/composables/useToast'
 import type {
   RealtimeChannel,
   RealtimePresenceState,
@@ -51,33 +52,54 @@ export function useMultiplayer() {
   const store = useMultiplayerStore()
   const beatStore = useBeatMakerStore()
   const { playOn, stopOn } = useAudio()
+  const { show, update } = useToast()
 
   async function createRoom(name: string): Promise<{ ok: boolean; code?: string; message?: string }> {
-    if (!isSupabaseConfigured) return { ok: false, message: 'Supabase not configured' }
-    if (!name.trim()) return { ok: false, message: 'Pick a name first' }
+    if (!isSupabaseConfigured) {
+      show({ type: 'error', title: 'Multiplayer unavailable', subtitle: 'Supabase not configured', duration: 3500 })
+      return { ok: false, message: 'Supabase not configured' }
+    }
+    if (!name.trim()) {
+      show({ type: 'error', title: 'Pick a name first', duration: 2500 })
+      return { ok: false, message: 'Pick a name first' }
+    }
     store.setName(name)
     const code = genCode()
+    const toastId = show({ type: 'loading', title: 'Creating room…', subtitle: code })
     try {
       const { error } = await supabase.from('rooms').insert({
         code,
         host_id: store.localId,
         state: { bpm: beatStore.bpm },
       })
-      if (error) return { ok: false, message: error.message }
+      if (error) {
+        update(toastId, { type: 'error', title: 'Could not create room', subtitle: error.message, duration: 3500 })
+        return { ok: false, message: error.message }
+      }
       store.isHost = true
+      update(toastId, { type: 'success', title: 'Room created', subtitle: code, duration: 1800 })
       return { ok: true, code }
     } catch (e) {
-      return { ok: false, message: e instanceof Error ? e.message : 'Failed to create room' }
+      const msg = e instanceof Error ? e.message : 'Failed to create room'
+      update(toastId, { type: 'error', title: 'Could not create room', subtitle: msg, duration: 3500 })
+      return { ok: false, message: msg }
     }
   }
 
   async function joinRoom(code: string, name: string): Promise<{ ok: boolean; message?: string }> {
-    if (!isSupabaseConfigured) return { ok: false, message: 'Supabase not configured' }
-    if (!name.trim()) return { ok: false, message: 'Pick a name first' }
+    if (!isSupabaseConfigured) {
+      show({ type: 'error', title: 'Multiplayer unavailable', subtitle: 'Supabase not configured', duration: 3500 })
+      return { ok: false, message: 'Supabase not configured' }
+    }
+    if (!name.trim()) {
+      show({ type: 'error', title: 'Pick a name first', duration: 2500 })
+      return { ok: false, message: 'Pick a name first' }
+    }
     store.setName(name)
     store.connecting = true
     store.error = ''
     leaveChannel()
+    const toastId = show({ type: 'loading', title: `Joining ${code}…`, subtitle: 'Connecting to realtime channel' })
 
     let hostId: string | null = null
     try {
@@ -156,10 +178,17 @@ export function useMultiplayer() {
           store.isConnected = true
           store.connecting = false
           wireBeatStore()
+          update(toastId, { type: 'success', title: `Joined ${code}`, subtitle: undefined, duration: 1400 })
           resolve({ ok: true })
         } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
           store.connecting = false
           store.error = `Connection ${status}`
+          update(toastId, {
+            type: 'error',
+            title: `Could not join ${code}`,
+            subtitle: status === 'TIMED_OUT' ? 'Connection timed out' : 'Channel error',
+            duration: 3500,
+          })
           resolve({ ok: false, message: status })
         }
       })

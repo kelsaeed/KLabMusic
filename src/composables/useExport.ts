@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { useBeatMakerStore } from '@/stores/beatmaker'
 import { useAudio } from '@/composables/useAudio'
 import { useBeatMaker } from '@/composables/useBeatMaker'
+import { useToast } from '@/composables/useToast'
 import type { Pattern } from '@/lib/types'
 
 const recording = ref(false)
@@ -111,6 +112,12 @@ export function useExport() {
   const beatStore = useBeatMakerStore()
   const { getMasterOutput, ensureToneStarted } = useAudio()
   const { play, stop, ensureWatchers } = useBeatMaker()
+  const { show, update } = useToast()
+
+  function durationLabel(): string {
+    const secs = defaultDurationSeconds()
+    return `${secs.toFixed(1)}s of audio`
+  }
 
   async function recordMasterRealtime(durationSec: number): Promise<Blob | null> {
     await ensureToneStarted()
@@ -140,11 +147,27 @@ export function useExport() {
   async function exportWav() {
     if (exporting.value) return
     exporting.value = true
+    const toastId = show({
+      type: 'loading',
+      title: 'Rendering WAV…',
+      subtitle: `Recording ${durationLabel()} in real time`,
+    })
     try {
       const blob = await recordMasterRealtime(defaultDurationSeconds() + 0.5)
-      if (!blob) return
+      if (!blob) {
+        update(toastId, { type: 'error', title: 'WAV export failed', subtitle: 'No master output', duration: 3500 })
+        return
+      }
       const buffer = await blobToBuffer(blob)
       downloadBlob(bufferToWavBlob(buffer), `klabmusic-${Date.now()}.wav`)
+      update(toastId, { type: 'success', title: 'WAV downloaded', subtitle: undefined, duration: 1400 })
+    } catch (e) {
+      update(toastId, {
+        type: 'error',
+        title: 'WAV export failed',
+        subtitle: e instanceof Error ? e.message : 'Unknown error',
+        duration: 3500,
+      })
     } finally {
       exporting.value = false
     }
@@ -153,18 +176,50 @@ export function useExport() {
   async function exportMp3() {
     if (exporting.value) return
     exporting.value = true
+    const toastId = show({
+      type: 'loading',
+      title: 'Rendering MP3…',
+      subtitle: `Recording ${durationLabel()} then encoding`,
+    })
     try {
       const blob = await recordMasterRealtime(defaultDurationSeconds() + 0.5)
-      if (!blob) return
+      if (!blob) {
+        update(toastId, { type: 'error', title: 'MP3 export failed', subtitle: 'No master output', duration: 3500 })
+        return
+      }
+      update(toastId, { title: 'Encoding MP3…', subtitle: 'Compressing at 192 kbps' })
       const buffer = await blobToBuffer(blob)
       const mp3 = await bufferToMp3Blob(buffer)
       downloadBlob(mp3, `klabmusic-${Date.now()}.mp3`)
+      update(toastId, { type: 'success', title: 'MP3 downloaded', subtitle: undefined, duration: 1400 })
+    } catch (e) {
+      update(toastId, {
+        type: 'error',
+        title: 'MP3 export failed',
+        subtitle: e instanceof Error ? e.message : 'Unknown error',
+        duration: 3500,
+      })
     } finally {
       exporting.value = false
     }
   }
 
   async function exportMidi() {
+    const toastId = show({ type: 'loading', title: 'Building MIDI…' })
+    try {
+      await exportMidiInner()
+      update(toastId, { type: 'success', title: 'MIDI downloaded', duration: 1400 })
+    } catch (e) {
+      update(toastId, {
+        type: 'error',
+        title: 'MIDI export failed',
+        subtitle: e instanceof Error ? e.message : 'Unknown error',
+        duration: 3500,
+      })
+    }
+  }
+
+  async function exportMidiInner() {
     interface MidiModule {
       default?: {
         Track: new () => MidiTrack
@@ -185,7 +240,9 @@ export function useExport() {
     }
     const mod = (await import('midi-writer-js')) as unknown as MidiModule
     const Lib = mod.default ?? mod
-    if (!Lib.Track || !Lib.Writer || !Lib.NoteEvent) return
+    if (!Lib.Track || !Lib.Writer || !Lib.NoteEvent) {
+      throw new Error('MIDI library failed to load')
+    }
 
     const stepCount = beatStore.stepCount
     const ticksPerStep = stepCount === 32 ? 64 : 128
