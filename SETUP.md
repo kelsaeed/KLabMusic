@@ -66,15 +66,16 @@ Project → **Domains → Add** → point your DNS at Vercel. They'll handle SSL
 
 ## 4. Supabase Edge Function for AI (free, no payment method)
 
-The AI features call a Supabase Edge Function (`ai-music`) that proxies **Google Gemini** (free tier — 1500 requests/day, no credit card). Function source is already in this repo at [`supabase/functions/ai-music/index.ts`](supabase/functions/ai-music/index.ts).
+The AI features call a Supabase Edge Function (`ai-music`) that proxies **Groq** (free tier — 14,400 requests/day, available globally, no credit card). Function source is already in this repo at [`supabase/functions/ai-music/index.ts`](supabase/functions/ai-music/index.ts).
+
+> *Why Groq instead of Gemini?* Google's "free" tier is geo-restricted — many countries get `limit: 0` quotas. Groq's free tier works worldwide.
 
 **Everything below is web-UI only — no terminal needed.**
 
-### 4a. Get a free Gemini API key
-1. Go to https://aistudio.google.com/apikey
-2. Sign in with any Google account.
-3. Click **Create API key** → "Create API key in new project" if asked.
-4. Copy the `AIza...` key.
+### 4a. Get a free Groq API key
+1. Go to https://console.groq.com/keys
+2. Sign up (email or Google) — no credit card asked.
+3. Click **Create API Key** → name it `klabmusic` → copy the `gsk_...` key.
 
 ### 4b. Deploy the Edge Function from the Supabase dashboard
 1. https://supabase.com/dashboard → your KLabMusic project.
@@ -83,12 +84,12 @@ The AI features call a Supabase Edge Function (`ai-music`) that proxies **Google
 4. In the in-browser code editor, **delete everything and paste** the full contents of [`supabase/functions/ai-music/index.ts`](supabase/functions/ai-music/index.ts).
 5. **Deploy function**. Wait ~10 sec until status is green.
 
-### 4c. Add the Gemini key as a secret
+### 4c. Add the Groq key as a secret
 1. Project Settings (gear, bottom-left) → **Edge Functions** → **Secrets**.
    *(Or: Edge Functions page → click `ai-music` → "Manage Secrets".)*
 2. **Add new secret**.
-   - Name: `GEMINI_API_KEY`
-   - Value: paste your `AIza...` key
+   - Name: `GROQ_API_KEY`
+   - Value: paste your `gsk_...` key
 3. Save.
 
 ### 4d. Test it
@@ -97,9 +98,9 @@ The AI features call a Supabase Edge Function (`ai-music`) that proxies **Google
 3. Reply streams in token-by-token.
 
 Errors and what they mean:
-- `GEMINI_API_KEY not set...` → secret didn't save, redo step 4c.
-- `Gemini API 400` → bad request shape; tell me the message.
-- `Gemini API 429` → you hit the free 1500/day quota; resets in 24h.
+- `GROQ_API_KEY not set...` → secret didn't save, redo step 4c.
+- `Groq API 401` → key is wrong or got rotated; create a fresh one and re-save the secret.
+- `Groq API 429` → you hit the free 14,400/day quota; resets in 24h.
 
 ### Want to swap providers later?
 Edit the function source, change the upstream URL + body (Groq, OpenRouter, Anthropic, OpenAI all work), redeploy via the web UI. The frontend doesn't change — it consumes a generic `{text}` SSE shape that the function normalizes.

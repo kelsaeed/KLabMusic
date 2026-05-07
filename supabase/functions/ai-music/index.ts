@@ -1,5 +1,5 @@
 // KLabMusic — AI proxy
-// Forwards chat completion requests to Google Gemini (free tier, no credit card)
+// Forwards chat completion requests to Groq (free tier, global, no credit card)
 // and streams the response back as a simple Server-Sent Event format:
 //   data: {"text": "hello"}
 //   data: {"text": " world"}
@@ -8,9 +8,9 @@
 // Deploy via the Supabase web dashboard:
 //   Edge Functions → Deploy new function → name: ai-music → paste this file
 // Then add the secret:
-//   Project Settings → Edge Functions → Secrets → GEMINI_API_KEY = AIza...
+//   Project Settings → Edge Functions → Secrets → GROQ_API_KEY = gsk_...
 //
-// Get a free Gemini key at https://aistudio.google.com/apikey
+// Get a free Groq key at https://console.groq.com/keys
 
 const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
@@ -49,10 +49,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return jsonResponse({ error: 'Method not allowed' }, 405)
   }
 
-  const apiKey = Deno.env.get('GEMINI_API_KEY')
+  const apiKey = Deno.env.get('GROQ_API_KEY')
   if (!apiKey) {
     return jsonResponse(
-      { error: 'GEMINI_API_KEY not set on this Edge Function. Add it in Project Settings → Edge Functions → Secrets.' },
+      { error: 'GROQ_API_KEY not set on this Edge Function. Add it in Project Settings → Edge Functions → Secrets.' },
       500,
     )
   }
@@ -68,34 +68,28 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return jsonResponse({ error: 'messages[] is required' }, 400)
   }
 
-  const model = body.model ?? 'gemini-2.0-flash'
-  const contents = body.messages.map((m) => ({
-    role: m.role === 'assistant' ? 'model' : 'user',
-    parts: [{ text: m.content }],
-  }))
-  const requestBody: Record<string, unknown> = {
-    contents,
-    generationConfig: {
-      maxOutputTokens: body.max_tokens ?? 1024,
-      temperature: 0.7,
-    },
-  }
-  if (body.system) {
-    requestBody.systemInstruction = { parts: [{ text: body.system }] }
+  const requestBody = {
+    model: body.model ?? 'llama-3.3-70b-versatile',
+    stream: true,
+    max_tokens: body.max_tokens ?? 1024,
+    temperature: 0.7,
+    messages: body.system
+      ? [{ role: 'system', content: body.system }, ...body.messages]
+      : body.messages,
   }
 
-  const upstreamUrl =
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${encodeURIComponent(apiKey)}`
-
-  const upstream = await fetch(upstreamUrl, {
+  const upstream = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      authorization: `Bearer ${apiKey}`,
+      'content-type': 'application/json',
+    },
     body: JSON.stringify(requestBody),
   })
 
   if (!upstream.ok || !upstream.body) {
-    const errText = await upstream.text().catch(() => 'Gemini API error')
-    return jsonResponse({ error: `Gemini API ${upstream.status}: ${errText}` }, upstream.status)
+    const errText = await upstream.text().catch(() => 'Groq API error')
+    return jsonResponse({ error: `Groq API ${upstream.status}: ${errText}` }, upstream.status)
   }
 
   const reader = upstream.body.getReader()
@@ -116,11 +110,15 @@ Deno.serve(async (req: Request): Promise<Response> => {
             if (!line.startsWith('data: ')) continue
             const data = line.slice(6).trim()
             if (!data) continue
+            if (data === '[DONE]') {
+              controller.enqueue(encoder.encode(sseEvent({ done: true })))
+              return
+            }
             try {
               const event = JSON.parse(data) as {
-                candidates?: { content?: { parts?: { text?: string }[] } }[]
+                choices?: { delta?: { content?: string } }[]
               }
-              const text = event.candidates?.[0]?.content?.parts?.[0]?.text
+              const text = event.choices?.[0]?.delta?.content
               if (text) controller.enqueue(encoder.encode(sseEvent({ text })))
             } catch {
               /* skip malformed line */
