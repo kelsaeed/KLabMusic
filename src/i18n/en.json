@@ -94,6 +94,30 @@
     "exportWav": "Export WAV",
     "saveCloud": "Save to cloud"
   },
+  "help": {
+    "title": "Keyboard shortcuts",
+    "footer": "Press ? to toggle this panel",
+    "global": "Global",
+    "keyBindings": "Key bindings (default Piano preset)",
+    "beatMaker": "Beat Maker",
+    "recorder": "Recorder",
+    "toggleHelp": "Show/hide this panel",
+    "toggleAi": "Toggle AI assistant",
+    "octave": "Octave down / up",
+    "damp": "Damp all ringing notes",
+    "pianoWhite": "White keys C4–C5",
+    "pianoBlack": "Black keys (sharps)",
+    "playStop": "Play / stop transport",
+    "toggleStep": "Toggle a step on/off",
+    "stepVelocity": "Set step velocity",
+    "paintSteps": "Paint multiple steps",
+    "dropClip": "Drop an audio file to import"
+  },
+  "notFound": {
+    "title": "Track not found",
+    "hint": "We hit a wrong note. The page you wanted isn't here.",
+    "home": "Back home"
+  },
   "ai": {
     "title": "AI Assistant",
     "short": "AI",

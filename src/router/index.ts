@@ -24,5 +24,10 @@ export const router = createRouter({
       component: () => import('@/views/RoomView.vue'),
       props: true,
     },
+    {
+      path: '/:pathMatch(.*)*',
+      name: 'not-found',
+      component: () => import('@/views/NotFoundView.vue'),
+    },
   ],
 })

@@ -6,6 +6,7 @@ import ThemeSwitcher from './theme/ThemeSwitcher.vue'
 import LocaleSwitcher from './LocaleSwitcher.vue'
 import BindingsModal from './keybindings/BindingsModal.vue'
 import AIPanel from './ai/AIPanel.vue'
+import ShortcutsHelp from './ShortcutsHelp.vue'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -13,13 +14,20 @@ const isHome = computed(() => route.name === 'home')
 const isInRoom = computed(() => route.name === 'room' || route.name === 'room-lobby')
 const bindingsOpen = ref(false)
 const aiOpen = ref(false)
+const helpOpen = ref(false)
 
 function onKey(e: KeyboardEvent) {
+  const tag = (e.target as HTMLElement | null)?.tagName
+  const inField = tag === 'INPUT' || tag === 'TEXTAREA'
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
-    const tag = (e.target as HTMLElement | null)?.tagName
-    if (tag === 'INPUT' || tag === 'TEXTAREA') return
+    if (inField) return
     e.preventDefault()
     aiOpen.value = !aiOpen.value
+    return
+  }
+  if (e.key === '?' && !inField) {
+    e.preventDefault()
+    helpOpen.value = !helpOpen.value
   }
 }
 
@@ -44,6 +52,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       >
         <span class="kbd-icon">🤖</span>
         <span class="hide-sm">{{ t('ai.short') }}</span>
+      </button>
+      <button
+        class="icon-btn"
+        :title="t('help.title') + ' (?)'"
+        @click="helpOpen = true"
+      >
+        <span class="kbd-icon mono">?</span>
       </button>
       <button
         v-if="!isHome"
@@ -72,6 +87,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
     <BindingsModal :open="bindingsOpen" @close="bindingsOpen = false" />
     <AIPanel :open="aiOpen" @close="aiOpen = false" />
+    <ShortcutsHelp :open="helpOpen" @close="helpOpen = false" />
   </header>
 </template>
 
