@@ -30,9 +30,6 @@ interface InstrumentNode {
 }
 
 const PIANO_BASE = 'https://tonejs.github.io/audio/salamander/'
-const EP_BASE = 'https://tonejs.github.io/audio/electric-piano/'
-const GUITAR_BASE = 'https://tonejs.github.io/audio/guitar-acoustic/'
-const DRUM_BASE = 'https://tonejs.github.io/audio/drum-samples/'
 
 const PIANO_URLS: Record<string, string> = {
   A0: 'A0.mp3', C1: 'C1.mp3', 'D#1': 'Ds1.mp3', 'F#1': 'Fs1.mp3',
@@ -43,17 +40,6 @@ const PIANO_URLS: Record<string, string> = {
   A5: 'A5.mp3', C6: 'C6.mp3', 'D#6': 'Ds6.mp3', 'F#6': 'Fs6.mp3',
   A6: 'A6.mp3', C7: 'C7.mp3', 'D#7': 'Ds7.mp3', 'F#7': 'Fs7.mp3',
   A7: 'A7.mp3', C8: 'C8.mp3',
-}
-const EP_URLS: Record<string, string> = { A1: 'A1.mp3', A2: 'A2.mp3', A3: 'A3.mp3', A4: 'A4.mp3', A5: 'A5.mp3' }
-const GUITAR_URLS: Record<string, string> = { A1: 'A1.mp3', A2: 'A2.mp3', A3: 'A3.mp3', A4: 'A4.mp3' }
-const DRUM_URLS: Record<string, string> = {
-  kick: `${DRUM_BASE}kick.mp3`,
-  snare: `${DRUM_BASE}snare.mp3`,
-  hihat: `${DRUM_BASE}hihat.mp3`,
-  hihatO: `${DRUM_BASE}hihat-open.mp3`,
-  clap: `${DRUM_BASE}clap.mp3`,
-  tom: `${DRUM_BASE}tom.mp3`,
-  ride: `${DRUM_BASE}ride.mp3`,
 }
 
 const nodes = new Map<InstrumentId, InstrumentNode>()
@@ -96,12 +82,36 @@ function buildPiano(): VoiceAdapter {
   return wrapPolyphonic(s)
 }
 function buildElectricPiano(): VoiceAdapter {
-  const s = new Tone.Sampler({ urls: EP_URLS, baseUrl: EP_BASE })
-  return wrapPolyphonic(s)
+  const synth = new Tone.PolySynth(Tone.AMSynth, {
+    harmonicity: 2.5,
+    oscillator: { type: 'sine' },
+    envelope: { attack: 0.005, decay: 1.4, sustain: 0.2, release: 0.6 },
+    modulation: { type: 'square' },
+    modulationEnvelope: { attack: 0.01, decay: 0.6, sustain: 0.2, release: 0.5 },
+  })
+  return {
+    attack: (note, vel) => synth.triggerAttack(note, undefined, Math.max(0.01, vel / 127)),
+    release: (note) => (note ? synth.triggerRelease(note) : synth.releaseAll()),
+    output: synth,
+    setVolumeDb: (db) => { synth.volume.value = db },
+    setBendCents: (c) => synth.set({ detune: c }),
+    dispose: () => synth.dispose(),
+  }
 }
+
 function buildGuitar(): VoiceAdapter {
-  const s = new Tone.Sampler({ urls: GUITAR_URLS, baseUrl: GUITAR_BASE })
-  return wrapPolyphonic(s)
+  const synth = new Tone.PolySynth(Tone.Synth, {
+    oscillator: { type: 'triangle' },
+    envelope: { attack: 0.003, decay: 0.6, sustain: 0.05, release: 0.6 },
+  })
+  return {
+    attack: (note, vel) => synth.triggerAttack(note, undefined, Math.max(0.01, vel / 127)),
+    release: (note) => (note ? synth.triggerRelease(note) : synth.releaseAll()),
+    output: synth,
+    setVolumeDb: (db) => { synth.volume.value = db },
+    setBendCents: (c) => synth.set({ detune: c }),
+    dispose: () => synth.dispose(),
+  }
 }
 function wrapPolyphonic(s: Tone.Sampler): VoiceAdapter {
   return {
@@ -182,19 +192,97 @@ function buildOrgan(): VoiceAdapter {
 }
 
 function buildDrums(): VoiceAdapter {
-  const players = new Tone.Players(DRUM_URLS)
+  const out = new Tone.Gain(1)
+  const kick = new Tone.MembraneSynth({
+    pitchDecay: 0.05,
+    octaves: 8,
+    envelope: { attack: 0.001, decay: 0.4, sustain: 0, release: 0.1 },
+  }).connect(out)
+  const tom = new Tone.MembraneSynth({
+    pitchDecay: 0.08,
+    octaves: 4,
+    envelope: { attack: 0.002, decay: 0.35, sustain: 0, release: 0.1 },
+  }).connect(out)
+  const snareNoise = new Tone.NoiseSynth({
+    noise: { type: 'white' },
+    envelope: { attack: 0.001, decay: 0.18, sustain: 0 },
+  })
+  const snareFilter = new Tone.Filter(1800, 'bandpass').connect(out)
+  snareNoise.connect(snareFilter)
+  const hihat = new Tone.MetalSynth({
+    envelope: { attack: 0.001, decay: 0.06, release: 0.02 },
+    harmonicity: 5.1,
+    modulationIndex: 32,
+    resonance: 4000,
+    octaves: 1.5,
+  }).connect(out)
+  hihat.volume.value = -16
+  const hihatO = new Tone.MetalSynth({
+    envelope: { attack: 0.001, decay: 0.4, release: 0.1 },
+    harmonicity: 5.1,
+    modulationIndex: 32,
+    resonance: 4000,
+    octaves: 1.5,
+  }).connect(out)
+  hihatO.volume.value = -16
+  const ride = new Tone.MetalSynth({
+    envelope: { attack: 0.001, decay: 0.8, release: 0.3 },
+    harmonicity: 8,
+    modulationIndex: 24,
+    resonance: 3000,
+    octaves: 2,
+  }).connect(out)
+  ride.volume.value = -18
+  const clapNoise = new Tone.NoiseSynth({
+    noise: { type: 'pink' },
+    envelope: { attack: 0.001, decay: 0.15, sustain: 0 },
+  })
+  const clapFilter = new Tone.Filter(1200, 'bandpass').connect(out)
+  clapNoise.connect(clapFilter)
+
   return {
     attack: (name, vel) => {
-      if (!players.has(name)) return
-      const p = players.player(name)
-      p.volume.value = Tone.gainToDb(Math.max(0.01, vel / 127))
-      p.start()
+      const v = Math.max(0.01, vel / 127)
+      const dbBoost = Tone.gainToDb(v)
+      switch (name) {
+        case 'kick':
+          kick.volume.value = dbBoost
+          kick.triggerAttackRelease('C1', '8n')
+          return
+        case 'tom':
+          tom.volume.value = dbBoost
+          tom.triggerAttackRelease('A1', '8n')
+          return
+        case 'snare':
+          snareNoise.volume.value = dbBoost - 4
+          snareNoise.triggerAttackRelease('16n')
+          return
+        case 'hihat':
+          hihat.triggerAttackRelease('C4', '32n', Tone.now(), v)
+          return
+        case 'hihatO':
+          hihatO.triggerAttackRelease('C4', '8n', Tone.now(), v)
+          return
+        case 'ride':
+          ride.triggerAttackRelease('C4', '4n', Tone.now(), v)
+          return
+        case 'clap':
+          clapNoise.volume.value = dbBoost - 3
+          clapNoise.triggerAttackRelease('16n')
+          return
+      }
     },
     release: () => {},
-    output: players,
-    setVolumeDb: (db) => { players.volume.value = db },
+    output: out,
+    setVolumeDb: (db) => { out.gain.value = Tone.dbToGain(db) },
     setBendCents: () => {},
-    dispose: () => players.dispose(),
+    dispose: () => {
+      kick.dispose(); tom.dispose()
+      snareNoise.dispose(); snareFilter.dispose()
+      hihat.dispose(); hihatO.dispose(); ride.dispose()
+      clapNoise.dispose(); clapFilter.dispose()
+      out.dispose()
+    },
   }
 }
 

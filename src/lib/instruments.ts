@@ -10,14 +10,14 @@ export const INSTRUMENTS: Record<InstrumentId, InstrumentMeta> = {
   },
   electricPiano: {
     id: 'electricPiano',
-    category: 'sampled',
+    category: 'synth',
     playMode: 'note',
     icon: '🎼',
     available: true,
   },
   guitar: {
     id: 'guitar',
-    category: 'sampled',
+    category: 'synth',
     playMode: 'note',
     icon: '🎸',
     available: true,
