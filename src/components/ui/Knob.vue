@@ -124,7 +124,10 @@ function onWheel(e: WheelEvent) {
   user-select: none;
 }
 .knob-wrap.disabled {
-  opacity: 0.4;
+  /* 0.65 stays clearly "off" visually but keeps the MIN/MAX/value/label
+     spans above the AA contrast threshold on every theme. 0.4 was failing
+     the Lighthouse contrast audit on all 7 disabled-by-default effect knobs. */
+  opacity: 0.65;
   pointer-events: none;
 }
 .knob {
@@ -179,7 +182,7 @@ function onWheel(e: WheelEvent) {
 .label {
   font-size: 0.7rem;
   font-family: var(--font-mono);
-  color: var(--text-muted);
+  color: var(--text-primary);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
