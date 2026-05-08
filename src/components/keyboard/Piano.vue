@@ -104,6 +104,7 @@ function onUp(note: string) {
           '--pos': k.leftPercent + '%',
           '--size': 100 / (octaveCount * 7) + '%',
         }"
+        :aria-label="k.note"
         @pointerdown="onDown(k.note, $event)"
         @pointerup="onUp(k.note)"
         @pointercancel="onUp(k.note)"
@@ -124,6 +125,7 @@ function onUp(note: string) {
           '--pos': `calc(${k.leftPercent}% - ${100 / (octaveCount * 7) * 0.3}%)`,
           '--size': (100 / (octaveCount * 7) * 0.6) + '%',
         }"
+        :aria-label="k.note"
         @pointerdown="onDown(k.note, $event)"
         @pointerup="onUp(k.note)"
         @pointercancel="onUp(k.note)"

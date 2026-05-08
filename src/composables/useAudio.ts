@@ -72,16 +72,27 @@ function waitForFirstGesture(): Promise<void> {
   return firstGesturePromise
 }
 
+function hasUserActivation(): boolean {
+  // navigator.userActivation is the spec'd way to check. Available in Chrome
+  // 90+, Firefox 99+, Safari 16.4+. Fall back to false on older browsers —
+  // they'll just wait for the gesture listener.
+  const ua = (navigator as unknown as { userActivation?: { isActive: boolean } }).userActivation
+  return ua?.isActive === true
+}
+
 async function ensureToneStarted() {
   if (toneStarted && Tone.getContext().state === 'running') return
-  // Try to resume the context. On Chrome this only works inside a user
-  // gesture's transient activation window; otherwise it's a no-op + warning.
-  try {
-    await Tone.start()
-  } catch {
-    /* swallow — we'll retry below if still suspended */
+  // Only call Tone.start() when we actually have user activation. Calling
+  // context.resume() without activation is what produces the Chrome
+  // "AudioContext was not allowed to start" warning — even when we ignore
+  // the result. So if there's no activation, skip straight to waiting.
+  if (Tone.getContext().state !== 'running' && hasUserActivation()) {
+    try {
+      await Tone.start()
+    } catch {
+      /* swallow */
+    }
   }
-  // If we couldn't resume yet (no user gesture), wait for the next one.
   if (Tone.getContext().state !== 'running') {
     await waitForFirstGesture()
     await Tone.start()
