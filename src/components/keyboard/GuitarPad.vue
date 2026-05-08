@@ -114,39 +114,50 @@ function toggleNotation() {
 // — Drag-to-strum support —
 //
 // Holding the pointer down and sliding across cells should pluck each cell
-// the pointer enters, both for mouse-drag and touch-swipe. Two pieces are
-// needed for this to work correctly:
+// the pointer enters, on mouse, pen, AND touch. The previous implementation
+// used per-cell @pointerenter, which works on mouse but is unreliable on
+// touch — even after releasePointerCapture, mobile browsers (especially
+// iOS Safari and older Android Chrome) do not consistently fire enter/leave
+// during a touch drag, so a swipe across the strings would skip cells or
+// not register at all.
 //
-// 1. Touch pointers default-capture the element they started on, so without
-//    intervention pointerenter never fires on neighbouring elements during a
-//    drag. Calling releasePointerCapture() on pointerdown opts out of that
-//    capture so subsequent moves report the element actually under the
-//    pointer.
-//
-// 2. We track the last-played note on this drag so a stationary pointer
-//    inside a single cell doesn't retrigger over and over.
+// The robust cross-platform pattern is a container-level handler that uses
+// document.elementFromPoint() on each pointermove to locate whichever cell
+// is currently under the pointer. We mark every cell with data-note so the
+// container handler can read the note off the DOM without going back through
+// Vue. This works the same way on mouse, pen, and touch.
 const dragging = ref(false)
 const lastDragNote = ref<string>('')
 
-function startDrag(e: PointerEvent, note: string) {
-  ;(e.currentTarget as Element)?.releasePointerCapture?.(e.pointerId)
-  dragging.value = true
+function pluckAtPoint(clientX: number, clientY: number, force: boolean) {
+  const el = document.elementFromPoint(clientX, clientY)
+  if (!el) return
+  const cell = (el as Element).closest('[data-note]') as HTMLElement | null
+  if (!cell) return
+  const note = cell.dataset.note
+  if (!note) return
+  if (!force && lastDragNote.value === note) return
   lastDragNote.value = note
   pluck(note)
 }
 
-function dragInto(e: PointerEvent, note: string) {
+function onContainerDown(e: PointerEvent) {
+  // Don't capture the pointer — capture would lock subsequent pointermove
+  // events to the cell that was first hit and prevent us from finding the
+  // cell under the pointer as it moves.
+  ;(e.target as Element)?.releasePointerCapture?.(e.pointerId)
+  dragging.value = true
+  pluckAtPoint(e.clientX, e.clientY, true)
+}
+
+function onContainerMove(e: PointerEvent) {
   if (!dragging.value) return
-  // e.buttons === 0 means the user released the button outside our handlers
-  // (e.g., released over a non-pad element). Bail out so we don't accidentally
-  // strum on simple hovering.
   if (e.pointerType === 'mouse' && e.buttons === 0) {
     dragging.value = false
+    lastDragNote.value = ''
     return
   }
-  if (lastDragNote.value === note) return
-  lastDragNote.value = note
-  pluck(note)
+  pluckAtPoint(e.clientX, e.clientY, false)
 }
 
 function endDrag() {
@@ -190,7 +201,11 @@ onBeforeUnmount(() => {
 
     <!-- FRETBOARD -->
     <section v-if="mode === 'fretboard'" class="fretboard">
-      <div class="fb-grid">
+      <div
+        class="fb-grid"
+        @pointerdown="onContainerDown"
+        @pointermove="onContainerMove"
+      >
         <span class="fb-corner" />
         <span
           v-for="f in FRET_COUNT"
@@ -215,8 +230,7 @@ onBeforeUnmount(() => {
             marker: FRET_MARKERS.has(cell.fret) || cell.fret === DOUBLE_MARKER,
           }"
           :style="{ '--string': cell.string, '--fret': cell.fret }"
-          @pointerdown="startDrag($event, cell.note)"
-          @pointerenter="dragInto($event, cell.note)"
+          :data-note="cell.note"
         >
           <span class="fret-note mono">{{ formatNote(cell.note, audioStore.notation) }}</span>
         </button>
@@ -226,14 +240,17 @@ onBeforeUnmount(() => {
     <!-- OPEN STRINGS -->
     <section v-else-if="mode === 'strings'" class="strings-panel">
       <p class="hint mono">{{ t('guitar.stringsHint') }}</p>
-      <div class="strings-row">
+      <div
+        class="strings-row"
+        @pointerdown="onContainerDown"
+        @pointermove="onContainerMove"
+      >
         <button
           v-for="s in [...STRINGS].reverse()"
           :key="s.open"
           class="string"
           :class="{ flash: flashed === s.open }"
-          @pointerdown="startDrag($event, s.open)"
-          @pointerenter="dragInto($event, s.open)"
+          :data-note="s.open"
         >
           <span class="line" />
           <span class="lbl mono">{{ t('guitar.stringLabel', { n: s.idx }) }}</span>
@@ -263,14 +280,17 @@ onBeforeUnmount(() => {
           <p class="hint mono">{{ t('guitar.chordPlayHint') }}</p>
         </header>
 
-        <div class="chord-strings">
+        <div
+          class="chord-strings"
+          @pointerdown="onContainerDown"
+          @pointermove="onContainerMove"
+        >
           <button
             v-for="(note, i) in [...selectedChord.notes].reverse()"
             :key="`${selectedChord.name}-${i}`"
             class="chord-string"
             :class="{ flash: flashed === note }"
-            @pointerdown="startDrag($event, note)"
-            @pointerenter="dragInto($event, note)"
+            :data-note="note"
           >
             <span class="line" />
             <span class="note mono">{{ formatNote(note, audioStore.notation) }}</span>

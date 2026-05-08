@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
 import { useAudioStore } from '@/stores/audio'
 import { useKeyBindingsStore } from '@/stores/keybindings'
 import { formatNote } from '@/lib/notation'
@@ -80,21 +80,77 @@ function velocityFromEvent(e: PointerEvent, target: HTMLElement): number {
   return Math.round(30 + ratio * 97)
 }
 
-function onDown(note: string, e: PointerEvent) {
-  e.preventDefault()
-  const target = e.currentTarget as HTMLElement
-  target.setPointerCapture(e.pointerId)
+// — Swipe-to-play (glissando) —
+//
+// On both desktop drag and mobile swipe, sliding across keys should release
+// the previous note and press the new one — same gesture you'd make running
+// a finger along a real piano. Single-tap behaviour is unchanged: pointerdown
+// presses, pointerup releases.
+//
+// We listen at the bed-container level and use document.elementFromPoint() to
+// find which key is under the pointer on each move. This is the only pattern
+// that works reliably across mouse, pen, and touch — pointerenter/leave on
+// individual keys is not consistent on iOS Safari and older Android Chrome
+// during a touch drag, even after releasePointerCapture.
+const heldNote = ref<string>('')
+const swiping = ref(false)
+
+function pressAt(target: HTMLElement, e: PointerEvent) {
+  const note = target.dataset.note
+  if (!note) return
+  // Glissando: lift the previously-held note before pressing the new one,
+  // so we never have two simultaneously-held swipe notes ringing.
+  if (heldNote.value && heldNote.value !== note) emit('release', heldNote.value)
+  if (heldNote.value === note) return
+  heldNote.value = note
   emit('press', { note, velocity: velocityFromEvent(e, target) })
 }
 
-function onUp(note: string) {
-  emit('release', note)
+function findKeyAt(x: number, y: number): HTMLElement | null {
+  const el = document.elementFromPoint(x, y)
+  if (!el) return null
+  return (el as Element).closest('[data-note]') as HTMLElement | null
 }
+
+function onBedDown(e: PointerEvent) {
+  e.preventDefault()
+  ;(e.target as Element)?.releasePointerCapture?.(e.pointerId)
+  swiping.value = true
+  const key = findKeyAt(e.clientX, e.clientY)
+  if (key) pressAt(key, e)
+}
+
+function onBedMove(e: PointerEvent) {
+  if (!swiping.value) return
+  if (e.pointerType === 'mouse' && e.buttons === 0) {
+    if (heldNote.value) emit('release', heldNote.value)
+    heldNote.value = ''
+    swiping.value = false
+    return
+  }
+  const key = findKeyAt(e.clientX, e.clientY)
+  if (key) pressAt(key, e)
+}
+
+function endSwipe() {
+  if (heldNote.value) emit('release', heldNote.value)
+  heldNote.value = ''
+  swiping.value = false
+}
+
+onMounted(() => {
+  window.addEventListener('pointerup', endSwipe)
+  window.addEventListener('pointercancel', endSwipe)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('pointerup', endSwipe)
+  window.removeEventListener('pointercancel', endSwipe)
+})
 </script>
 
 <template>
   <div class="piano">
-    <div class="bed">
+    <div class="bed" @pointerdown="onBedDown" @pointermove="onBedMove">
       <button
         v-for="k in whiteKeys"
         :key="k.note"
@@ -105,10 +161,7 @@ function onUp(note: string) {
           '--size': 100 / (octaveCount * 7) + '%',
         }"
         :aria-label="k.note"
-        @pointerdown="onDown(k.note, $event)"
-        @pointerup="onUp(k.note)"
-        @pointercancel="onUp(k.note)"
-        @pointerleave="onUp(k.note)"
+        :data-note="k.note"
       >
         <span v-if="showLabels && bindingKeyFor(k.note)" class="kb-hint mono">
           {{ bindingKeyFor(k.note) }}
@@ -126,10 +179,7 @@ function onUp(note: string) {
           '--size': (100 / (octaveCount * 7) * 0.6) + '%',
         }"
         :aria-label="k.note"
-        @pointerdown="onDown(k.note, $event)"
-        @pointerup="onUp(k.note)"
-        @pointercancel="onUp(k.note)"
-        @pointerleave="onUp(k.note)"
+        :data-note="k.note"
       >
         <span v-if="showLabels && bindingKeyFor(k.note)" class="kb-hint mono">
           {{ bindingKeyFor(k.note) }}

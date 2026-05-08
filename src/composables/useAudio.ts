@@ -118,14 +118,26 @@ function buildGlobalFx(): FxChain {
 
 function ensureMaster() {
   if (masterReady) return
-  // Boot directly at the user's chosen master dB. The previous design booted
-  // at -100 and ramped on first gesture, but the ramp lived in
-  // ensureToneStarted which runs BEFORE this function — so masterVolume was
-  // null when the ramp tried to schedule, and the volume stayed at -100
-  // forever. Symptom: the page was silent on every refresh until the user
-  // moved the master slider (which fires the rampTo watcher). Initializing
-  // at the target dB makes audio audible from the very first key press.
-  masterVolume = new Tone.Volume(useAudioStore().masterVolumeDb)
+  // Boot well below audible (-60 dB) and schedule a fast linear ramp UP to the
+  // user's target dB. Two things this protects against:
+  //   1. The "click" produced when AudioContext.resume() lands on a non-zero
+  //      buffer — without an upward fade you can hear that as a soft pop.
+  //   2. The "wshhhhh" some mobile listeners describe when the very first
+  //      sample plays into a fresh context — chrome's audio worker cold-starts
+  //      and the first frames can carry buffer noise.
+  //
+  // The schedule is set on the AudioParam so it executes whenever the context
+  // actually starts running — Tone.now() returns the correct context time and
+  // schedules at audio-rate even if the context is currently suspended. We do
+  // it INSIDE ensureMaster instead of ensureToneStarted because the previous
+  // design ran the ramp before this function created masterVolume, leaving
+  // master clamped at -100 dB and producing the silent-on-refresh bug.
+  const targetDb = useAudioStore().masterVolumeDb
+  masterVolume = new Tone.Volume(-60)
+  const now = Tone.now()
+  masterVolume.volume.cancelScheduledValues(now)
+  masterVolume.volume.setValueAtTime(-60, now)
+  masterVolume.volume.linearRampToValueAtTime(targetDb, now + 0.25)
   chaosFilter = new Tone.Filter({ frequency: 20000, type: 'lowpass', Q: 1 })
   chaosReverb = new Tone.Reverb({ decay: 3, wet: 0 })
   chaosCrush = new Tone.BitCrusher(16)
@@ -169,7 +181,21 @@ function wrapPolyphonic(s: Tone.Sampler): VoiceAdapter {
 }
 
 function buildPiano(): VoiceAdapter {
-  return wrapPolyphonic(new Tone.Sampler({ urls: PIANO_URLS, baseUrl: PIANO_BASE }))
+  // attack: 0.003 — 3 ms upward fade on every note start. This is below the
+  // ear's perceptual threshold so the note still feels "instant", but it
+  // guarantees the first sample frame isn't a hard step from silence —
+  // which on mobile Chrome occasionally produces a faint "tss" / click that
+  // listeners hear as a hiss on every keypress.
+  // release: 0.18 — short downward fade on note end so a quick lift never
+  // chops the sample off mid-cycle and produces a "wrrrk" tail.
+  return wrapPolyphonic(
+    new Tone.Sampler({
+      urls: PIANO_URLS,
+      baseUrl: PIANO_BASE,
+      attack: 0.003,
+      release: 0.18,
+    }),
+  )
 }
 
 function buildElectricPiano(): VoiceAdapter {
@@ -275,7 +301,12 @@ function buildPad(): VoiceAdapter {
 }
 
 function buildLead(): VoiceAdapter {
-  const vibrato = new Tone.Vibrato(4, 0.3)
+  // Vibrato depth was 0.3 which produced an obvious 4 Hz pitch warble on
+  // every sustained note — listeners on mobile often described this as a
+  // "wshhhhh" or "weeoo" since at 0.3 the modulation is wider than the
+  // ear's pitch-stability threshold. 0.08 is musically present (you still
+  // hear the sustained note breathe) but no longer reads as a distortion.
+  const vibrato = new Tone.Vibrato(5, 0.08)
   const synth = new Tone.Synth({
     oscillator: { type: 'sawtooth' },
     envelope: { attack: 0.02, decay: 0.1, sustain: 0.6, release: 0.8 },

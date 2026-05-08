@@ -25,7 +25,15 @@ let watcherWired = false
 
 export function useChaos() {
   const audioStore = useAudioStore()
-  const { setMasterBend, glitchBurst, setChaosX, setChaosY, playOn, stopOn, ensureToneStarted } = useAudio()
+  const {
+    setMasterBend,
+    glitchBurst,
+    setChaosX,
+    setChaosY,
+    playOnTimed,
+    dampInstrument,
+    ensureToneStarted,
+  } = useAudio()
 
   if (!watcherWired) {
     watcherWired = true
@@ -53,8 +61,14 @@ export function useChaos() {
     if (chord.length === 0) return
     await ensureToneStarted()
     stopArp()
+    // Bound each note's length to a fraction of the step interval so synth
+    // voices auto-release at the right time. The previous "play next, then
+    // release the previous" pattern left the LAST note of the run sustaining
+    // forever after stop() — every Stop press needed a page refresh on bass /
+    // pad / lead because nothing released the final attack. Using the
+    // attackRelease path inside playOnTimed makes every note self-cleaning.
+    const noteDur = Math.max(0.04, intervalSec * Math.max(0.1, Math.min(1, gate)))
     let i = 0
-    let lastNote: string | null = null
     arpLoop = new Tone.Loop((time) => {
       let note: string
       if (mode === 'up') note = chord[i % chord.length]
@@ -64,21 +78,16 @@ export function useChaos() {
       i++
       const playNote = note
       Tone.getDraw().schedule(() => {
-        void playOn(audioStore.activeInstrument, playNote, 100)
-        if (lastNote && audioStore.activeInstrument !== 'drums') {
-          stopOn(audioStore.activeInstrument, lastNote)
-        }
-        lastNote = playNote
+        void playOnTimed(audioStore.activeInstrument, playNote, noteDur, 100)
       }, time)
       if (mode === 'chord') {
         for (let c = 1; c < chord.length; c++) {
           const otherNote = chord[c]
           Tone.getDraw().schedule(() => {
-            void playOn(audioStore.activeInstrument, otherNote, 100)
+            void playOnTimed(audioStore.activeInstrument, otherNote, noteDur, 100)
           }, time)
         }
       }
-      void gate
     }, intervalSec)
     arpLoop.start(0)
     if (Tone.getTransport().state !== 'started') Tone.getTransport().start()
@@ -91,6 +100,11 @@ export function useChaos() {
       arpLoop.dispose()
       arpLoop = null
     }
+    // Belt-and-braces: kill any voice that was last fired by the arp. A pending
+    // Tone.Draw schedule could still fire after we stop the loop and leave a
+    // synth note sustained, so explicitly damp the active instrument so the
+    // user-facing Stop button is always silence-immediate.
+    dampInstrument(audioStore.activeInstrument)
     arpRunning.value = false
   }
 
@@ -116,14 +130,12 @@ export function useChaos() {
 
   async function playMelody(notes: string[], stepSec = 0.25) {
     await ensureToneStarted()
+    const noteDur = stepSec * 0.85
     notes.forEach((note, i) => {
       const t = Tone.now() + i * stepSec
       void Tone.getDraw().schedule(() => {
-        void playOn(audioStore.activeInstrument, note, 100)
+        void playOnTimed(audioStore.activeInstrument, note, noteDur, 100)
       }, t)
-      void Tone.getDraw().schedule(() => {
-        if (audioStore.activeInstrument !== 'drums') stopOn(audioStore.activeInstrument, note)
-      }, t + stepSec * 0.85)
     })
   }
 
