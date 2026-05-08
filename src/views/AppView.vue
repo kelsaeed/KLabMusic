@@ -47,7 +47,9 @@ const active = ref<ModuleTab>('live')
 }
 .stage {
   flex: 1;
-  padding: clamp(0.75rem, 2vmin, 1.5rem) clamp(0.75rem, 2vw, 1.5rem) clamp(2rem, 5vh, 5rem);
+  /* Bottom padding must clear the fixed RecorderDrawer (56 px collapsed) so
+     the last track / control / lesson is reachable above the drawer. */
+  padding: clamp(0.75rem, 2vmin, 1.5rem) clamp(0.75rem, 2vw, 1.5rem) 5rem;
   display: flex;
   justify-content: center;
   width: 100%;
@@ -59,6 +61,6 @@ const active = ref<ModuleTab>('live')
   text-transform: uppercase;
 }
 @media (max-width: 600px) {
-  .stage { padding: 0.75rem 0.75rem 1.5rem; }
+  .stage { padding: 0.75rem 0.75rem 5rem; }
 }
 </style>
