@@ -410,6 +410,38 @@ async function ensureInstrument(id: InstrumentId): Promise<InstrumentNode | null
   return node
 }
 
+let prefetchScheduled = false
+
+function prefetchAvailableInstruments() {
+  if (prefetchScheduled || typeof window === 'undefined') return
+  prefetchScheduled = true
+
+  const idle = (window as Window & {
+    requestIdleCallback?: (cb: () => void, opts?: { timeout?: number }) => number
+  }).requestIdleCallback
+  const schedule = (cb: () => void, delay: number) => {
+    if (idle) {
+      window.setTimeout(() => idle(() => cb(), { timeout: 4000 }), delay)
+    } else {
+      window.setTimeout(cb, delay)
+    }
+  }
+
+  // Stagger by ~250 ms so we don't slam the network with parallel requests.
+  // Skip 'meme' (unavailable) and instruments already loaded.
+  const order: InstrumentId[] = [
+    'piano', 'guitar', 'drums', 'bass', 'electricPiano',
+    'pad', 'lead', 'organ', 'glitch',
+  ]
+  order.forEach((id, i) => {
+    if (!INSTRUMENTS[id].available) return
+    schedule(() => {
+      if (nodes.has(id)) return
+      void ensureInstrument(id)
+    }, 1200 + i * 250)
+  })
+}
+
 let watchersWired = false
 function wireWatchers() {
   if (watchersWired) return
@@ -556,5 +588,6 @@ export function useAudio() {
     toggleEffect,
     ensureInstrument,
     ensureToneStarted,
+    prefetchAvailableInstruments,
   }
 }

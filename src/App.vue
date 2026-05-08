@@ -4,17 +4,23 @@ import { useTheme } from '@/composables/useTheme'
 import { useLocale } from '@/i18n'
 import { useKeyBindings } from '@/composables/useKeyBindings'
 import { useAuth } from '@/composables/useAuth'
+import { useAudio } from '@/composables/useAudio'
 
 const { initTheme } = useTheme()
 const { initLocale } = useLocale()
 const { init: initBindings } = useKeyBindings()
 const { init: initAuth } = useAuth()
+const { prefetchAvailableInstruments } = useAudio()
 
 onMounted(() => {
   initTheme()
   initLocale()
   initBindings()
   void initAuth()
+  // Start downloading every Soundfont in the background once the app has
+  // settled, so by the time the user clicks an instrument the samples are
+  // already cached locally (the SW persists them across visits).
+  prefetchAvailableInstruments()
 })
 </script>
 
