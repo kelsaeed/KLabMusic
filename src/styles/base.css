@@ -1,4 +1,7 @@
-@import url('https://fonts.googleapis.com/css2?family=Syne:wght@500;700;800&family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;600&family=Cairo:wght@400;600;700&display=swap');
+/* Fonts are loaded asynchronously from index.html via the print/all swap
+   pattern so they no longer block first paint. Until the webfonts arrive
+   we fall back to the system stack defined on the html/body via base
+   font-family in themes.css (--font-body / --font-display / --font-mono). */
 
 *,
 *::before,
