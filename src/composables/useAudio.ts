@@ -30,6 +30,112 @@ interface FxChain {
   compressor: Tone.Compressor
 }
 
+// Mastering chain — sits at the end of the master signal path right before
+// the analyser nodes and Tone.getDestination. EQ3 gives broad tonal shaping
+// (low shelf / mid peak / high shelf), the compressor evens the dynamics,
+// and the limiter is a hard ceiling that prevents the master from clipping
+// when a preset is loud or punchy. Each MasteringPreset (see below) is a
+// pure-data description that we apply to these three nodes — no node
+// rebuilding needed when the user switches presets.
+interface MasteringChain {
+  eq: Tone.EQ3
+  compressor: Tone.Compressor
+  limiter: Tone.Limiter
+  // Pre-makeup gain before the limiter so "Louder" presets actually push the
+  // signal into the ceiling instead of merely shaping it.
+  makeup: Tone.Volume
+}
+
+export type MasteringPresetId =
+  | 'off'
+  | 'classic'
+  | 'soft'
+  | 'punchy'
+  | 'louder'
+  | 'cassette'
+  | 'sub-boost'
+  | 'podcast'
+  | 'cranked'
+
+interface MasteringPresetConfig {
+  // EQ gains in dB at low/mid/high bands.
+  eq: { low: number; mid: number; high: number }
+  // Compressor: threshold (dB), ratio, attack (s), release (s).
+  comp: { threshold: number; ratio: number; attack: number; release: number }
+  // Limiter ceiling in dB. -0.3 is a transparent peak ceiling.
+  limit: number
+  // Makeup gain in dB applied before the limiter.
+  makeup: number
+}
+
+// Each preset is a recipe Soundtrap-style — single click loads a polished
+// chain. "off" passes signal through with neutral params so we can keep the
+// chain wired permanently without coloring the sound.
+export const MASTERING_PRESETS: Record<MasteringPresetId, MasteringPresetConfig> = {
+  off: {
+    eq: { low: 0, mid: 0, high: 0 },
+    comp: { threshold: 0, ratio: 1, attack: 0.01, release: 0.2 },
+    limit: 0,
+    makeup: 0,
+  },
+  classic: {
+    // Subtle smile EQ, gentle 2:1 comp, polite ceiling. The "default master".
+    eq: { low: 1.5, mid: -0.5, high: 1.5 },
+    comp: { threshold: -16, ratio: 2, attack: 0.01, release: 0.18 },
+    limit: -0.5,
+    makeup: 1.5,
+  },
+  soft: {
+    // Warm low end, shaved high, slow comp — for ballads and acoustic mixes.
+    eq: { low: 2, mid: 0, high: -2 },
+    comp: { threshold: -18, ratio: 1.8, attack: 0.025, release: 0.3 },
+    limit: -1,
+    makeup: 1,
+  },
+  punchy: {
+    // Mid push, fast comp attack so transients pop, +3 dB makeup.
+    eq: { low: 1, mid: 2, high: 1 },
+    comp: { threshold: -14, ratio: 3, attack: 0.003, release: 0.12 },
+    limit: -0.5,
+    makeup: 3,
+  },
+  louder: {
+    // Heavy comp + brick-wall limiter. Trades transient detail for raw level.
+    eq: { low: 1, mid: 0, high: 1 },
+    comp: { threshold: -20, ratio: 4, attack: 0.005, release: 0.1 },
+    limit: -0.3,
+    makeup: 6,
+  },
+  cassette: {
+    // Tilt EQ (lift low + roll high), slow comp — analog tape mid-fi colour.
+    eq: { low: 3, mid: -1, high: -4 },
+    comp: { threshold: -16, ratio: 2.5, attack: 0.02, release: 0.25 },
+    limit: -1,
+    makeup: 2,
+  },
+  'sub-boost': {
+    // Big low shelf, conservative everywhere else — for trap / phonk masters.
+    eq: { low: 5, mid: -1, high: 0 },
+    comp: { threshold: -16, ratio: 2.5, attack: 0.01, release: 0.2 },
+    limit: -0.5,
+    makeup: 2,
+  },
+  podcast: {
+    // Narrow vocal-friendly EQ, heavy comp to even out talk dynamics.
+    eq: { low: -2, mid: 3, high: 1 },
+    comp: { threshold: -22, ratio: 4, attack: 0.008, release: 0.15 },
+    limit: -1,
+    makeup: 4,
+  },
+  cranked: {
+    // EDM master: scooped mids, lifted highs, hard squeeze.
+    eq: { low: 3, mid: -2, high: 3 },
+    comp: { threshold: -18, ratio: 4, attack: 0.004, release: 0.12 },
+    limit: -0.3,
+    makeup: 5,
+  },
+}
+
 interface InstrumentNode {
   voice: VoiceAdapter
   channelVolume: Tone.Volume
@@ -56,6 +162,7 @@ let chaosCrush: Tone.BitCrusher | null = null
 let masterAnalyser: Tone.Analyser | null = null
 let masterFft: Tone.Analyser | null = null
 let globalFx: FxChain | null = null
+let mastering: MasteringChain | null = null
 let masterReady = false
 let toneStarted = false
 
@@ -145,6 +252,7 @@ function ensureMaster() {
   masterAnalyser = new Tone.Analyser('waveform', 1024)
   masterFft = new Tone.Analyser('fft', 64)
   globalFx = buildGlobalFx()
+  mastering = buildMasteringChain()
   masterVolume.chain(
     globalFx.reverb,
     globalFx.delay,
@@ -156,11 +264,54 @@ function ensureMaster() {
     chaosFilter,
     chaosReverb,
     chaosCrush,
+    // Mastering chain runs LAST so it shapes the final mix — EQ glue, then
+    // compressor for cohesion, then limiter as a hard ceiling. Analyser/FFT
+    // taps are after mastering so the visualizer reflects what the user
+    // actually hears.
+    mastering.eq,
+    mastering.compressor,
+    mastering.makeup,
+    mastering.limiter,
     masterAnalyser,
     masterFft,
     Tone.getDestination(),
   )
+  // Apply whatever preset the store currently has selected. The watcher in
+  // wireWatchers picks up future changes; this initial call seeds the chain
+  // so it isn't sitting at constructor defaults until the user opens the
+  // mastering dialog.
+  applyMasteringPreset(useAudioStore().masteringPreset as MasteringPresetId)
   masterReady = true
+}
+
+function buildMasteringChain(): MasteringChain {
+  const eq = new Tone.EQ3({ low: 0, mid: 0, high: 0 })
+  const compressor = new Tone.Compressor({
+    threshold: 0,
+    ratio: 1,
+    attack: 0.01,
+    release: 0.2,
+    knee: 6,
+  })
+  const makeup = new Tone.Volume(0)
+  const limiter = new Tone.Limiter(0)
+  return { eq, compressor, makeup, limiter }
+}
+
+function applyMasteringPreset(id: MasteringPresetId) {
+  if (!mastering) return
+  const cfg = MASTERING_PRESETS[id] ?? MASTERING_PRESETS.off
+  // EQ3 exposes low/mid/high as Tone Signals — rampTo so a preset switch
+  // doesn't pop the dynamic listener with a hard parameter step.
+  mastering.eq.low.rampTo(cfg.eq.low, 0.08)
+  mastering.eq.mid.rampTo(cfg.eq.mid, 0.08)
+  mastering.eq.high.rampTo(cfg.eq.high, 0.08)
+  mastering.compressor.threshold.rampTo(cfg.comp.threshold, 0.08)
+  mastering.compressor.ratio.rampTo(cfg.comp.ratio, 0.08)
+  mastering.compressor.attack.rampTo(cfg.comp.attack, 0.08)
+  mastering.compressor.release.rampTo(cfg.comp.release, 0.08)
+  mastering.makeup.volume.rampTo(cfg.makeup, 0.08)
+  mastering.limiter.threshold.rampTo(cfg.limit, 0.08)
 }
 
 function wrapPolyphonic(s: Tone.Sampler): VoiceAdapter {
@@ -600,6 +751,10 @@ function wireWatchers() {
     () => [store.activeInstrument, store.effects],
     () => applyAllEffectsForActive(),
     { deep: true },
+  )
+  watch(
+    () => store.masteringPreset,
+    (id) => applyMasteringPreset(id as MasteringPresetId),
   )
 }
 

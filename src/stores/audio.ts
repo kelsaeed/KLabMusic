@@ -26,6 +26,17 @@ export const useAudioStore = defineStore('audio', () => {
   const notation = ref<'solfege' | 'letters'>(
     (localStorage.getItem('klm:notation') as 'solfege' | 'letters') || 'solfege',
   )
+  // Mastering preset persisted across reloads so the user's "Punchy"
+  // selection survives a refresh. The store doesn't import the preset type
+  // from useAudio to keep the dependency direction one-way (useAudio reads
+  // the store, not the other way around).
+  const masteringPreset = ref<string>(
+    localStorage.getItem('klm:mastering') || 'off',
+  )
+  function setMasteringPreset(id: string) {
+    masteringPreset.value = id
+    localStorage.setItem('klm:mastering', id)
+  }
   const loadState = reactive<Record<InstrumentId, LoadState>>({} as Record<InstrumentId, LoadState>)
   const effects = reactive<Record<InstrumentId, Record<EffectId, EffectControl>>>(
     {} as Record<InstrumentId, Record<EffectId, EffectControl>>,
@@ -67,6 +78,7 @@ export const useAudioStore = defineStore('audio', () => {
     masterMuted,
     octaveShift,
     notation,
+    masteringPreset,
     loadState,
     effects,
     activeNotes,
@@ -76,6 +88,7 @@ export const useAudioStore = defineStore('audio', () => {
     setLoadState,
     getLoadState,
     setNotation,
+    setMasteringPreset,
     noteOn,
     noteOff,
   }

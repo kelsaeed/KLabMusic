@@ -294,6 +294,56 @@
     "imported": "Session imported",
     "importFailed": "Import failed"
   },
+  "mastering": {
+    "title": "Mastering",
+    "short": "Master",
+    "subtitle": "One-click polish for your final mix",
+    "applied": "Applied",
+    "howItWorks": "Mastering shapes the entire master output (EQ → compressor → limiter). Try a preset, hit a few notes — switch any time.",
+    "preset": {
+      "off": { "name": "Off", "desc": "No mastering — raw mix passes through unchanged." },
+      "classic": { "name": "Classic", "desc": "Subtle smile EQ and gentle compression. The everyday master." },
+      "soft": { "name": "Soft", "desc": "Warm low end, shaved highs, slow comp — for ballads and acoustic." },
+      "podcast": { "name": "Podcast", "desc": "Vocal-shaped EQ and heavy comp to even out talking dynamics." },
+      "sub-boost": { "name": "Sub Boost", "desc": "Big low shelf for trap, phonk, and bass-heavy genres." },
+      "punchy": { "name": "Punchy", "desc": "Mid push, fast comp attack — transients pop forward." },
+      "louder": { "name": "Louder", "desc": "Heavy compression and brick-wall limiter. Trades detail for level." },
+      "cranked": { "name": "Cranked", "desc": "Scooped mids, lifted highs, hard squeeze — EDM master." },
+      "cassette": { "name": "Cassette", "desc": "Tilt EQ and tape colour. Lo-fi mid-fidelity vibe." }
+    }
+  },
+  "fxlib": {
+    "title": "Effects library",
+    "openButton": "Browse effects",
+    "searchPlaceholder": "Try Reverb, Vocals, Delay…",
+    "on": "On",
+    "noResults": "No effects match.",
+    "footerNote": "Click any effect to add it to the active instrument.",
+    "tag": {
+      "all": "All",
+      "cleanUp": "Clean Up",
+      "glueMix": "Glue Mix",
+      "enhance": "Enhance",
+      "soundDesign": "Sound Design",
+      "drums": "Drums",
+      "bass": "Bass",
+      "guitar": "Guitar",
+      "vocals": "Vocals",
+      "movement": "Movement",
+      "brightness": "Brightness",
+      "loudness": "Loudness",
+      "echo": "Echo"
+    },
+    "desc": {
+      "reverb": "Adds space — small room to vast hall.",
+      "delay": "Echoes the signal in time — slap-back or rhythmic.",
+      "distortion": "Adds harmonic grit and saturation.",
+      "chorus": "Thickens and widens with subtle pitch modulation.",
+      "filter": "Brightens or darkens — low-pass shaping.",
+      "bitcrusher": "Lo-fi digital crunch by reducing bit depth.",
+      "compressor": "Evens out dynamics, glues the mix together."
+    }
+  },
   "live": {
     "title": "Piano",
     "heading": {

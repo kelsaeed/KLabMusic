@@ -9,6 +9,7 @@ import AIPanel from './ai/AIPanel.vue'
 import ShortcutsHelp from './ShortcutsHelp.vue'
 import AuthModal from './auth/AuthModal.vue'
 import UserMenu from './auth/UserMenu.vue'
+import MasteringDialog from './mastering/MasteringDialog.vue'
 import { useUserStore } from '@/stores/user'
 
 const { t } = useI18n()
@@ -20,6 +21,7 @@ const bindingsOpen = ref(false)
 const aiOpen = ref(false)
 const helpOpen = ref(false)
 const authOpen = ref(false)
+const masterOpen = ref(false)
 
 function onKey(e: KeyboardEvent) {
   const tag = (e.target as HTMLElement | null)?.tagName
@@ -57,6 +59,15 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       >
         <span class="kbd-icon">🤖</span>
         <span class="hide-sm">{{ t('ai.short') }}</span>
+      </button>
+      <button
+        v-if="!isHome"
+        class="icon-btn master"
+        :title="t('mastering.title')"
+        @click="masterOpen = true"
+      >
+        <span class="kbd-icon">🎚</span>
+        <span class="hide-sm">{{ t('mastering.short') }}</span>
       </button>
       <button
         class="icon-btn"
@@ -99,6 +110,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
     <AIPanel :open="aiOpen" @close="aiOpen = false" />
     <ShortcutsHelp :open="helpOpen" @close="helpOpen = false" />
     <AuthModal :open="authOpen" @close="authOpen = false" />
+    <MasteringDialog :open="masterOpen" @close="masterOpen = false" />
   </header>
 </template>
 
