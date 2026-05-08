@@ -19,6 +19,12 @@ export const useRecorderStore = defineStore('recorder', () => {
   const songScale = ref<Scale>((localStorage.getItem('klm:songScale') as Scale) || 'major')
   watch(songKey, (v) => localStorage.setItem('klm:songKey', v))
   watch(songScale, (v) => localStorage.setItem('klm:songScale', v))
+  // Live mic monitoring — true while the recorder is feeding the mic into the
+  // master FX chain. Not persisted: every refresh starts in a safe muted
+  // state to avoid surprise feedback when the user reloads with headphones
+  // off.
+  const monitoring = ref(false)
+  const monitorGain = ref(0.5)
 
   const activeClip = computed(() => clips.value.find((c) => c.id === activeClipId.value) ?? null)
 
@@ -65,6 +71,8 @@ export const useRecorderStore = defineStore('recorder', () => {
     drawerOpen,
     songKey,
     songScale,
+    monitoring,
+    monitorGain,
     addClip,
     removeClip,
     patchClip,

@@ -850,6 +850,18 @@ export function useAudio() {
   function getMasterAnalyser(): Tone.Analyser | null { return masterAnalyser }
   function getMasterFft(): Tone.Analyser | null { return masterFft }
   function getMasterOutput(): Tone.ToneAudioNode | null { return masterVolume }
+  /**
+   * Returns the very first node of the master signal chain so external
+   * sources (mic monitor, line-in instruments, future track buses) can
+   * route through every effect, mastering preset, and analyser the rest of
+   * the engine already runs. Auto-creates the master if it hasn't been
+   * built yet, since callers like the mic monitor want to hear themselves
+   * before any instrument has been triggered.
+   */
+  function getMasterInput(): Tone.ToneAudioNode | null {
+    if (!masterReady) ensureMaster()
+    return masterVolume
+  }
 
   async function setInstrument(id: InstrumentId) {
     store.activeInstrument = id
@@ -885,6 +897,7 @@ export function useAudio() {
     getMasterAnalyser,
     getMasterFft,
     getMasterOutput,
+    getMasterInput,
     setInstrument,
     setEffect,
     toggleEffect,

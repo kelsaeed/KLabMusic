@@ -3,12 +3,21 @@ import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRecorderStore } from '@/stores/recorder'
 import { useRecorder } from '@/composables/useRecorder'
+import { useToast } from '@/composables/useToast'
 import WaveformCanvas from './WaveformCanvas.vue'
 import ClipList from './ClipList.vue'
 import ClipControls from './ClipControls.vue'
 
 const store = useRecorderStore()
-const { startRecording, stopRecording, uploadFile } = useRecorder()
+const {
+  startRecording,
+  stopRecording,
+  uploadFile,
+  startMonitoring,
+  stopMonitoring,
+  setMonitorGain,
+} = useRecorder()
+const { show } = useToast()
 const { t } = useI18n()
 const fileInput = ref<HTMLInputElement | null>(null)
 const dragOver = ref(false)
@@ -25,6 +34,30 @@ async function toggleRecord() {
   } catch (e) {
     recordError.value = e instanceof Error ? e.message : 'Mic access denied'
   }
+}
+
+async function toggleMonitor() {
+  if (store.monitoring) {
+    stopMonitoring()
+    return
+  }
+  const result = await startMonitoring()
+  if (!result.ok) {
+    recordError.value = result.message ?? 'Monitor unavailable'
+    return
+  }
+  // First-time enable shows a single feedback warning. Without headphones a
+  // monitored mic will go straight back into the mic and self-oscillate
+  // through every effect we just routed it through — embarrassing and loud.
+  show({
+    type: 'info',
+    title: t('monitor.feedbackWarning'),
+    duration: 3500,
+  })
+}
+
+function onMonitorGain(value: number) {
+  setMonitorGain(value)
 }
 
 async function onFiles(list: FileList | null) {
@@ -82,6 +115,22 @@ function onScrub(ratio: number) {
           hidden
           @change="onFiles(($event.target as HTMLInputElement).files)"
         />
+        <button
+          class="monitor-btn"
+          :class="{ on: store.monitoring }"
+          :title="store.monitoring ? t('monitor.stop') : t('monitor.start')"
+          @click="toggleMonitor"
+        >
+          🎧 {{ store.monitoring ? t('monitor.live') : t('monitor.short') }}
+        </button>
+        <label v-if="store.monitoring" class="monitor-gain">
+          <span class="mono">{{ Math.round(store.monitorGain * 100) }}%</span>
+          <input
+            type="range" min="0" max="1.5" step="0.05"
+            :value="store.monitorGain"
+            @input="onMonitorGain(Number(($event.target as HTMLInputElement).value))"
+          />
+        </label>
       </div>
     </header>
 
@@ -194,6 +243,60 @@ function onScrub(ratio: number) {
 .upload {
   font-size: 0.8rem;
   padding: 0.5rem 0.9rem;
+}
+.monitor-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.9rem;
+  font-size: 0.78rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), color var(--transition-fast),
+    background var(--transition-fast), box-shadow var(--transition-fast);
+}
+.monitor-btn:hover {
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+}
+.monitor-btn.on {
+  background: var(--accent-primary);
+  color: var(--text-inverse);
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 14px var(--accent-glow);
+}
+.monitor-gain {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.35rem 0.6rem;
+}
+.monitor-gain input[type='range'] {
+  width: 80px;
+  appearance: none;
+  height: 3px;
+  background: var(--border);
+  border: none;
+  border-radius: 2px;
+  padding: 0;
+  margin: 0;
+}
+.monitor-gain input[type='range']::-webkit-slider-thumb {
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent-primary);
 }
 @keyframes pulse-rec {
   0%, 100% { box-shadow: 0 0 0 0 rgba(255, 0, 110, 0.4); }

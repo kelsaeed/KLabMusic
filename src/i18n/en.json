@@ -332,6 +332,26 @@
       "cassette": { "name": "Cassette", "desc": "Tilt EQ and tape colour. Lo-fi mid-fidelity vibe." }
     }
   },
+  "preset": {
+    "placeholder": "— Choose a preset —",
+    "factoryGroup": "Factory",
+    "userGroup": "Yours",
+    "save": "Save",
+    "saveTooltip": "Save the current effect settings as a named preset for this instrument.",
+    "delete": "Delete",
+    "deleteTooltip": "Delete this preset (factory presets can't be deleted).",
+    "namePlaceholder": "Preset name…",
+    "confirm": "Confirm",
+    "saved": "Saved \"{name}\"",
+    "deleted": "Deleted \"{name}\""
+  },
+  "monitor": {
+    "short": "Monitor",
+    "start": "Start live monitor — hear yourself through the master FX",
+    "stop": "Stop monitoring",
+    "live": "Live",
+    "feedbackWarning": "Live monitor on — use headphones to avoid feedback."
+  },
   "loops": {
     "title": "Sound library",
     "openButton": "Browse loops",

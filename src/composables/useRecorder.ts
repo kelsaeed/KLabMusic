@@ -1,5 +1,6 @@
 import * as Tone from 'tone'
 import { useRecorderStore } from '@/stores/recorder'
+import { useAudio } from '@/composables/useAudio'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import { useUserStore } from '@/stores/user'
 import {
@@ -24,6 +25,13 @@ let recordStartedAt = 0
 let activePlayer: Tone.Player | null = null
 let activePitchNode: Tone.PitchShift | null = null
 let playbackTimer: ReturnType<typeof setInterval> | null = null
+// Live mic monitor — tap the mic into the studio's master FX chain so the
+// user hears themselves through whichever instrument's effects are active
+// (sing through guitar's reverb, talk through Lo-Fi crusher, etc.). Kept
+// at module scope so the monitor survives component remounts and we never
+// accidentally end up with two source nodes pumping the same stream.
+let monitorSource: MediaStreamAudioSourceNode | null = null
+let monitorGain: Tone.Gain | null = null
 
 function rawContext(): AudioContext {
   return Tone.getContext().rawContext as AudioContext
@@ -162,6 +170,72 @@ function clearPlayback() {
 export function useRecorder() {
   const store = useRecorderStore()
   const userStore = useUserStore()
+  const { getMasterInput, ensureToneStarted } = useAudio()
+
+  async function ensureMicStream(): Promise<MediaStream> {
+    if (!micStream) {
+      micStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    }
+    return micStream
+  }
+
+  /**
+   * Plug-and-play live mic monitoring. Routes the mic stream through the
+   * studio's master FX chain so the user hears themselves with whatever
+   * effects + mastering preset are active — perfect for vocalists who want
+   * to perform with reverb on, or for line-in instruments to be processed
+   * by the studio in real time. Caller is responsible for warning the user
+   * about feedback (use headphones).
+   */
+  async function startMonitoring(): Promise<{ ok: boolean; message?: string }> {
+    if (store.monitoring) return { ok: true }
+    try {
+      await ensureToneStarted()
+      const stream = await ensureMicStream()
+      const ctx = rawContext()
+      // Tear down any leftover nodes from a previous monitoring session
+      // before wiring up new ones — running the same stream through two
+      // source nodes simultaneously doubles the gain on every voice.
+      if (monitorSource) { monitorSource.disconnect(); monitorSource = null }
+      if (monitorGain) { monitorGain.dispose(); monitorGain = null }
+      monitorSource = ctx.createMediaStreamSource(stream)
+      // -6 dB starting trim — mic levels through getUserMedia vary wildly by
+      // device and browser; trimming below unity prevents accidental clip on
+      // a hot mic and gives us headroom before the master compressor.
+      monitorGain = new Tone.Gain(0.5)
+      const masterIn = getMasterInput()
+      if (!masterIn) return { ok: false, message: 'Master chain unavailable' }
+      // Native AudioNode (createMediaStreamSource) → Tone node bridge: Tone
+      // exposes input/output as raw AudioNodes too, so we can connect across
+      // the two APIs without a wrapper.
+      monitorSource.connect(monitorGain.input as unknown as AudioNode)
+      monitorGain.connect(masterIn)
+      store.monitoring = true
+      return { ok: true }
+    } catch (e) {
+      return {
+        ok: false,
+        message: e instanceof Error ? e.message : 'Mic permission denied',
+      }
+    }
+  }
+
+  function stopMonitoring() {
+    if (monitorSource) {
+      monitorSource.disconnect()
+      monitorSource = null
+    }
+    if (monitorGain) {
+      monitorGain.dispose()
+      monitorGain = null
+    }
+    store.monitoring = false
+  }
+
+  function setMonitorGain(linearGain: number) {
+    if (monitorGain) monitorGain.gain.rampTo(linearGain, 0.05)
+    store.monitorGain = linearGain
+  }
 
   async function startRecording() {
     if (store.isRecording) return
@@ -411,6 +485,9 @@ export function useRecorder() {
     detectClipBpm,
     detectClipPitch,
     tuneClipToKeyNow,
+    startMonitoring,
+    stopMonitoring,
+    setMonitorGain,
     exportClipWav,
     saveToCloud,
   }
