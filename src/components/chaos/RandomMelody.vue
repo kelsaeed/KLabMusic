@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useChaos, type Scale } from '@/composables/useChaos'
+import { useChaos, type Scale, type Mood, MOODS } from '@/composables/useChaos'
 
 const { generateMelody, playMelody, lastMelody, KEYS } = useChaos()
 const { t } = useI18n()
@@ -9,7 +9,7 @@ const { t } = useI18n()
 const key = ref<string>('C')
 const scale = ref<Scale>('major')
 const length = ref(8)
-const mood = ref<'calm' | 'wild'>('calm')
+const mood = ref<Mood>('calm')
 const stepSec = ref(0.25)
 
 const scales: Scale[] = ['major', 'minor', 'pentatonic', 'blues', 'dorian']
@@ -53,8 +53,7 @@ function play() {
       <label>
         <span class="lbl mono">{{ t('chaos.mood') }}</span>
         <select v-model="mood">
-          <option value="calm">{{ t('chaos.moodCalm') }}</option>
-          <option value="wild">{{ t('chaos.moodWild') }}</option>
+          <option v-for="m in MOODS" :key="m" :value="m">{{ t(`chaos.moodName.${m}`) }}</option>
         </select>
       </label>
     </div>
