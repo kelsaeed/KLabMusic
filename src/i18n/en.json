@@ -99,7 +99,27 @@
     "detectBpm": "Detect BPM",
     "exportWav": "Export WAV",
     "saveCloud": "Save to cloud",
-    "cloudUploading": "Uploading clip to cloud…"
+    "cloudUploading": "Uploading clip to cloud…",
+    "tune": {
+      "title": "Vocal tuning",
+      "subtitle": "Snap pitch to a key",
+      "key": "Key",
+      "scale": "Scale",
+      "detect": "Detect pitch",
+      "tuneToKey": "Tune to key",
+      "detected": "Detected: {note} {cents}",
+      "applied": "Tuned {from} → {to} ({semitones} st)",
+      "noPitch": "Couldn't lock onto a pitch — try a louder, more sustained section.",
+      "scaleName": {
+        "major": "Major",
+        "minor": "Minor",
+        "pentatonic": "Pentatonic",
+        "minor-pent": "Minor pentatonic",
+        "blues": "Blues",
+        "dorian": "Dorian",
+        "chromatic": "Chromatic"
+      }
+    }
   },
   "export": {
     "short": "Export",

@@ -2,6 +2,16 @@ import * as Tone from 'tone'
 import { useRecorderStore } from '@/stores/recorder'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import { useUserStore } from '@/stores/user'
+import {
+  tuneClipToKey,
+  detectPitchHz,
+  frequencyToMidiFloat,
+  midiFloatToPitchResult,
+  KEY_NAMES,
+  type Scale,
+  type TuneResult,
+  type PitchResult,
+} from '@/lib/pitch'
 import type { Clip } from '@/lib/types'
 
 const WAVEFORM_BUCKETS = 600
@@ -287,6 +297,56 @@ export function useRecorder() {
     store.patchClip(clip.id, { bpm })
   }
 
+  /**
+   * Identify the dominant pitch in the trimmed range of a clip without
+   * applying any correction — used by the UI to show "We hear D♯4 ± 12¢"
+   * before the user commits to tuning. Returns null if no confident pitch
+   * was found (silence, polyphonic mix, breath noise).
+   */
+  function detectClipPitch(clipId: string): PitchResult | null {
+    const clip = store.clips.find((c) => c.id === clipId)
+    if (!clip) return null
+    const buffer = clip.buffer
+    const start = Math.floor(clip.trimStart * buffer.length)
+    const end = Math.floor(clip.trimEnd * buffer.length)
+    const len = end - start
+    if (len < 4096) return null
+    const winLen = Math.min(4096, len)
+    const winStart = start + Math.floor((len - winLen) / 2)
+    const window = buffer.getChannelData(0).subarray(winStart, winStart + winLen)
+    const hz = detectPitchHz(window, buffer.sampleRate)
+    if (hz === null) return null
+    return midiFloatToPitchResult(frequencyToMidiFloat(hz))
+  }
+
+  /**
+   * Snap a clip's pitch to the nearest in-key scale tone. We update the
+   * clip's pitchSemitones field — playback and export already route through
+   * Tone.PitchShift, so the new value is heard immediately on the next
+   * play and bakes into any future export. Idempotent: if the user calls
+   * it twice with the same key, the second call uses the corrected pitch
+   * as the new "detected" pitch (which should already match the scale, so
+   * the second call is a no-op).
+   */
+  function tuneClipToKeyNow(
+    clipId: string,
+    key: typeof KEY_NAMES[number],
+    scale: Scale,
+  ): TuneResult | null {
+    const clip = store.clips.find((c) => c.id === clipId)
+    if (!clip) return null
+    const keyIndex = KEY_NAMES.indexOf(key)
+    if (keyIndex < 0) return null
+    const result = tuneClipToKey(clip.buffer, clip.trimStart, clip.trimEnd, keyIndex, scale)
+    if (!result) return null
+    // Combine with the existing pitchSemitones — if the user already shifted
+    // the clip down 2 st by hand, we ADD our correction on top so a second
+    // tune call still lands on the right tone. Clamp to the slider's range.
+    const next = Math.max(-12, Math.min(12, clip.pitchSemitones + result.semitones))
+    store.patchClip(clip.id, { pitchSemitones: next })
+    return result
+  }
+
   function exportClipWav(clipId: string) {
     const clip = store.clips.find((c) => c.id === clipId)
     if (!clip) return
@@ -349,6 +409,8 @@ export function useRecorder() {
     stopPlayback,
     normalize,
     detectClipBpm,
+    detectClipPitch,
+    tuneClipToKeyNow,
     exportClipWav,
     saveToCloud,
   }

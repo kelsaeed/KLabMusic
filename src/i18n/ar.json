@@ -99,7 +99,27 @@
     "detectBpm": "كشف الإيقاع",
     "exportWav": "تصدير WAV",
     "saveCloud": "حفظ سحابي",
-    "cloudUploading": "جاري رفع المقطع إلى السحابة…"
+    "cloudUploading": "جاري رفع المقطع إلى السحابة…",
+    "tune": {
+      "title": "ضبط الصوت",
+      "subtitle": "محاذاة النغمة مع المقام",
+      "key": "المقام",
+      "scale": "السلّم",
+      "detect": "اكتشاف النغمة",
+      "tuneToKey": "اضبط على المقام",
+      "detected": "النغمة المكتشفة: {note} {cents}",
+      "applied": "تم الضبط من {from} إلى {to} ({semitones} درجة)",
+      "noPitch": "لم نتمكن من تحديد النغمة — جرّب مقطعًا أعلى وأطول.",
+      "scaleName": {
+        "major": "ميجور",
+        "minor": "ماينور",
+        "pentatonic": "خماسي",
+        "minor-pent": "خماسي صغير",
+        "blues": "بلوز",
+        "dorian": "دوريان",
+        "chromatic": "كروماتي"
+      }
+    }
   },
   "export": {
     "short": "تصدير",

@@ -1,17 +1,66 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRecorderStore } from '@/stores/recorder'
 import { useRecorder } from '@/composables/useRecorder'
 import { useToast } from '@/composables/useToast'
+import { KEY_NAMES, type Scale, type Key, type PitchResult } from '@/lib/pitch'
 import type { Clip } from '@/lib/types'
 
-defineProps<{ clip: Clip }>()
+const props = defineProps<{ clip: Clip }>()
 const store = useRecorderStore()
-const { normalize, detectClipBpm, exportClipWav, saveToCloud, playClip, stopPlayback } = useRecorder()
+const {
+  normalize,
+  detectClipBpm,
+  detectClipPitch,
+  tuneClipToKeyNow,
+  exportClipWav,
+  saveToCloud,
+  playClip,
+  stopPlayback,
+} = useRecorder()
 const { show, update } = useToast()
 const { t } = useI18n()
 const saveStatus = ref('')
+
+// Vocal Tuning UI state. detectedPitch is the live readout shown next to
+// the Tune button so the user can see "we hear D♯4 ± 12¢" before they
+// commit. We re-detect lazily on demand (clicking the Detect button) rather
+// than on every clip change because YIN is ~10 ms on a 4 k window and we
+// don't want to run it during scrubbing.
+const SCALES: Scale[] = ['major', 'minor', 'pentatonic', 'minor-pent', 'blues', 'dorian', 'chromatic']
+const detectedPitch = ref<PitchResult | null>(null)
+const tuneStatus = ref('')
+
+const centsLabel = computed(() => {
+  if (!detectedPitch.value) return ''
+  const c = detectedPitch.value.cents
+  return c >= 0 ? `+${c}¢` : `${c}¢`
+})
+
+function onDetectPitch() {
+  detectedPitch.value = detectClipPitch(props.clip.id)
+  if (!detectedPitch.value) {
+    tuneStatus.value = t('recorder.tune.noPitch')
+    setTimeout(() => (tuneStatus.value = ''), 2500)
+  }
+}
+
+function onTune() {
+  const result = tuneClipToKeyNow(props.clip.id, store.songKey as Key, store.songScale as Scale)
+  if (!result) {
+    tuneStatus.value = t('recorder.tune.noPitch')
+    setTimeout(() => (tuneStatus.value = ''), 2500)
+    return
+  }
+  detectedPitch.value = result.detected
+  tuneStatus.value = t('recorder.tune.applied', {
+    from: result.detected.noteName,
+    to: result.target.noteName,
+    semitones: result.semitones >= 0 ? `+${result.semitones}` : `${result.semitones}`,
+  })
+  setTimeout(() => (tuneStatus.value = ''), 4000)
+}
 
 async function onSave(clipId: string) {
   const toastId = show({
@@ -95,6 +144,38 @@ function patch(clipId: string, key: keyof Clip, value: Clip[keyof Clip]) {
       <button class="action" @click="exportClipWav(clip.id)">{{ t('recorder.exportWav') }}</button>
       <button class="action" @click="onSave(clip.id)">{{ t('recorder.saveCloud') }}</button>
       <span v-if="saveStatus" class="status">{{ saveStatus }}</span>
+    </div>
+
+    <div class="tune-block">
+      <div class="tune-head">
+        <span class="tune-title mono">{{ t('recorder.tune.title') }}</span>
+        <span class="tune-sub mono">{{ t('recorder.tune.subtitle') }}</span>
+      </div>
+      <div class="tune-row">
+        <label class="tune-field">
+          <span class="lbl mono">{{ t('recorder.tune.key') }}</span>
+          <select v-model="store.songKey">
+            <option v-for="k in KEY_NAMES" :key="k" :value="k">{{ k }}</option>
+          </select>
+        </label>
+        <label class="tune-field">
+          <span class="lbl mono">{{ t('recorder.tune.scale') }}</span>
+          <select v-model="store.songScale">
+            <option v-for="s in SCALES" :key="s" :value="s">{{ t(`recorder.tune.scaleName.${s}`) }}</option>
+          </select>
+        </label>
+        <button class="action" @click="onDetectPitch">{{ t('recorder.tune.detect') }}</button>
+        <button class="tune-go" @click="onTune">
+          🎤 {{ t('recorder.tune.tuneToKey') }}
+        </button>
+      </div>
+      <p v-if="detectedPitch" class="tune-readout mono">
+        {{ t('recorder.tune.detected', {
+          note: detectedPitch.noteName,
+          cents: centsLabel,
+        }) }}
+      </p>
+      <p v-if="tuneStatus" class="tune-status mono">{{ tuneStatus }}</p>
     </div>
   </div>
 </template>
@@ -183,5 +264,92 @@ function patch(clipId: string, key: keyof Clip, value: Clip[keyof Clip]) {
   font-size: 0.75rem;
   color: var(--accent-primary);
   font-family: var(--font-mono);
+}
+.tune-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.75rem 0.85rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  position: relative;
+  overflow: hidden;
+}
+.tune-block::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, var(--accent-glow), transparent 60%);
+  opacity: 0.18;
+  pointer-events: none;
+}
+.tune-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  position: relative;
+}
+.tune-title {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent-primary);
+  font-weight: 700;
+}
+.tune-sub {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  letter-spacing: 0.05em;
+}
+.tune-row {
+  display: flex;
+  align-items: end;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  position: relative;
+}
+.tune-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 90px;
+}
+.tune-field select {
+  padding: 0.4rem 0.6rem;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  border-radius: var(--radius);
+  font-size: 0.78rem;
+}
+.tune-go {
+  padding: 0.55rem 1rem;
+  background: var(--accent-primary);
+  color: var(--text-inverse);
+  border: none;
+  border-radius: var(--radius);
+  font-weight: 700;
+  font-size: 0.8rem;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+.tune-go:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px var(--accent-glow);
+}
+.tune-readout {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--accent-primary);
+  position: relative;
+}
+.tune-status {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--accent-secondary);
+  position: relative;
 }
 </style>

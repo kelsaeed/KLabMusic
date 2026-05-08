@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
+import type { Scale, Key } from '@/lib/pitch'
 import type { Clip, ClipPatch } from '@/lib/types'
 
 export const useRecorderStore = defineStore('recorder', () => {
@@ -10,6 +11,14 @@ export const useRecorderStore = defineStore('recorder', () => {
   const recordSeconds = ref(0)
   const playheadSeconds = ref(0)
   const drawerOpen = ref(false)
+  // Song-level tuning context — used by Vocal Tuning to know which scale to
+  // snap detected pitches to. Persisted in localStorage so the choice
+  // survives a refresh; whole-project state, not per-clip, because a song
+  // is in one key and every vocal take should snap to it.
+  const songKey = ref<Key>((localStorage.getItem('klm:songKey') as Key) || 'C')
+  const songScale = ref<Scale>((localStorage.getItem('klm:songScale') as Scale) || 'major')
+  watch(songKey, (v) => localStorage.setItem('klm:songKey', v))
+  watch(songScale, (v) => localStorage.setItem('klm:songScale', v))
 
   const activeClip = computed(() => clips.value.find((c) => c.id === activeClipId.value) ?? null)
 
@@ -54,6 +63,8 @@ export const useRecorderStore = defineStore('recorder', () => {
     recordSeconds,
     playheadSeconds,
     drawerOpen,
+    songKey,
+    songScale,
     addClip,
     removeClip,
     patchClip,
