@@ -107,7 +107,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.85rem 1.5rem;
+  flex-wrap: wrap;
+  row-gap: 0.5rem;
+  padding: 0.7rem clamp(0.75rem, 2vw, 1.5rem);
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border);
   position: sticky;
@@ -119,19 +121,20 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 .brand {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: 0.5rem;
   color: var(--text-primary);
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 1.1rem;
+  font-size: clamp(0.95rem, 1.6vmin, 1.1rem);
   letter-spacing: 0.02em;
+  flex-shrink: 0;
 }
 
 .logo-mark {
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
+  width: clamp(28px, 4vmin, 32px);
+  height: clamp(28px, 4vmin, 32px);
   border-radius: 8px;
   background: var(--accent-primary);
   color: var(--text-inverse);
@@ -143,19 +146,22 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 .actions {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.4rem;
 }
 
 .icon-btn {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  padding: 0.4rem 0.7rem;
-  font-size: 0.8rem;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.78rem;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   color: var(--text-primary);
+  white-space: nowrap;
 }
 .icon-btn.jam:hover {
   border-color: var(--accent-secondary);
@@ -169,21 +175,40 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 }
 .kbd-icon {
   font-size: 1rem;
+  line-height: 1;
 }
 .cta {
   background: var(--accent-primary);
   color: var(--text-inverse);
-  padding: 0.5rem 1rem;
+  padding: 0.45rem 0.9rem;
   border-radius: var(--radius);
   font-weight: 600;
+  font-size: 0.85rem;
   transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+  white-space: nowrap;
 }
 .cta:hover {
   transform: translateY(-1px);
   box-shadow: 0 4px 16px var(--accent-glow);
   opacity: 1;
 }
-@media (max-width: 600px) {
+
+/* Mobile vertical — actions wrap to second row, centered */
+@media (max-width: 640px) {
   .hide-sm { display: none; }
+  .nav { padding: 0.55rem 0.75rem; }
+  .brand { font-size: 1rem; }
+  .actions {
+    width: 100%;
+    justify-content: center;
+    gap: 0.3rem;
+  }
+  .icon-btn { padding: 0.32rem 0.5rem; font-size: 0.72rem; }
+  .cta { padding: 0.4rem 0.8rem; font-size: 0.78rem; }
+}
+
+/* Very narrow phones — hide brand text, keep only logo */
+@media (max-width: 360px) {
+  .brand-text { display: none; }
 }
 </style>

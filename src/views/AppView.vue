@@ -43,18 +43,22 @@ const active = ref<ModuleTab>('live')
   flex: 1;
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  min-height: 100dvh;
 }
 .stage {
   flex: 1;
-  padding: 1.5rem 1.5rem 5rem;
+  padding: clamp(0.75rem, 2vmin, 1.5rem) clamp(0.75rem, 2vw, 1.5rem) clamp(2rem, 5vh, 5rem);
   display: flex;
   justify-content: center;
+  width: 100%;
 }
 .loading {
   color: var(--text-muted);
   font-size: 0.85rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+@media (max-width: 600px) {
+  .stage { padding: 0.75rem 0.75rem 1.5rem; }
 }
 </style>

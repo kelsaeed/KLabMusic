@@ -22,10 +22,14 @@ function toggle() {
 .locale-btn {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  padding: 0.35rem 0.7rem;
-  font-size: 0.85rem;
+  gap: 0.3rem;
+  padding: 0.32rem 0.55rem;
+  font-size: 0.78rem;
   background: var(--bg-elevated);
+  white-space: nowrap;
+}
+@media (max-width: 640px) {
+  .locale-btn { padding: 0.3rem 0.45rem; font-size: 0.72rem; gap: 0.2rem; }
 }
 .locale-btn .active {
   color: var(--accent-primary);

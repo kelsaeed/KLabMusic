@@ -41,10 +41,15 @@ function pick(name: typeof themes[number]) {
 .trigger {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.35rem 0.7rem;
-  font-size: 0.85rem;
+  gap: 0.4rem;
+  padding: 0.32rem 0.55rem;
+  font-size: 0.78rem;
   background: var(--bg-elevated);
+  white-space: nowrap;
+}
+@media (max-width: 640px) {
+  .trigger { padding: 0.3rem 0.5rem; font-size: 0.72rem; gap: 0.3rem; }
+  .label { display: none; }
 }
 .dot {
   width: 12px;
