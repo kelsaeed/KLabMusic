@@ -6,6 +6,8 @@ import { useArrange } from '@/composables/useArrange'
 import { useRecorderStore } from '@/stores/recorder'
 import { useBeatMakerStore } from '@/stores/beatmaker'
 import AddArrangeTrackDialog from './AddArrangeTrackDialog.vue'
+import TrackFxPopover from './TrackFxPopover.vue'
+import { useToast } from '@/composables/useToast'
 import type { ArrangeTrack, ArrangeClip } from '@/lib/types'
 
 // Multitrack arrangement timeline. Layout is:
@@ -30,6 +32,8 @@ const { t } = useI18n()
 
 const addOpen = ref(false)
 const laneRef = ref<HTMLDivElement | null>(null)
+const openFxTrackId = ref<string | null>(null)
+const { show, update } = useToast()
 
 const widthPx = computed(() => Math.max(800, store.totalDurationSec * store.pxPerSec))
 
@@ -107,6 +111,47 @@ function clipLabel(clip: ArrangeClip): string {
 function zoomIn() { store.pxPerSec = Math.min(240, store.pxPerSec * 1.4) }
 function zoomOut() { store.pxPerSec = Math.max(20, store.pxPerSec / 1.4) }
 
+function toggleFxPopover(trackId: string) {
+  openFxTrackId.value = openFxTrackId.value === trackId ? null : trackId
+}
+
+async function exportStems() {
+  if (arrange.stemExportProgress.value.active) return
+  const toastId = show({
+    type: 'loading',
+    title: t('arrange.exportingStems', { i: 0, n: store.tracks.length, name: '' }),
+  })
+  // Push live progress into the toast so users see "1/4 — Drums" → "2/4
+  // — Bass" while the real-time render runs. The watcher reads from the
+  // exposed reactive ref the composable hands back.
+  const stop = (() => {
+    let last = -1
+    const id = setInterval(() => {
+      const p = arrange.stemExportProgress.value
+      if (!p.active) return
+      if (p.trackIndex !== last) {
+        last = p.trackIndex
+        update(toastId, {
+          type: 'loading',
+          title: t('arrange.exportingStems', {
+            i: p.trackIndex,
+            n: p.trackTotal,
+            name: p.trackName,
+          }),
+        })
+      }
+    }, 250)
+    return () => clearInterval(id)
+  })()
+  const result = await arrange.exportStems()
+  stop()
+  update(toastId, {
+    type: result.ok ? 'success' : 'error',
+    title: result.message,
+    duration: result.ok ? 2400 : 4000,
+  })
+}
+
 onMounted(() => {
   window.addEventListener('pointermove', onClipPointerMove)
   window.addEventListener('pointerup', onClipPointerUp)
@@ -158,6 +203,14 @@ onBeforeUnmount(() => {
       <button class="add-track-btn mono" @click="addOpen = true">
         + {{ t('arrange.addTrack') }}
       </button>
+      <button
+        class="export-stems-btn mono"
+        :disabled="store.tracks.length === 0 || arrange.stemExportProgress.value.active"
+        :title="t('arrange.exportStemsTooltip')"
+        @click="exportStems"
+      >
+        ⤓ {{ t('arrange.exportStems') }}
+      </button>
     </header>
 
     <div class="grid">
@@ -182,10 +235,21 @@ onBeforeUnmount(() => {
               :value="track.volume"
               @input="onTrackVolume(track, Number(($event.target as HTMLInputElement).value))"
             />
+            <button
+              class="ctl-btn fx"
+              :class="{ on: openFxTrackId === track.id }"
+              :title="t('arrange.trackFxButton')"
+              @click="toggleFxPopover(track.id)"
+            >FX</button>
             <button class="ctl-btn" :class="{ on: track.muted }" :title="t('arrange.mute')" @click="toggleMute(track)">M</button>
             <button class="ctl-btn" :class="{ on: track.soloed }" :title="t('arrange.solo')" @click="toggleSolo(track)">S</button>
             <button class="ctl-btn x" :title="t('arrange.removeTrack')" @click="removeTrack(track)">×</button>
           </div>
+          <TrackFxPopover
+            v-if="openFxTrackId === track.id"
+            :track="track"
+            @close="openFxTrackId = null"
+          />
         </div>
         <div v-if="store.tracks.length === 0" class="empty-headers">
           {{ t('arrange.empty') }}
@@ -341,6 +405,22 @@ onBeforeUnmount(() => {
   border-color: var(--accent-primary);
   color: var(--accent-primary);
 }
+.export-stems-btn {
+  padding: 0.45rem 0.85rem;
+  font-size: 0.78rem;
+  background: var(--accent-primary);
+  color: var(--text-inverse);
+  border: none;
+  border-radius: var(--radius);
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+.export-stems-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px var(--accent-glow);
+}
+.export-stems-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
 /* — Two-column timeline grid — */
 .grid {
@@ -360,6 +440,7 @@ onBeforeUnmount(() => {
 }
 .ruler-spacer { height: 28px; border-bottom: 1px solid var(--border); }
 .header-row {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
@@ -434,6 +515,7 @@ onBeforeUnmount(() => {
   color: var(--accent-primary);
   border-color: var(--accent-primary);
 }
+.ctl-btn.fx { font-weight: 700; }
 .ctl-btn.x { color: var(--accent-secondary); }
 .ctl-btn.x:hover {
   background: var(--accent-secondary);

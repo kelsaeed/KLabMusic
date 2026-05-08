@@ -1,6 +1,14 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { ArrangeTrack, ArrangeClip } from '@/lib/types'
+import type { ArrangeTrack, ArrangeClip, ArrangeTrackFx } from '@/lib/types'
+
+function defaultFx(): ArrangeTrackFx {
+  return {
+    reverb: { enabled: false, amount: 0.4 },
+    delay: { enabled: false, amount: 0.4 },
+    filter: { enabled: false, amount: 0.4 },
+  }
+}
 
 // Multitrack arrangement timeline — Phase 4 MVP.
 //
@@ -68,6 +76,7 @@ export const useArrangeStore = defineStore('arrange', () => {
       muted: false,
       soloed: false,
       clips: [],
+      fx: defaultFx(),
     }
     tracks.value.push(track)
     return track
@@ -83,9 +92,17 @@ export const useArrangeStore = defineStore('arrange', () => {
       muted: false,
       soloed: false,
       clips: [],
+      fx: defaultFx(),
     }
     tracks.value.push(track)
     return track
+  }
+
+  function updateTrackFx(trackId: string, key: keyof ArrangeTrackFx, patch: { enabled?: boolean; amount?: number }) {
+    const track = tracks.value.find((t) => t.id === trackId)
+    if (!track) return
+    if (patch.enabled !== undefined) track.fx[key].enabled = patch.enabled
+    if (patch.amount !== undefined) track.fx[key].amount = patch.amount
   }
 
   function removeTrack(trackId: string) {
@@ -134,6 +151,7 @@ export const useArrangeStore = defineStore('arrange', () => {
     addPatternTrack,
     removeTrack,
     updateTrack,
+    updateTrackFx,
     addClip,
     removeClip,
     moveClip,

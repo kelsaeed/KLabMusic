@@ -41,7 +41,14 @@
     "kind": {
       "audio": "Audio clip",
       "pattern": "Pattern"
-    }
+    },
+    "trackFxButton": "Per-track FX",
+    "trackFxTitle": "Track FX rack",
+    "trackFxPatternHint": "Pattern tracks share the global per-instrument FX. Switch to the Live Play tab and tweak effects on the underlying instrument, or add the pattern's tracks individually as audio for full per-track effects.",
+    "trackFxFooter": "Routed: clip → pitch → reverb → delay → filter → master.",
+    "exportStems": "Export stems",
+    "exportStemsTooltip": "Export each track as a separate WAV file. Renders in real time — playback duration × number of tracks.",
+    "exportingStems": "Rendering {i}/{n} — {name}"
   },
   "home": {
     "ctaPrimary": "Open the Studio",

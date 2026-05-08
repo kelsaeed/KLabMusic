@@ -3,6 +3,7 @@ import { useRecorderStore } from '@/stores/recorder'
 import { useAudio } from '@/composables/useAudio'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import { useUserStore } from '@/stores/user'
+import { bufferToWavBlob as wavEncode } from '@/lib/wav'
 import {
   tuneClipToKey,
   detectPitchHz,
@@ -93,40 +94,10 @@ async function blobToBuffer(blob: Blob): Promise<AudioBuffer> {
   return rawContext().decodeAudioData(arr.slice(0))
 }
 
-function bufferToWavBlob(buffer: AudioBuffer): Blob {
-  const numChannels = buffer.numberOfChannels
-  const sampleRate = buffer.sampleRate
-  const length = buffer.length * numChannels * 2 + 44
-  const view = new DataView(new ArrayBuffer(length))
-  const writeStr = (off: number, s: string) => {
-    for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i))
-  }
-  writeStr(0, 'RIFF')
-  view.setUint32(4, length - 8, true)
-  writeStr(8, 'WAVE')
-  writeStr(12, 'fmt ')
-  view.setUint32(16, 16, true)
-  view.setUint16(20, 1, true)
-  view.setUint16(22, numChannels, true)
-  view.setUint32(24, sampleRate, true)
-  view.setUint32(28, sampleRate * numChannels * 2, true)
-  view.setUint16(32, numChannels * 2, true)
-  view.setUint16(34, 16, true)
-  writeStr(36, 'data')
-  view.setUint32(40, buffer.length * numChannels * 2, true)
-
-  let offset = 44
-  const channels: Float32Array[] = []
-  for (let c = 0; c < numChannels; c++) channels.push(buffer.getChannelData(c))
-  for (let i = 0; i < buffer.length; i++) {
-    for (let c = 0; c < numChannels; c++) {
-      const sample = Math.max(-1, Math.min(1, channels[c][i]))
-      view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true)
-      offset += 2
-    }
-  }
-  return new Blob([view], { type: 'audio/wav' })
-}
+// Shared WAV encoder lives in lib/wav.ts so the arrange engine can use the
+// same encoder for stem export. Local alias keeps the rest of the file
+// readable.
+const bufferToWavBlob = wavEncode
 
 async function clipFromBlob(blob: Blob, source: 'mic' | 'upload', name: string): Promise<Clip> {
   const buffer = await blobToBuffer(blob)

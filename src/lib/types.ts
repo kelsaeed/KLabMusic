@@ -23,6 +23,19 @@ export interface ArrangeClip {
   color?: string
 }
 
+/**
+ * Per-track FX rack. Today applies only to audio tracks (the engine
+ * routes Tone.Player → per-track FX chain → master, so each audio track
+ * truly has its own effects). Pattern tracks share the global per-
+ * instrument chain — they'll get their own buses when synth instances
+ * become per-track in a future phase.
+ */
+export interface ArrangeTrackFx {
+  reverb: { enabled: boolean; amount: number }
+  delay: { enabled: boolean; amount: number }
+  filter: { enabled: boolean; amount: number }
+}
+
 export interface ArrangeTrack {
   id: string
   name: string
@@ -33,6 +46,7 @@ export interface ArrangeTrack {
   muted: boolean
   soloed: boolean
   clips: ArrangeClip[]
+  fx: ArrangeTrackFx
 }
 
 export interface CustomTheme {

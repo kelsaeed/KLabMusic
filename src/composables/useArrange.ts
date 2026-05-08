@@ -1,9 +1,25 @@
 import * as Tone from 'tone'
+import { ref } from 'vue'
 import { useArrangeStore } from '@/stores/arrange'
 import { useRecorderStore } from '@/stores/recorder'
 import { useBeatMakerStore } from '@/stores/beatmaker'
 import { useAudio } from '@/composables/useAudio'
+import { bufferToWavBlob, downloadBlob, sanitizeFilename } from '@/lib/wav'
 import type { ArrangeClip, ArrangeTrack } from '@/lib/types'
+
+// Stem export state, exposed to the UI for progress feedback.
+export interface StemExportProgress {
+  active: boolean
+  trackIndex: number
+  trackTotal: number
+  trackName: string
+}
+const stemExportProgress = ref<StemExportProgress>({
+  active: false,
+  trackIndex: 0,
+  trackTotal: 0,
+  trackName: '',
+})
 
 // Arrangement playback engine. Schedules every clip on Tone.Transport at its
 // absolute startSec — audio clips through Tone.Player, pattern clips by
@@ -20,6 +36,7 @@ import type { ArrangeClip, ArrangeTrack } from '@/lib/types'
 interface ScheduledNode {
   player?: Tone.Player
   pitch?: Tone.PitchShift
+  fxNodes?: Tone.ToneAudioNode[]  // per-track FX chain to dispose
   patternEvents?: number[]  // Tone.Transport event IDs for pattern triggers
 }
 
@@ -33,11 +50,43 @@ function clearScheduled() {
       node.player.dispose()
     }
     if (node.pitch) node.pitch.dispose()
+    if (node.fxNodes) for (const n of node.fxNodes) n.dispose()
     if (node.patternEvents) {
       for (const id of node.patternEvents) Tone.getTransport().clear(id)
     }
   }
   scheduled = []
+}
+
+/**
+ * Build the per-track FX chain for an audio track. Returns an entry node
+ * (connect the source here), an exit node (already routed onward to the
+ * given destination), and the list of nodes to dispose afterwards.
+ *
+ * Today's chain: Reverb (wet/dry mix) → FeedbackDelay → Lowpass Filter.
+ * Each effect is bypassed when its `enabled` flag is false (wet/feedback
+ * pinned to 0, filter cutoff lifted to 20 kHz).
+ */
+function buildTrackFxChain(
+  fx: import('@/lib/types').ArrangeTrackFx,
+  destination: Tone.ToneAudioNode,
+): { entry: Tone.ToneAudioNode; nodes: Tone.ToneAudioNode[] } {
+  const reverb = new Tone.Reverb({
+    decay: 1 + fx.reverb.amount * 4,
+    wet: fx.reverb.enabled ? fx.reverb.amount : 0,
+  })
+  const delay = new Tone.FeedbackDelay({
+    delayTime: 0.25,
+    feedback: fx.delay.enabled ? fx.delay.amount * 0.7 : 0,
+    wet: fx.delay.enabled ? fx.delay.amount : 0,
+  })
+  const filter = new Tone.Filter({
+    frequency: fx.filter.enabled ? 200 + (1 - fx.filter.amount) * 19800 : 20000,
+    type: 'lowpass',
+    Q: 1,
+  })
+  reverb.chain(delay, filter, destination)
+  return { entry: reverb, nodes: [reverb, delay, filter] }
 }
 
 export function useArrange() {
@@ -46,7 +95,7 @@ export function useArrange() {
   const beatStore = useBeatMakerStore()
   const { ensureToneStarted, ensureInstrument, playOnTimed, getMasterInput } = useAudio()
 
-  function scheduleAudioClip(track: ArrangeTrack, clip: ArrangeClip) {
+  function scheduleAudioClip(track: ArrangeTrack, clip: ArrangeClip, destination?: Tone.ToneAudioNode) {
     if (clip.source.kind !== 'audio') return
     // Alias the narrowed source into a const so subsequent reads inside
     // arrow callbacks keep the narrowed type — TS doesn't carry the
@@ -54,13 +103,20 @@ export function useArrange() {
     const src = clip.source
     const recClip = recorderStore.clips.find((c) => c.id === src.recorderClipId)
     if (!recClip) return
-    const masterIn = getMasterInput()
-    if (!masterIn) return
+    const dest = destination ?? getMasterInput()
+    if (!dest) return
+
+    // Per-track FX chain — each clip on this track gets its own private
+    // chain. We don't share one chain across the track's clips because
+    // the chain's disposal lifecycle ties to the scheduled-clip cleanup,
+    // and overlapping clips on the same track each want their own
+    // delay/reverb tail. Cheap enough — ~3 nodes per scheduled clip.
+    const { entry: fxEntry, nodes: fxNodes } = buildTrackFxChain(track.fx, dest)
 
     // Apply the recorder clip's existing pitch-shift so a clip the user
     // tuned in the recorder still plays in the right key on the timeline.
     const pitch = new Tone.PitchShift({ pitch: recClip.pitchSemitones, wet: 1 })
-    pitch.connect(masterIn)
+    pitch.connect(fxEntry)
     const player = new Tone.Player(recClip.buffer)
     player.connect(pitch)
     player.volume.value = Tone.gainToDb(Math.max(0.001, track.volume))
@@ -70,7 +126,7 @@ export function useArrange() {
     // are at audio-rate so they run on Tone.Transport's clock — even if the
     // user pauses, the schedule resumes with the correct offset.
     player.start(`+${clip.startSec}`, src.offsetSec, clip.durationSec)
-    scheduled.push({ player, pitch })
+    scheduled.push({ player, pitch, fxNodes })
   }
 
   function schedulePatternClip(track: ArrangeTrack, clip: ArrangeClip) {
@@ -210,11 +266,155 @@ export function useArrange() {
     })
   }
 
+  /**
+   * Render every track in the arrangement to a separate WAV file and trigger
+   * a browser download for each. The export is real-time — we play the
+   * arrangement once per track with everything except that track muted, and
+   * record the master output via a MediaStream tap. Real-time keeps the
+   * audio graph identical to what the user hears (per-track FX, mastering
+   * preset, every Tone routing decision); offline rendering would require
+   * reconstructing the entire engine inside Tone.Offline's context.
+   *
+   * Audio nodes are shared with live playback, so we restore the original
+   * mute state for every track once we're done — no surprise side effects
+   * on the UI after export finishes.
+   */
+  async function exportStems(): Promise<{ ok: boolean; message: string }> {
+    if (store.isPlaying) stop()
+    if (store.tracks.length === 0) {
+      return { ok: false, message: 'No tracks to export.' }
+    }
+    await ensureToneStarted()
+
+    const masterIn = getMasterInput()
+    if (!masterIn) return { ok: false, message: 'Master chain unavailable.' }
+
+    // Snapshot mute state so we can restore the arrangement to whatever the
+    // user had configured once export wraps. This matters because we mutate
+    // every track's `muted` flag during the loop to solo each track.
+    const originalMute = store.tracks.map((t) => t.muted)
+    const totalDur = store.totalDurationSec
+    if (totalDur <= 0.5) {
+      return { ok: false, message: 'Arrangement is too short.' }
+    }
+
+    stemExportProgress.value = {
+      active: true,
+      trackIndex: 0,
+      trackTotal: store.tracks.length,
+      trackName: '',
+    }
+
+    try {
+      for (let i = 0; i < store.tracks.length; i++) {
+        const target = store.tracks[i]
+        stemExportProgress.value = {
+          active: true,
+          trackIndex: i + 1,
+          trackTotal: store.tracks.length,
+          trackName: target.name,
+        }
+
+        // Solo this track by muting every other one. Synchronous mutation
+        // before scheduling so the play() call below sees the new state.
+        for (let j = 0; j < store.tracks.length; j++) {
+          store.tracks[j].muted = j !== i
+        }
+
+        await renderTrackToFile(target, totalDur, masterIn)
+      }
+      return { ok: true, message: `Exported ${store.tracks.length} stems.` }
+    } finally {
+      // Restore original mute state regardless of success or thrown error
+      // — the user shouldn't have to manually un-mute every track if a
+      // single render fails halfway through.
+      for (let i = 0; i < store.tracks.length; i++) {
+        store.tracks[i].muted = originalMute[i] ?? false
+      }
+      stemExportProgress.value = { active: false, trackIndex: 0, trackTotal: 0, trackName: '' }
+    }
+  }
+
+  /**
+   * Helper for exportStems: schedule + record one track for `durationSec`.
+   * Connects a MediaStreamDestination to the master so we capture exactly
+   * what the speakers would play, runs the arrangement, then encodes the
+   * recorded blob into a WAV via decodeAudioData → bufferToWavBlob.
+   */
+  async function renderTrackToFile(
+    target: ArrangeTrack,
+    durationSec: number,
+    masterIn: Tone.ToneAudioNode,
+  ): Promise<void> {
+    const ctx = Tone.getContext().rawContext as AudioContext
+    const destNode = ctx.createMediaStreamDestination()
+    // Tone's master output node lives at Tone.getDestination() — tap that
+    // to capture the post-mastering, post-analyser signal. We route a copy
+    // to destNode in addition to the speakers so the user can hear the
+    // export progressing (mute-everything-but-target = quiet enough not to
+    // be disruptive but audible feedback that something's happening).
+    Tone.getDestination().connect(destNode)
+
+    let chunks: BlobPart[] = []
+    const recorder = new MediaRecorder(destNode.stream)
+    recorder.ondataavailable = (e) => {
+      if (e.data.size > 0) chunks.push(e.data)
+    }
+
+    const finished = new Promise<void>((resolve) => {
+      recorder.onstop = () => resolve()
+    })
+    recorder.start()
+
+    clearScheduled()
+    Tone.getTransport().stop()
+    Tone.getTransport().position = 0
+    Tone.getTransport().bpm.value = store.bpm
+
+    for (const track of store.tracks) {
+      if (!store.shouldPlayTrack(track)) continue
+      for (const clip of track.clips) {
+        if (clip.source.kind === 'audio') scheduleAudioClip(track, clip, masterIn)
+        else schedulePatternClip(track, clip)
+      }
+    }
+
+    Tone.getTransport().start()
+    // 200 ms tail past the arrangement end so reverb / delay decays are
+    // captured instead of cut at the bar line.
+    await new Promise((r) => setTimeout(r, durationSec * 1000 + 200))
+
+    Tone.getTransport().stop()
+    Tone.getTransport().position = 0
+    clearScheduled()
+    recorder.stop()
+    await finished
+    Tone.getDestination().disconnect(destNode)
+
+    const blob = new Blob(chunks, { type: 'audio/webm' })
+    chunks = []
+    // Decode the recorder's WebM/Opus → AudioBuffer → 16-bit WAV via the
+    // shared encoder. Most DAWs prefer WAV; the user can always re-encode.
+    try {
+      const arr = await blob.arrayBuffer()
+      const buffer = await ctx.decodeAudioData(arr.slice(0))
+      const wav = bufferToWavBlob(buffer)
+      const filename = `${sanitizeFilename(target.name)}.wav`
+      downloadBlob(wav, filename)
+    } catch {
+      // Fallback: just download the WebM if decoding fails (Safari
+      // sometimes refuses to decode its own MediaRecorder output).
+      downloadBlob(blob, `${sanitizeFilename(target.name)}.webm`)
+    }
+  }
+
   return {
     play,
     stop,
     toggle,
     addRecorderClipToTrack,
     addPatternClipToTrack,
+    exportStems,
+    stemExportProgress,
   }
 }
