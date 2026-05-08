@@ -8,7 +8,7 @@ export type ThemeName =
 
 export type Locale = 'en' | 'ar'
 
-export type ModuleTab = 'live' | 'beat' | 'loop' | 'chaos'
+export type ModuleTab = 'live' | 'beat' | 'loop' | 'chaos' | 'learn'
 
 export interface CustomTheme {
   bgBase: string

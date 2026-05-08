@@ -13,7 +13,8 @@
     "live": "Live Play",
     "beat": "Beat Maker",
     "loop": "Loop Station",
-    "chaos": "Chaos"
+    "chaos": "Chaos",
+    "learn": "Learn"
   },
   "home": {
     "ctaPrimary": "Open the Studio",
@@ -388,5 +389,110 @@
     "cancel": "Cancel",
     "close": "Close",
     "back": "Back"
+  },
+  "learn": {
+    "title": "Learn",
+    "subtitle": "From zero music theory to playing your first piece — built into the studio.",
+    "lessons": "Lessons",
+    "previous": "Previous",
+    "next": "Next",
+    "playNote": "Play",
+    "playChord": "Play chord",
+    "playProgression": "Play full progression",
+    "stop": "Stop",
+    "openStudio": "Open in studio",
+    "tryItHere": "Try it here",
+    "tip": "Tip",
+    "noTheoryNeeded": "No theory needed — every example plays out loud when you tap it.",
+    "tour": {
+      "title": "1 · A 60-second tour",
+      "intro": "Five tabs at the top of the studio cover everything you can do. Here is what each one is for, in plain words.",
+      "tabs": {
+        "live": "Live Play — pick an instrument (piano, guitar, bass, drums…) and tap or use your keyboard to play it. Start here.",
+        "beat": "Beat Maker — a 16-step grid for making drum and bass patterns. You click squares; the cursor walks across and triggers them.",
+        "loop": "Loop Station — record a short snippet, layer another on top, and stack 8 layers into a live loop.",
+        "chaos": "Chaos — an XY pad and random-melody generator for sound design and happy accidents.",
+        "learn": "Learn — this tab. Teaches you everything else."
+      },
+      "shortcuts": "Press ? at any time to see the keyboard shortcuts. Press Ctrl+A to open the AI assistant. Everything else is buttons — you never have to type a value."
+    },
+    "notes": {
+      "title": "2 · What is a note?",
+      "intro": "A note is a single musical sound. Music uses 12 notes that repeat — the alphabet of sound.",
+      "naming": "Their names are: C, D, E, F, G, A, B — and then back to C. The five black keys on a piano sit between them and are named with sharps (♯) or flats (♭).",
+      "octave": "The number after the letter is the octave — how high or low. C4 is the C in the middle of a piano (\"middle C\"). C5 is the C one octave higher (twice the frequency, sounds the same but higher). C3 is one octave lower.",
+      "tryTitle": "Tap each note to hear it",
+      "tryHint": "C4 → D4 → E4 climbs up. C5 is the same letter as C4 but higher.",
+      "octaveDemo": "Compare octaves: same letter, different height."
+    },
+    "chords": {
+      "title": "3 · Reading chord names",
+      "intro": "A chord is several notes played at the same time. The name tells you which notes and what mood.",
+      "rule1": "The first letter is the root note — that is the lowest, anchoring note of the chord. C means the chord is built on C.",
+      "rule2": "If nothing follows the letter (just \"C\"), it is a major chord — bright, happy.",
+      "rule3": "A small \"m\" means minor — sadder, more pensive. So \"Am\" is A minor.",
+      "rule4": "A 7 means add the seventh — jazzier, less resolved. So \"G7\" is G with that extra colour.",
+      "rule5": "\"maj7\" means major-seventh — dreamy, smooth. \"Cmaj7\" is the dreamiest of the C chords.",
+      "decodeTitle": "Decode it like this",
+      "decode": "Cmaj7 = root C + major + dreamy 7th. Am7 = root A + minor + jazzy 7th. Fmaj7, G7, Em7 follow the same rule.",
+      "tryTitle": "Tap each chord to hear it",
+      "tryHint": "Notice how Cmaj7 sounds dreamy, Am7 sounds melancholy, G7 sounds like it wants to resolve."
+    },
+    "rhythm": {
+      "title": "4 · Reading the rhythm grid",
+      "intro": "A rhythm pattern is a row of slots. Each slot is a moment in time. A filled slot ■ means \"play\". An empty slot · means \"don't play / hold\".",
+      "bar": "A typical bar is 16 slots — count them as \"1 e & a 2 e & a 3 e & a 4 e & a\". One bar at 80 BPM lasts about 3 seconds.",
+      "example": "Here is the pattern from earlier: ■·■·■■·■·■·■·■■·",
+      "exampleBreakdown": "Hits land on positions 1, 3, 5, 6, 8, 10, 12, 14, 15. The rest are silent. That is what a kick + snare groove looks like written down.",
+      "tryTitle": "Tap to hear the pattern",
+      "tryHint": "Each ■ becomes a click; each · is silence. The cursor moves left to right at the BPM you set."
+    },
+    "piece": {
+      "title": "5 · Putting it together: read this piece",
+      "intro": "Now read a real piece — chords, melody, rhythm. This is exactly the example you may have seen before.",
+      "chordsLabel": "Chords",
+      "chords": "Cmaj7 · Am7 · Fmaj7 · G7 · Em7",
+      "melodyLabel": "Melody",
+      "melody": "C4 E4 G4 C5 A4 G4 F4 E4 D4 C4 E4 G4 A4 G4 F4 E4",
+      "rhythmLabel": "Rhythm",
+      "rhythm": "■·■·■■·■·■·■·■■·",
+      "howToRead": "How to read it",
+      "step1": "Key & mood — five chords in C major. Cmaj7 and Am7 give a dreamy, slightly jazzy mood.",
+      "step2": "Tempo — start slow, around 80 BPM. Each chord lasts one bar.",
+      "step3": "Melody — 16 notes that walk up to C5 and back down. C4 is middle C, C5 is the next C up.",
+      "step4": "Rhythm — the 16-slot pattern is your strumming/hit pattern under the melody. The melody lands on each slot too.",
+      "tryItTitle": "Hear it now"
+    },
+    "playing": {
+      "title": "6 · How to play this in the studio",
+      "intro": "Three ways to play the piece — pick the one that fits you.",
+      "wayA": "A · Tap the chords on Live Play.",
+      "wayAStep1": "Open Live Play, pick Piano or Guitar.",
+      "wayAStep2": "Tap the chord buttons in order: Cmaj7, Am7, Fmaj7, G7, Em7. Each one rings out for a moment — that is one bar.",
+      "wayAStep3": "Then tap the melody notes (C4, E4, G4, C5…) over the top, one at a time.",
+      "wayB": "B · Build it in Beat Maker.",
+      "wayBStep1": "Open Beat Maker. Click Add Track → Bass → root note (C2 for the first bar).",
+      "wayBStep2": "Click step 1 of the bass row to put a hit on beat 1. The cursor will trigger it every bar.",
+      "wayBStep3": "Add a Drums track for kick and snare, paint the rhythm pattern, hit Play.",
+      "wayC": "C · Let the AI assistant lay it out for you.",
+      "wayCStep1": "Press Ctrl+A to open the AI panel.",
+      "wayCStep2": "Go to Generate, type \"slow dreamy progression in C major with melody\", hit generate.",
+      "wayCStep3": "Click \"Apply to Beat Maker\" — the chords, drums, and bassline land in a new pattern."
+    },
+    "next": {
+      "title": "7 · What to explore next",
+      "loopstation": "Record a short loop on Loop Station, then layer another instrument on top. Eight layers max.",
+      "chaos": "Drag the Chaos XY pad while a chord rings — that is sound design.",
+      "multiplayer": "Open the AppNav menu and create a room. Send the code to a friend; you both play live in the same studio.",
+      "share": "In Beat Maker → Export, generate a share link. Anyone who opens it loads the exact same pattern."
+    },
+    "about": {
+      "title": "About KLabMusic",
+      "p1": "KLabMusic is a free, browser-based music studio for everyone — piano, guitar, bass, drums, synths, beat maker, loop station, recorder, multiplayer jams and an AI assistant, all in one place, no installs, no accounts required to play.",
+      "p2": "Designed, built and maintained by Khaled Elsaeed.",
+      "p3": "Made for musicians who don't want to download anything, and for non-musicians who want to learn by doing.",
+      "creator": "Created by Khaled Elsaeed",
+      "github": "github.com/kelsaeed/KLabMusic"
+    }
   }
 }

@@ -12,6 +12,7 @@ const tabs: { key: ModuleTab; icon: string }[] = [
   { key: 'beat', icon: '🥁' },
   { key: 'loop', icon: '🔁' },
   { key: 'chaos', icon: '🌀' },
+  { key: 'learn', icon: '🎓' },
 ]
 </script>
 

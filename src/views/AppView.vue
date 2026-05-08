@@ -10,6 +10,7 @@ const AudioStage = defineAsyncComponent(() => import('@/components/instruments/A
 const BeatMakerStage = defineAsyncComponent(() => import('@/components/beatmaker/BeatMakerStage.vue'))
 const LoopStationStage = defineAsyncComponent(() => import('@/components/loopstation/LoopStationStage.vue'))
 const ChaosStage = defineAsyncComponent(() => import('@/components/chaos/ChaosStage.vue'))
+const LearnStage = defineAsyncComponent(() => import('@/components/learn/LearnStage.vue'))
 
 const active = ref<ModuleTab>('live')
 </script>
@@ -25,6 +26,7 @@ const active = ref<ModuleTab>('live')
         <BeatMakerStage v-else-if="active === 'beat'" />
         <LoopStationStage v-else-if="active === 'loop'" />
         <ChaosStage v-else-if="active === 'chaos'" />
+        <LearnStage v-else-if="active === 'learn'" />
         <template #fallback>
           <div class="loading mono">Loading…</div>
         </template>

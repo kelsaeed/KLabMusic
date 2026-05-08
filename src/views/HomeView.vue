@@ -32,6 +32,15 @@ const features = tm('home.features') as Record<string, string>
         </li>
       </ul>
     </section>
+
+    <footer class="credit">
+      <p class="credit-line mono">
+        {{ t('learn.about.creator') }} — Khaled Elsaeed
+      </p>
+      <a class="credit-link mono" href="https://github.com/kelsaeed/KLabMusic" target="_blank" rel="noopener">
+        github.com/kelsaeed/KLabMusic
+      </a>
+    </footer>
   </div>
 </template>
 
@@ -161,4 +170,26 @@ const features = tm('home.features') as Record<string, string>
   border-color: var(--accent-primary);
   transform: translateY(-2px);
 }
+
+.credit {
+  text-align: center;
+  padding: 1.5rem 1rem 3rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  border-top: 1px solid var(--border);
+}
+.credit-line {
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  color: var(--accent-primary);
+  margin: 0;
+}
+.credit-link {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-decoration: none;
+}
+.credit-link:hover { color: var(--accent-secondary); text-decoration: underline; }
 </style>
