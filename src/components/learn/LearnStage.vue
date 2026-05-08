@@ -982,45 +982,57 @@ const isLast = computed(() => activeId.value === LESSONS[LESSONS.length - 1].id)
   justify-content: center;
 }
 .social-btn {
-  width: 46px;
-  height: 46px;
+  width: 48px;
+  height: 48px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
+  /* No 1-px CSS border. Previously border: 1px solid var(--border) plus the
+     hover transition to border-color: transparent left a visible rim where
+     the page background showed through, which read as "the colour doesn't
+     reach the edge of the circle" — especially on touch where :hover stays
+     latched after a tap. The rim is now drawn as an inset box-shadow on the
+     padding-box, so it lives strictly INSIDE the circle and the brand fill
+     can extend edge-to-edge. */
   background: var(--bg-elevated);
-  border: 1px solid var(--border);
+  background-clip: padding-box;
+  border: none;
+  box-shadow: inset 0 0 0 1px var(--border);
   color: var(--text-muted);
   text-decoration: none;
+  position: relative;
+  overflow: hidden;
   transition:
     transform var(--transition-base),
     color var(--transition-base),
     background var(--transition-base),
-    border-color var(--transition-base),
     box-shadow var(--transition-base);
-  position: relative;
 }
-.social-btn svg { width: 20px; height: 20px; }
+.social-btn svg { width: 22px; height: 22px; position: relative; z-index: 1; }
 .social-btn:hover {
   transform: translateY(-3px) scale(1.06);
   color: var(--text-inverse);
-  border-color: transparent;
 }
+/* Each branded hover overrides the inset rim with 0 0 0 0 (gone) and adds
+   the brand-coloured outer glow. Combining inset + outer in a single
+   box-shadow rule means the inset cleanly transitions out as the gradient
+   transitions in, no visible step. */
 .social-btn.ig:hover {
   background: linear-gradient(135deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888);
-  box-shadow: 0 0 22px rgba(220, 39, 67, 0.55);
+  box-shadow: inset 0 0 0 0 transparent, 0 0 22px rgba(220, 39, 67, 0.55);
 }
 .social-btn.fb:hover {
   background: #1877f2;
-  box-shadow: 0 0 22px rgba(24, 119, 242, 0.55);
+  box-shadow: inset 0 0 0 0 transparent, 0 0 22px rgba(24, 119, 242, 0.55);
 }
 .social-btn.tt:hover {
   background: linear-gradient(135deg, #ff0050, #00f2ea);
-  box-shadow: 0 0 22px rgba(0, 242, 234, 0.55);
+  box-shadow: inset 0 0 0 0 transparent, 0 0 22px rgba(0, 242, 234, 0.55);
 }
 .social-btn.li:hover {
   background: #0a66c2;
-  box-shadow: 0 0 22px rgba(10, 102, 194, 0.55);
+  box-shadow: inset 0 0 0 0 transparent, 0 0 22px rgba(10, 102, 194, 0.55);
 }
 .sr {
   position: absolute;
