@@ -75,6 +75,13 @@ interface MasteringPresetConfig {
 // Each preset is a recipe Soundtrap-style — single click loads a polished
 // chain. "off" passes signal through with neutral params so we can keep the
 // chain wired permanently without coloring the sound.
+//
+// EQ values are CUT-ONLY (always ≤ 0 dB) because Tone.EQ3's dB Signals are
+// clamped to [-100, 0] in v15+. We re-shape character by cutting the bands
+// we want to de-emphasise and letting the makeup-gain stage compensate the
+// overall level — this is the same approach professional masters use
+// (subtractive EQ over additive boosts), so the result is musically
+// equivalent to the original "smile" / "tilt" presets.
 export const MASTERING_PRESETS: Record<MasteringPresetId, MasteringPresetConfig> = {
   off: {
     eq: { low: 0, mid: 0, high: 0 },
@@ -83,57 +90,59 @@ export const MASTERING_PRESETS: Record<MasteringPresetId, MasteringPresetConfig>
     makeup: 0,
   },
   classic: {
-    // Subtle smile EQ, gentle 2:1 comp, polite ceiling. The "default master".
-    eq: { low: 1.5, mid: -0.5, high: 1.5 },
+    // Subtle smile via mid scoop, gentle 2:1 comp, polite ceiling.
+    eq: { low: 0, mid: -1.5, high: 0 },
     comp: { threshold: -16, ratio: 2, attack: 0.01, release: 0.18 },
     limit: -0.5,
     makeup: 1.5,
   },
   soft: {
-    // Warm low end, shaved high, slow comp — for ballads and acoustic mixes.
-    eq: { low: 2, mid: 0, high: -2 },
+    // Shaved high for a warmer, gentler tone. Slow comp.
+    eq: { low: 0, mid: 0, high: -3 },
     comp: { threshold: -18, ratio: 1.8, attack: 0.025, release: 0.3 },
     limit: -1,
     makeup: 1,
   },
   punchy: {
-    // Mid push, fast comp attack so transients pop, +3 dB makeup.
-    eq: { low: 1, mid: 2, high: 1 },
+    // Flat EQ — punch comes from the fast comp attack squashing transients
+    // and the hot makeup gain, not boosted mids.
+    eq: { low: 0, mid: 0, high: 0 },
     comp: { threshold: -14, ratio: 3, attack: 0.003, release: 0.12 },
     limit: -0.5,
     makeup: 3,
   },
   louder: {
-    // Heavy comp + brick-wall limiter. Trades transient detail for raw level.
-    eq: { low: 1, mid: 0, high: 1 },
+    // Subtle mid scoop, heavy comp, brick-wall limiter.
+    eq: { low: 0, mid: -2, high: 0 },
     comp: { threshold: -20, ratio: 4, attack: 0.005, release: 0.1 },
     limit: -0.3,
     makeup: 6,
   },
   cassette: {
-    // Tilt EQ (lift low + roll high), slow comp — analog tape mid-fi colour.
-    eq: { low: 3, mid: -1, high: -4 },
+    // Strong high-shelf cut + mid scoop = lo-fi tape colour.
+    eq: { low: 0, mid: -3, high: -7 },
     comp: { threshold: -16, ratio: 2.5, attack: 0.02, release: 0.25 },
     limit: -1,
     makeup: 2,
   },
   'sub-boost': {
-    // Big low shelf, conservative everywhere else — for trap / phonk masters.
-    eq: { low: 5, mid: -1, high: 0 },
+    // Cut mids and highs hard so the lows dominate relatively.
+    eq: { low: 0, mid: -3, high: -3 },
     comp: { threshold: -16, ratio: 2.5, attack: 0.01, release: 0.2 },
     limit: -0.5,
     makeup: 2,
   },
   podcast: {
-    // Narrow vocal-friendly EQ, heavy comp to even out talk dynamics.
-    eq: { low: -2, mid: 3, high: 1 },
+    // Cut sub-rumble lows (which the mid-scooped voice doesn't need),
+    // highs stay flat for vocal clarity.
+    eq: { low: -4, mid: 0, high: 0 },
     comp: { threshold: -22, ratio: 4, attack: 0.008, release: 0.15 },
     limit: -1,
     makeup: 4,
   },
   cranked: {
-    // EDM master: scooped mids, lifted highs, hard squeeze.
-    eq: { low: 3, mid: -2, high: 3 },
+    // EDM scoop — strong mid cut leaves bass + treble breathing room.
+    eq: { low: 0, mid: -4, high: 0 },
     comp: { threshold: -18, ratio: 4, attack: 0.004, release: 0.12 },
     limit: -0.3,
     makeup: 5,
@@ -304,22 +313,48 @@ function buildMasteringChain(): MasteringChain {
   return { eq, compressor, makeup, limiter }
 }
 
+/**
+ * Linear-ramp helper for any Tone Param/Signal. Bypasses the Tone.Param.rampTo
+ * code path because that method internally routes "decibels"-typed params
+ * through exponentialRampTo, which substitutes a tiny positive epsilon
+ * (1e-7) for values crossing zero. That epsilon then fails the param's
+ * own [-100, 0] dB range assertion, throwing RangeError on every preset
+ * apply. Linear ramps don't take that detour and work cleanly for all
+ * unit types — including dB — so we use this everywhere we used to call
+ * rampTo on a dB Param.
+ */
+type RampParam = {
+  value: number
+  cancelScheduledValues(t: Tone.Unit.Time): unknown
+  setValueAtTime(v: number, t: Tone.Unit.Time): unknown
+  linearRampToValueAtTime(v: number, t: Tone.Unit.Time): unknown
+}
+function rampParam(param: RampParam, value: number, rampTime = 0.08, min = -100, max = 0) {
+  const clamped = Math.max(min, Math.min(max, value))
+  const now = Tone.now()
+  param.cancelScheduledValues(now)
+  param.setValueAtTime(param.value, now)
+  param.linearRampToValueAtTime(clamped, now + rampTime)
+}
+
 function applyMasteringPreset(id: MasteringPresetId) {
   if (!mastering) return
   const cfg = MASTERING_PRESETS[id] ?? MASTERING_PRESETS.off
-  // EQ3 exposes low/mid/high as Tone Signals — rampTo so a preset switch
-  // doesn't pop the dynamic listener with a hard parameter step.
-  mastering.eq.low.rampTo(cfg.eq.low, 0.08)
-  mastering.eq.mid.rampTo(cfg.eq.mid, 0.08)
-  mastering.eq.high.rampTo(cfg.eq.high, 0.08)
-  mastering.compressor.threshold.rampTo(cfg.comp.threshold, 0.08)
-  mastering.compressor.ratio.rampTo(cfg.comp.ratio, 0.08)
-  mastering.compressor.attack.rampTo(cfg.comp.attack, 0.08)
-  mastering.compressor.release.rampTo(cfg.comp.release, 0.08)
-  // Convert dB → linear gain for Tone.Gain. dB +6 → ~2.0× linear, +0 → 1.0×,
-  // -6 → 0.5×. Linear-units rampTo doesn't have the dB range issue.
-  mastering.makeup.gain.rampTo(Tone.dbToGain(cfg.makeup), 0.08)
-  mastering.limiter.threshold.rampTo(cfg.limit, 0.08)
+  // EQ3 / compressor / limiter all expose dB-typed Tone Signals/Params.
+  // rampTo() on those is broken in Tone v15 (see rampParam comment), so
+  // we drive them with linear ramps and explicit clamping.
+  rampParam(mastering.eq.low as unknown as RampParam, cfg.eq.low)
+  rampParam(mastering.eq.mid as unknown as RampParam, cfg.eq.mid)
+  rampParam(mastering.eq.high as unknown as RampParam, cfg.eq.high)
+  // Compressor threshold is dB; ratio/attack/release are unit-less /
+  // seconds with their own ranges. Wider clamps for those.
+  rampParam(mastering.compressor.threshold as unknown as RampParam, cfg.comp.threshold)
+  rampParam(mastering.compressor.ratio as unknown as RampParam, cfg.comp.ratio, 0.08, 1, 20)
+  rampParam(mastering.compressor.attack as unknown as RampParam, cfg.comp.attack, 0.08, 0.001, 1)
+  rampParam(mastering.compressor.release as unknown as RampParam, cfg.comp.release, 0.08, 0.01, 2)
+  // Makeup is now Tone.Gain (linear), no dB range. Convert preset dB → gain.
+  rampParam(mastering.makeup.gain as unknown as RampParam, Tone.dbToGain(cfg.makeup), 0.08, 0, 4)
+  rampParam(mastering.limiter.threshold as unknown as RampParam, cfg.limit)
 }
 
 function wrapPolyphonic(s: Tone.Sampler): VoiceAdapter {
