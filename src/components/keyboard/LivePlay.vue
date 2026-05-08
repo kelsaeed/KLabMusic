@@ -192,4 +192,18 @@ function onPianoRelease(note: string) {
 .mod {
   flex-shrink: 0;
 }
+
+@media (max-width: 600px) {
+  .live { padding: 0.7rem; }
+  .toolbar { gap: 0.6rem; margin-bottom: 0.6rem; padding-bottom: 0.6rem; }
+  .mode-btn { padding: 0.3rem 0.55rem; font-size: 0.65rem; }
+  .notation-btn { padding: 0.32rem 0.6rem; font-size: 0.65rem; }
+  .labels-toggle { font-size: 0.7rem; }
+}
+
+/* Portrait phones — drop the bend/mod expressive controls to keep the toolbar tight
+   above the now-vertical keyboard. They remain available in landscape. */
+@media (orientation: portrait) and (max-width: 720px) {
+  .bend, .mod { display: none; }
+}
 </style>

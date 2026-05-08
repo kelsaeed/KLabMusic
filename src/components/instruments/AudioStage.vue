@@ -37,16 +37,18 @@ onMounted(() => {
   width: 100%;
   max-width: 1200px;
   margin: 0 auto;
+  min-width: 0;
 }
 .col-main,
 .col-aside {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  min-width: 0;
 }
 @media (max-width: 880px) {
   .stage {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 </style>

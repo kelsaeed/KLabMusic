@@ -218,4 +218,12 @@ function prefetch(id: InstrumentId) {
   width: 14px;
   height: 14px;
 }
+
+@media (max-width: 480px) {
+  .selector { padding: 0.7rem; }
+  .grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.35rem; }
+  .card { padding: 0.6rem 0.3rem; gap: 0.25rem; }
+  .icon { font-size: 1.2rem; }
+  .name { font-size: 0.7rem; letter-spacing: -0.01em; }
+}
 </style>

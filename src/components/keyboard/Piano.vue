@@ -100,7 +100,10 @@ function onUp(note: string) {
         :key="k.note"
         class="white"
         :class="{ active: audioStore.activeNotes.has(k.note) }"
-        :style="{ left: k.leftPercent + '%', width: 100 / (octaveCount * 7) + '%' }"
+        :style="{
+          '--pos': k.leftPercent + '%',
+          '--size': 100 / (octaveCount * 7) + '%',
+        }"
         @pointerdown="onDown(k.note, $event)"
         @pointerup="onUp(k.note)"
         @pointercancel="onUp(k.note)"
@@ -118,8 +121,8 @@ function onUp(note: string) {
         class="black"
         :class="{ active: audioStore.activeNotes.has(k.note) }"
         :style="{
-          left: `calc(${k.leftPercent}% - ${100 / (octaveCount * 7) * 0.3}%)`,
-          width: 100 / (octaveCount * 7) * 0.6 + '%',
+          '--pos': `calc(${k.leftPercent}% - ${100 / (octaveCount * 7) * 0.3}%)`,
+          '--size': (100 / (octaveCount * 7) * 0.6) + '%',
         }"
         @pointerdown="onDown(k.note, $event)"
         @pointerup="onUp(k.note)"
@@ -152,8 +155,11 @@ function onUp(note: string) {
 .white,
 .black {
   position: absolute;
+  /* default landscape: keys are vertical strips along the X axis */
   top: 0;
   height: 100%;
+  left: var(--pos);
+  width: var(--size);
   padding: 0;
   display: flex;
   flex-direction: column-reverse;
@@ -217,5 +223,51 @@ function onUp(note: string) {
 .black .kb-hint {
   background: rgba(0, 0, 0, 0.5);
   color: var(--accent-secondary);
+}
+
+/* Portrait phones — flip the keyboard to vertical so each key gets the full screen width.
+   Landscape phones and desktop keep the standard horizontal layout. */
+@media (orientation: portrait) and (max-width: 720px) {
+  .piano { padding: 0.4rem; }
+  .bed {
+    height: clamp(360px, 68vh, 760px);
+    width: 100%;
+  }
+  .white,
+  .black {
+    /* Swap axes: --pos drives top, --size drives height */
+    left: 0;
+    width: 100%;
+    top: var(--pos);
+    height: var(--size);
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-end;
+    padding: 0 0.7rem;
+    gap: 0.4rem;
+    border-radius: 6px 10px 10px 6px;
+  }
+  .white.active {
+    /* Press-down feedback shifts horizontally now */
+    transform: translateX(3px);
+  }
+  .black {
+    /* Black keys overlay only the left half of the bed for a piano-like silhouette */
+    width: 56%;
+    height: var(--size);
+    border-radius: 4px 8px 8px 4px;
+    justify-content: flex-start;
+    padding: 0 0.5rem;
+  }
+  .black.active { transform: translateX(3px); }
+  .note-name {
+    font-size: 0.78rem;
+    padding-bottom: 0;
+    opacity: 0.85;
+  }
+  .kb-hint {
+    margin-top: 0;
+    font-size: 0.7rem;
+  }
 }
 </style>

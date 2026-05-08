@@ -50,15 +50,21 @@ function noteAtFret(open: string, fret: number): string {
   }
 }
 
-const fretboard = computed(() =>
-  STRINGS.map((s) => ({
-    string: s,
-    cells: Array.from({ length: FRET_COUNT }, (_, fret) => ({
-      fret,
-      note: noteAtFret(s.open, fret),
-    })),
-  })),
-)
+interface FlatCell {
+  string: number
+  fret: number
+  note: string
+}
+
+const flatCells = computed<FlatCell[]>(() => {
+  const out: FlatCell[] = []
+  for (const s of STRINGS) {
+    for (let f = 0; f < FRET_COUNT; f++) {
+      out.push({ string: s.idx, fret: f, note: noteAtFret(s.open, f) })
+    }
+  }
+  return out
+})
 
 const FRET_MARKERS = new Set([3, 5, 7, 9])
 const DOUBLE_MARKER = 12
@@ -125,28 +131,31 @@ function toggleNotation() {
 
     <!-- FRETBOARD -->
     <section v-if="mode === 'fretboard'" class="fretboard">
-      <div class="fret-numbers">
-        <span class="string-label" />
+      <div class="fb-grid">
+        <span class="fb-corner" />
         <span
           v-for="f in FRET_COUNT"
-          :key="f - 1"
+          :key="`fnum-${f - 1}`"
           class="fret-num mono"
           :class="{ marker: FRET_MARKERS.has(f - 1) || (f - 1) === DOUBLE_MARKER }"
-        >
-          {{ f - 1 }}
-        </span>
-      </div>
-      <div v-for="row in fretboard" :key="row.string.idx" class="fret-row">
-        <span class="string-label mono">{{ row.string.name }}</span>
+          :style="{ '--fret': f - 1 }"
+        >{{ f - 1 }}</span>
+        <span
+          v-for="s in STRINGS"
+          :key="`slbl-${s.idx}`"
+          class="string-label mono"
+          :style="{ '--string': s.idx }"
+        >{{ s.name }}</span>
         <button
-          v-for="cell in row.cells"
-          :key="cell.fret"
+          v-for="cell in flatCells"
+          :key="`${cell.string}-${cell.fret}`"
           class="fret-cell"
           :class="{
             open: cell.fret === 0,
             flash: flashed === cell.note,
             marker: FRET_MARKERS.has(cell.fret) || cell.fret === DOUBLE_MARKER,
           }"
+          :style="{ '--string': cell.string, '--fret': cell.fret }"
           @pointerdown="pluck(cell.note)"
         >
           <span class="fret-note mono">{{ formatNote(cell.note, audioStore.notation) }}</span>
@@ -238,27 +247,30 @@ function toggleNotation() {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 0.6rem;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
   overflow-x: auto;
 }
-.fret-numbers,
-.fret-row {
+.fb-grid {
   display: grid;
-  grid-template-columns: 32px repeat(13, minmax(50px, 1fr));
+  grid-template-columns: 32px repeat(13, minmax(36px, 1fr));
+  grid-template-rows: 22px repeat(6, 38px);
   gap: 4px;
-  align-items: stretch;
+  min-width: 0;
 }
-.fret-numbers { padding-bottom: 0.2rem; }
+.fb-corner { grid-row: 1; grid-column: 1; }
 .fret-num {
+  grid-row: 1;
+  grid-column: calc(var(--fret) + 2);
   text-align: center;
   font-size: 0.65rem;
   color: var(--text-muted);
   text-transform: uppercase;
+  align-self: end;
+  padding-bottom: 0.2rem;
 }
 .fret-num.marker { color: var(--accent-primary); font-weight: 700; }
 .string-label {
+  grid-row: calc(var(--string) + 1);
+  grid-column: 1;
   display: grid;
   place-items: center;
   font-size: 0.7rem;
@@ -268,9 +280,10 @@ function toggleNotation() {
 }
 .fret-cell {
   position: relative;
+  grid-row: calc(var(--string) + 1);
+  grid-column: calc(var(--fret) + 2);
   display: grid;
   place-items: center;
-  height: 38px;
   background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -415,5 +428,34 @@ function toggleNotation() {
 @media (max-width: 720px) {
   .string { grid-template-columns: 70px 1fr 70px; }
   .chord-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* Portrait phones — flip the fretboard so strings are columns and frets are rows.
+   Strings ordered low (6th) on the left, high (1st) on the right; frets read top-down. */
+@media (orientation: portrait) and (max-width: 720px) {
+  .fretboard { overflow: visible; padding: 0.5rem; }
+  .fb-grid {
+    grid-template-columns: 28px repeat(6, minmax(0, 1fr));
+    grid-template-rows: 22px repeat(13, minmax(34px, 1fr));
+    height: clamp(420px, 70vh, 760px);
+  }
+  .fret-num {
+    grid-row: calc(var(--fret) + 2);
+    grid-column: 1;
+    align-self: center;
+    padding: 0;
+  }
+  .string-label {
+    grid-row: 1;
+    grid-column: calc(8 - var(--string));
+  }
+  .fret-cell {
+    grid-row: calc(var(--fret) + 2);
+    grid-column: calc(8 - var(--string));
+  }
+  .bar { gap: 0.4rem; padding: 0.45rem 0.6rem; }
+  .mode { padding: 0.4rem 0.7rem; font-size: 0.65rem; }
+  .notation, .damp { padding: 0.4rem 0.7rem; font-size: 0.65rem; }
+  .notation { margin-inline-start: 0; }
 }
 </style>
