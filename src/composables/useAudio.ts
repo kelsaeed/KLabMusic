@@ -206,9 +206,16 @@ function buildGuitar(): VoiceAdapter {
     destination: out.input as unknown as AudioNode,
   })
 
+  // Cap each pluck at this many seconds. The nylon SF2 samples have ~4 s of
+  // natural decay/room ambience baked in, which listeners frequently misread
+  // as global reverb they can't switch off (because it isn't reverb — it's
+  // the recorded sample tail). A bounded duration keeps single plucks
+  // musical but stops them from haunting the mix after every click.
+  const PLUCK_DURATION = 1.6
+
   return {
     attack: (note, vel) => {
-      void guitar.start({ note, velocity: Math.max(1, vel) })
+      void guitar.start({ note, velocity: Math.max(1, vel), duration: PLUCK_DURATION })
     },
     attackRelease: (note, dur, vel) => {
       void guitar.start({ note, velocity: Math.max(1, vel), duration: dur })

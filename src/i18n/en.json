@@ -284,6 +284,7 @@
     "fromInstrument": "From instrument",
     "fromClip": "From clip",
     "noClipsHint": "Record or upload a clip first",
+    "fromClipExplain": "“From clip” turns one of your own recordings or uploaded audio files into a beat-maker track. Open the recorder drawer at the bottom to record from your mic or import a sound — then come back here and it'll be available.",
     "pickClip": "Pick a clip",
     "emptyPattern": "Empty pattern. Add a track to start.",
     "mute": "Mute",
@@ -323,7 +324,10 @@
     "damp": "Mute",
     "dampHint": "Stop all ringing strings instantly",
     "stringLabel": "String {n}",
+    "stringsHint": "Click and drag down through the strings to strum.",
     "notationHint": "Toggle between Do Re Mi and C D E note names",
+    "chordCardHint": "Pick this chord — its strings appear below.",
+    "chordPlayHint": "Drag across strings to strum, or tap any single string.",
     "mode": {
       "fretboard": "Fretboard",
       "strings": "Open strings",

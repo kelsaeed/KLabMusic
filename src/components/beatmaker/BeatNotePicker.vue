@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import * as Tone from 'tone'
 import { useI18n } from 'vue-i18n'
 import { INSTRUMENTS, noteOptionsFor } from '@/lib/instruments'
 import { useAudio } from '@/composables/useAudio'
@@ -8,13 +9,15 @@ import { formatNote } from '@/lib/notation'
 import type { InstrumentId } from '@/lib/types'
 
 // Visual picker for the note (or sample) a beat-maker track plays. Replaces
-// the dropdown so users can SEE the keyboard / drum pads while choosing —
-// matches the rest of the app's no-typing, dropdowns-and-visuals design.
+// the dropdown so users can SEE the instrument layout while choosing — matches
+// the rest of the app's no-typing, dropdowns-and-visuals design.
 //
-// Two layouts:
+// Three layouts:
 //   - 'sample' instruments (drums) → grid of pad buttons, one per kit piece
-//   - 'note' instruments (everything else) → mini piano keyboard scoped to
-//     that instrument's playable range (noteOptionsFor)
+//   - 'guitar' → 6-string × 13-fret board mirroring the live-play layout, so
+//     pitch picking matches what the player already knows from the studio
+//   - everything else → mini piano keyboard scoped to that instrument's
+//     playable range (noteOptionsFor)
 //
 // Clicking previews the sound through the same audio chain the beat-maker
 // will use, so you hear what you're picking before committing.
@@ -34,10 +37,36 @@ const audioStore = useAudioStore()
 
 const meta = computed(() => INSTRUMENTS[props.instrument])
 const isSample = computed(() => meta.value.playMode === 'sample')
+const isGuitar = computed(() => props.instrument === 'guitar')
 
 const samples = computed(() =>
   isSample.value ? (meta.value.samples ?? []) : [],
 )
+
+// Guitar tab-convention: string 1 (high E) on top, string 6 (low E) on bottom.
+const GUITAR_STRINGS = [
+  { idx: 1, open: 'E4' },
+  { idx: 2, open: 'B3' },
+  { idx: 3, open: 'G3' },
+  { idx: 4, open: 'D3' },
+  { idx: 5, open: 'A2' },
+  { idx: 6, open: 'E2' },
+] as const
+const GUITAR_FRETS = 13
+
+interface FretCell { string: number; fret: number; note: string }
+const guitarCells = computed<FretCell[]>(() => {
+  if (!isGuitar.value) return []
+  const out: FretCell[] = []
+  for (const s of GUITAR_STRINGS) {
+    for (let f = 0; f < GUITAR_FRETS; f++) {
+      let note: string = s.open
+      try { note = Tone.Frequency(s.open).transpose(f).toNote() as string } catch { /* fall back to open */ }
+      out.push({ string: s.idx, fret: f, note })
+    }
+  }
+  return out
+})
 
 interface PianoKey {
   note: string
@@ -54,7 +83,7 @@ const allowed = computed(() =>
 )
 
 const keys = computed<PianoKey[]>(() => {
-  if (isSample.value) return []
+  if (isSample.value || isGuitar.value) return []
   const ordered = [...allowed.value]
   // Build a parallel keyboard grid spanning every allowed octave.
   const parsed = ordered.map(parseNote).filter((p): p is { name: string; octave: number; semitone: number } => !!p)
@@ -120,7 +149,7 @@ function noteLabel(note: string): string {
 </script>
 
 <template>
-  <div class="picker" :class="{ sample: isSample }">
+  <div class="picker" :class="{ sample: isSample, guitar: isGuitar }">
     <div v-if="isSample" class="pads">
       <button
         v-for="s in samples"
@@ -132,6 +161,36 @@ function noteLabel(note: string): string {
       >
         {{ s }}
       </button>
+    </div>
+
+    <div v-else-if="isGuitar" class="fb-wrap">
+      <div class="fb-grid">
+        <span class="fb-corner" />
+        <span
+          v-for="f in GUITAR_FRETS"
+          :key="`fnum-${f - 1}`"
+          class="fret-num mono"
+          :style="{ '--fret': f - 1 }"
+        >{{ f - 1 }}</span>
+        <span
+          v-for="s in GUITAR_STRINGS"
+          :key="`slbl-${s.idx}`"
+          class="string-label mono"
+          :style="{ '--string': s.idx }"
+        >{{ s.idx }}</span>
+        <button
+          v-for="cell in guitarCells"
+          :key="`${cell.string}-${cell.fret}`"
+          type="button"
+          class="fret-cell"
+          :class="{ on: modelValue === cell.note, open: cell.fret === 0 }"
+          :style="{ '--string': cell.string, '--fret': cell.fret }"
+          @click="pick(cell.note)"
+        >
+          <span class="fret-note mono">{{ noteLabel(cell.note) }}</span>
+        </button>
+      </div>
+      <p class="hint mono">{{ t('binding.note') }}: {{ noteLabel(modelValue) }}</p>
     </div>
 
     <div v-else class="kbd-wrap">
@@ -273,4 +332,63 @@ function noteLabel(note: string): string {
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
+
+/* — Guitar fretboard layout — */
+.fb-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.fb-grid {
+  display: grid;
+  grid-template-columns: 28px repeat(13, minmax(34px, 1fr));
+  grid-template-rows: 18px repeat(6, 30px);
+  gap: 3px;
+  overflow-x: auto;
+  padding: 0.4rem;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.fb-corner { grid-row: 1; grid-column: 1; }
+.fb-grid .fret-num {
+  grid-row: 1;
+  grid-column: calc(var(--fret) + 2);
+  text-align: center;
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  align-self: end;
+}
+.fb-grid .string-label {
+  grid-row: calc(var(--string) + 1);
+  grid-column: 1;
+  display: grid;
+  place-items: center;
+  font-size: 0.65rem;
+  color: var(--text-muted);
+}
+.fb-grid .fret-cell {
+  grid-row: calc(var(--string) + 1);
+  grid-column: calc(var(--fret) + 2);
+  display: grid;
+  place-items: center;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 0;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+.fb-grid .fret-cell.open { background: var(--bg-surface); border-style: dashed; }
+.fb-grid .fret-cell:hover { border-color: var(--accent-primary); }
+.fb-grid .fret-cell.on {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+.fb-grid .fret-cell .fret-note {
+  font-size: 0.6rem;
+  color: var(--text-primary);
+}
+.fb-grid .fret-cell.on .fret-note { color: var(--text-inverse); }
 </style>

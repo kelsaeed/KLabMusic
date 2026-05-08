@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import * as Tone from 'tone'
 import { useI18n } from 'vue-i18n'
 import { useAudio } from '@/composables/useAudio'
@@ -16,6 +16,8 @@ const mode = ref<Mode>('fretboard')
 
 interface Chord {
   name: string
+  // Notes are listed lowest pitch (string 6, low E) first → highest (string 1, high E)
+  // so a downstrum simply iterates this list and an upstrum iterates it reversed.
   notes: string[]
 }
 
@@ -29,6 +31,11 @@ const CHORDS: Chord[] = [
   { name: 'A',  notes: ['A2', 'E3', 'A3', 'C#4', 'E4'] },
   { name: 'F',  notes: ['F2', 'C3', 'F3', 'A3', 'C4', 'F4'] },
 ]
+
+// Currently focused chord — clicking a chord card selects it and reveals the
+// per-string layout below so the user can play each chord tone individually
+// or strum across all of them.
+const selectedChord = ref<Chord>(CHORDS[0])
 
 // Strings displayed top-down in TAB convention: 1st (high E) on top, 6th (low E) on bottom.
 const STRINGS = [
@@ -103,6 +110,58 @@ function damp() {
 function toggleNotation() {
   audioStore.setNotation(audioStore.notation === 'solfege' ? 'letters' : 'solfege')
 }
+
+// — Drag-to-strum support —
+//
+// Holding the pointer down and sliding across cells should pluck each cell
+// the pointer enters, both for mouse-drag and touch-swipe. Two pieces are
+// needed for this to work correctly:
+//
+// 1. Touch pointers default-capture the element they started on, so without
+//    intervention pointerenter never fires on neighbouring elements during a
+//    drag. Calling releasePointerCapture() on pointerdown opts out of that
+//    capture so subsequent moves report the element actually under the
+//    pointer.
+//
+// 2. We track the last-played note on this drag so a stationary pointer
+//    inside a single cell doesn't retrigger over and over.
+const dragging = ref(false)
+const lastDragNote = ref<string>('')
+
+function startDrag(e: PointerEvent, note: string) {
+  ;(e.currentTarget as Element)?.releasePointerCapture?.(e.pointerId)
+  dragging.value = true
+  lastDragNote.value = note
+  pluck(note)
+}
+
+function dragInto(e: PointerEvent, note: string) {
+  if (!dragging.value) return
+  // e.buttons === 0 means the user released the button outside our handlers
+  // (e.g., released over a non-pad element). Bail out so we don't accidentally
+  // strum on simple hovering.
+  if (e.pointerType === 'mouse' && e.buttons === 0) {
+    dragging.value = false
+    return
+  }
+  if (lastDragNote.value === note) return
+  lastDragNote.value = note
+  pluck(note)
+}
+
+function endDrag() {
+  dragging.value = false
+  lastDragNote.value = ''
+}
+
+onMounted(() => {
+  window.addEventListener('pointerup', endDrag)
+  window.addEventListener('pointercancel', endDrag)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('pointerup', endDrag)
+  window.removeEventListener('pointercancel', endDrag)
+})
 </script>
 
 <template>
@@ -156,7 +215,8 @@ function toggleNotation() {
             marker: FRET_MARKERS.has(cell.fret) || cell.fret === DOUBLE_MARKER,
           }"
           :style="{ '--string': cell.string, '--fret': cell.fret }"
-          @pointerdown="pluck(cell.note)"
+          @pointerdown="startDrag($event, cell.note)"
+          @pointerenter="dragInto($event, cell.note)"
         >
           <span class="fret-note mono">{{ formatNote(cell.note, audioStore.notation) }}</span>
         </button>
@@ -165,13 +225,15 @@ function toggleNotation() {
 
     <!-- OPEN STRINGS -->
     <section v-else-if="mode === 'strings'" class="strings-panel">
+      <p class="hint mono">{{ t('guitar.stringsHint') }}</p>
       <div class="strings-row">
         <button
           v-for="s in [...STRINGS].reverse()"
           :key="s.open"
           class="string"
           :class="{ flash: flashed === s.open }"
-          @pointerdown="pluck(s.open)"
+          @pointerdown="startDrag($event, s.open)"
+          @pointerenter="dragInto($event, s.open)"
         >
           <span class="line" />
           <span class="lbl mono">{{ t('guitar.stringLabel', { n: s.idx }) }}</span>
@@ -183,13 +245,44 @@ function toggleNotation() {
     <!-- CHORDS -->
     <section v-else class="chords-panel">
       <div class="chord-grid">
-        <div v-for="c in CHORDS" :key="c.name" class="chord-cell">
-          <button class="chord up" :title="t('guitar.strumDown')" @pointerdown="strum(c.notes, false)">
-            <span class="name">{{ formatChord(c.name, audioStore.notation) }}</span>
-            <span class="dir mono">↓</span>
+        <button
+          v-for="c in CHORDS"
+          :key="c.name"
+          class="chord-card"
+          :class="{ active: selectedChord.name === c.name }"
+          :title="t('guitar.chordCardHint')"
+          @click="selectedChord = c"
+        >
+          <span class="name">{{ formatChord(c.name, audioStore.notation) }}</span>
+        </button>
+      </div>
+
+      <div class="chord-play">
+        <header class="chord-play-head">
+          <span class="title mono">{{ formatChord(selectedChord.name, audioStore.notation) }}</span>
+          <p class="hint mono">{{ t('guitar.chordPlayHint') }}</p>
+        </header>
+
+        <div class="chord-strings">
+          <button
+            v-for="(note, i) in [...selectedChord.notes].reverse()"
+            :key="`${selectedChord.name}-${i}`"
+            class="chord-string"
+            :class="{ flash: flashed === note }"
+            @pointerdown="startDrag($event, note)"
+            @pointerenter="dragInto($event, note)"
+          >
+            <span class="line" />
+            <span class="note mono">{{ formatNote(note, audioStore.notation) }}</span>
           </button>
-          <button class="chord down" :title="t('guitar.strumUp')" @pointerdown="strum(c.notes, true)">
-            <span class="dir mono">↑</span>
+        </div>
+
+        <div class="strum-row">
+          <button class="strum mono" @pointerdown="strum(selectedChord.notes, false)">
+            ↓ {{ t('guitar.strumDown') }}
+          </button>
+          <button class="strum mono" @pointerdown="strum(selectedChord.notes, true)">
+            ↑ {{ t('guitar.strumUp') }}
           </button>
         </div>
       </div>
@@ -255,6 +348,10 @@ function toggleNotation() {
   grid-template-rows: 22px repeat(6, 38px);
   gap: 4px;
   min-width: 0;
+  /* Touch swipe across cells must reach our pointerenter handler instead of
+     being consumed by browser scroll/zoom — we already provide our own
+     gesture semantics for strumming. */
+  touch-action: none;
 }
 .fb-corner { grid-row: 1; grid-column: 1; }
 .fret-num {
@@ -388,46 +485,136 @@ function toggleNotation() {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 0.85rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  /* Disable browser-managed touch gestures so a finger swipe across the
+     chord strings actually triggers our drag handlers instead of being
+     consumed as a scroll/zoom. */
+  touch-action: none;
 }
 .chord-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.5rem;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 0.4rem;
 }
-.chord-cell {
-  display: grid;
-  grid-template-rows: 1fr auto;
-  gap: 0.25rem;
-}
-.chord {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.2rem;
-  padding: 0.7rem 0.4rem;
+.chord-card {
+  padding: 0.5rem 0.3rem;
   background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   cursor: pointer;
-  transition: border-color var(--transition-fast), background var(--transition-fast);
+  transition: border-color var(--transition-fast), background var(--transition-fast),
+    color var(--transition-fast);
 }
-.chord:hover { border-color: var(--accent-primary); }
-.chord:active { background: var(--accent-primary); color: var(--text-inverse); }
-.chord.up { padding-top: 1rem; }
-.chord.down { padding: 0.35rem; }
-.chord .name {
+.chord-card:hover { border-color: var(--accent-primary); }
+.chord-card.active {
+  background: var(--accent-primary);
+  color: var(--text-inverse);
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 12px var(--accent-glow);
+}
+.chord-card .name {
   font-family: var(--font-display);
   font-weight: 700;
+  font-size: 1.2rem;
+}
+.chord-card.active .name { color: var(--text-inverse); }
+
+.chord-play {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.85rem;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.chord-play-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.chord-play-head .title {
   font-size: 1.4rem;
   color: var(--accent-primary);
+  font-family: var(--font-display);
+  font-weight: 700;
 }
-.chord:active .name { color: var(--text-inverse); }
-.chord .dir { font-size: 0.85rem; color: var(--text-muted); }
+.chord-play-head .hint {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0;
+}
+
+.chord-strings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  touch-action: none;
+}
+.chord-string {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 80px;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.85rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+  text-align: start;
+}
+.chord-string:hover { border-color: var(--accent-primary); }
+.chord-string.flash {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 14px var(--accent-glow);
+}
+.chord-string.flash .note { color: var(--text-inverse); }
+.chord-string .note {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--accent-primary);
+  text-align: end;
+}
+
+.strum-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+.strum {
+  padding: 0.7rem 0.5rem;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border: 1px solid var(--accent-secondary);
+  color: var(--accent-secondary);
+  background: transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.strum:active { background: var(--accent-secondary); color: var(--text-inverse); }
+
+.strings-panel .hint {
+  margin: 0 0 0.5rem;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.strings-row { touch-action: none; }
 
 @media (max-width: 720px) {
   .string { grid-template-columns: 70px 1fr 70px; }
-  .chord-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .chord-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
 /* Portrait phones — flip the fretboard so strings are columns and frets are rows.

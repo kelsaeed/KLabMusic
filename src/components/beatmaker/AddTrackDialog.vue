@@ -49,11 +49,17 @@ function pickInstrument(id: InstrumentId) {
               <input v-model="useClip" type="radio" :value="false" />
               <span>{{ t('beat.fromInstrument') }}</span>
             </label>
-            <label :class="{ on: useClip }" :title="recorderStore.clips.length === 0 ? t('beat.noClipsHint') : ''">
+            <label
+              :class="{ on: useClip, disabled: recorderStore.clips.length === 0 }"
+              :title="recorderStore.clips.length === 0 ? t('beat.noClipsHint') : ''"
+            >
               <input v-model="useClip" type="radio" :value="true" :disabled="recorderStore.clips.length === 0" />
               <span>{{ t('beat.fromClip') }}</span>
             </label>
           </fieldset>
+          <p v-if="recorderStore.clips.length === 0" class="empty-clip-hint mono">
+            {{ t('beat.fromClipExplain') }}
+          </p>
 
           <div v-if="!useClip" class="grid">
             <button
@@ -135,6 +141,20 @@ function pickInstrument(id: InstrumentId) {
 }
 .source input { display: none; }
 .source label.on { border-color: var(--accent-primary); color: var(--accent-primary); }
+.source label.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.empty-clip-hint {
+  margin: -0.4rem 0 0;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-elevated);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
