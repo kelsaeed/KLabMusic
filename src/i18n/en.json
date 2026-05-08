@@ -12,9 +12,36 @@
   "modules": {
     "live": "Live Play",
     "beat": "Beat Maker",
+    "arrange": "Arrange",
     "loop": "Loop Station",
     "chaos": "Chaos",
     "learn": "Learn"
+  },
+  "arrange": {
+    "title": "Arrangement",
+    "play": "Play",
+    "stop": "Stop",
+    "bpm": "BPM",
+    "snap": "Snap",
+    "snapOff": "Off",
+    "addTrack": "Add track",
+    "addTrackTitle": "Add a new track",
+    "removeTrack": "Remove track",
+    "removeClip": "Remove clip",
+    "trackName": "Track name",
+    "selectClip": "Pick a recorded clip",
+    "selectPattern": "Pick a beat-maker pattern",
+    "pick": "— Choose —",
+    "noAudio": "Record or upload a clip in the recorder drawer first.",
+    "noPatterns": "Create a pattern in the Beat Maker first.",
+    "bars": "Length (bars)",
+    "mute": "Mute",
+    "solo": "Solo",
+    "empty": "No tracks yet. Click \"+ Add track\" to bring a recorded clip or beat-maker pattern onto the timeline.",
+    "kind": {
+      "audio": "Audio clip",
+      "pattern": "Pattern"
+    }
   },
   "home": {
     "ctaPrimary": "Open the Studio",

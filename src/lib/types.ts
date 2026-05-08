@@ -8,7 +8,32 @@ export type ThemeName =
 
 export type Locale = 'en' | 'ar'
 
-export type ModuleTab = 'live' | 'beat' | 'loop' | 'chaos' | 'learn'
+export type ModuleTab = 'live' | 'beat' | 'loop' | 'chaos' | 'learn' | 'arrange'
+
+export interface ArrangeClip {
+  id: string
+  /** Absolute start time in seconds, on the arrangement timeline. */
+  startSec: number
+  /** Playback duration in seconds — clipped against the source's natural length. */
+  durationSec: number
+  /** Identifies what to play at this clip slot. Exactly one source field is set. */
+  source:
+    | { kind: 'audio'; recorderClipId: string; offsetSec: number }
+    | { kind: 'pattern'; patternId: string }
+  color?: string
+}
+
+export interface ArrangeTrack {
+  id: string
+  name: string
+  /** 'audio' tracks hold recorder clips; 'pattern' tracks hold beat-maker patterns. */
+  kind: 'audio' | 'pattern'
+  color: string
+  volume: number
+  muted: boolean
+  soloed: boolean
+  clips: ArrangeClip[]
+}
 
 export interface CustomTheme {
   bgBase: string

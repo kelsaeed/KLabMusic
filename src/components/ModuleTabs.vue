@@ -10,6 +10,7 @@ const { t } = useI18n()
 const tabs: { key: ModuleTab; icon: string }[] = [
   { key: 'live', icon: '🎹' },
   { key: 'beat', icon: '🥁' },
+  { key: 'arrange', icon: '🎬' },
   { key: 'loop', icon: '🔁' },
   { key: 'chaos', icon: '🌀' },
   { key: 'learn', icon: '🎓' },

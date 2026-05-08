@@ -8,6 +8,7 @@ import type { ModuleTab } from '@/lib/types'
 
 const AudioStage = defineAsyncComponent(() => import('@/components/instruments/AudioStage.vue'))
 const BeatMakerStage = defineAsyncComponent(() => import('@/components/beatmaker/BeatMakerStage.vue'))
+const ArrangeStage = defineAsyncComponent(() => import('@/components/arrange/ArrangeStage.vue'))
 const LoopStationStage = defineAsyncComponent(() => import('@/components/loopstation/LoopStationStage.vue'))
 const ChaosStage = defineAsyncComponent(() => import('@/components/chaos/ChaosStage.vue'))
 const LearnStage = defineAsyncComponent(() => import('@/components/learn/LearnStage.vue'))
@@ -24,6 +25,7 @@ const active = ref<ModuleTab>('live')
       <Suspense>
         <AudioStage v-if="active === 'live'" />
         <BeatMakerStage v-else-if="active === 'beat'" />
+        <ArrangeStage v-else-if="active === 'arrange'" />
         <LoopStationStage v-else-if="active === 'loop'" />
         <ChaosStage v-else-if="active === 'chaos'" />
         <LearnStage v-else-if="active === 'learn'" />
