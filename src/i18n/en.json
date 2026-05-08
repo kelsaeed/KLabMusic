@@ -48,7 +48,17 @@
     "trackFxFooter": "Routed: clip → pitch → reverb → delay → filter → master.",
     "exportStems": "Export stems",
     "exportStemsTooltip": "Export each track as a separate WAV file. Renders in real time — playback duration × number of tracks.",
-    "exportingStems": "Rendering {i}/{n} — {name}"
+    "exportingStems": "Rendering {i}/{n} — {name}",
+    "automationToggle": "Toggle automation lane",
+    "automationLane": "Automation",
+    "clearLane": "Clear",
+    "autoUnsupported": "Pattern tracks support volume automation only — switch to Volume to draw a curve.",
+    "autoParam": {
+      "volume": "Volume",
+      "reverb": "Reverb",
+      "delay": "Delay",
+      "filter": "Filter"
+    }
   },
   "home": {
     "ctaPrimary": "Open the Studio",

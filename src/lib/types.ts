@@ -36,6 +36,19 @@ export interface ArrangeTrackFx {
   filter: { enabled: boolean; amount: number }
 }
 
+/** Parameters automatable on a track. Volume works on every track type;
+ *  the FX-amount params apply to audio tracks (whose FX chain is per-
+ *  track) and are no-ops on pattern tracks. */
+export type AutomationParam = 'volume' | 'reverb' | 'delay' | 'filter'
+
+export interface AutomationPoint {
+  /** Absolute time on the arrangement timeline, in seconds. */
+  time: number
+  /** Normalised parameter value [0, 1]. Volume → linear amplitude, FX
+   *  amount → effect mix / drive amount, just like the static knobs. */
+  value: number
+}
+
 export interface ArrangeTrack {
   id: string
   name: string
@@ -47,6 +60,15 @@ export interface ArrangeTrack {
   soloed: boolean
   clips: ArrangeClip[]
   fx: ArrangeTrackFx
+  /** Per-parameter automation curves. Each parameter that has an entry is
+   *  driven by its point list; missing entries leave the parameter at its
+   *  static value. Stored as an object (not array) so we can edit one
+   *  param without disturbing the others. */
+  automation: Partial<Record<AutomationParam, AutomationPoint[]>>
+  /** UI state — whether the automation lane is open in the timeline. */
+  automationLaneOpen: boolean
+  /** UI state — which parameter the lane is currently editing. */
+  automationParam: AutomationParam
 }
 
 export interface CustomTheme {

@@ -48,7 +48,17 @@
     "trackFxFooter": "المسار: مقطع → نغمة → ريفِرب → دِيلاي → فلتر → ماستر.",
     "exportStems": "تصدير الأصوات",
     "exportStemsTooltip": "تصدير كل مسار كملف WAV منفصل. التصدير زمن حقيقي — مدة التشغيل × عدد المسارات.",
-    "exportingStems": "جاري التصدير {i}/{n} — {name}"
+    "exportingStems": "جاري التصدير {i}/{n} — {name}",
+    "automationToggle": "تبديل مسار الأتمتة",
+    "automationLane": "الأتمتة",
+    "clearLane": "مسح",
+    "autoUnsupported": "مسارات الأنماط تدعم أتمتة الصوت فقط — بدّل إلى الصوت لرسم منحنى.",
+    "autoParam": {
+      "volume": "الصوت",
+      "reverb": "ريفِرب",
+      "delay": "دِيلاي",
+      "filter": "فلتر"
+    }
   },
   "home": {
     "ctaPrimary": "افتح الاستوديو",

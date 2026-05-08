@@ -7,6 +7,7 @@ import { useRecorderStore } from '@/stores/recorder'
 import { useBeatMakerStore } from '@/stores/beatmaker'
 import AddArrangeTrackDialog from './AddArrangeTrackDialog.vue'
 import TrackFxPopover from './TrackFxPopover.vue'
+import AutomationLane from './AutomationLane.vue'
 import { useToast } from '@/composables/useToast'
 import type { ArrangeTrack, ArrangeClip } from '@/lib/types'
 
@@ -217,9 +218,8 @@ onBeforeUnmount(() => {
       <!-- Sticky track-header column -->
       <div class="headers">
         <div class="ruler-spacer" aria-hidden="true" />
+        <template v-for="track in store.tracks" :key="`h-${track.id}`">
         <div
-          v-for="track in store.tracks"
-          :key="`h-${track.id}`"
           class="header-row"
           :class="{ muted: track.muted, soloed: track.soloed }"
           :style="{ '--track-color': track.color }"
@@ -241,6 +241,12 @@ onBeforeUnmount(() => {
               :title="t('arrange.trackFxButton')"
               @click="toggleFxPopover(track.id)"
             >FX</button>
+            <button
+              class="ctl-btn auto"
+              :class="{ on: track.automationLaneOpen }"
+              :title="t('arrange.automationToggle')"
+              @click="store.setTrackAutomationOpen(track.id, !track.automationLaneOpen)"
+            >A</button>
             <button class="ctl-btn" :class="{ on: track.muted }" :title="t('arrange.mute')" @click="toggleMute(track)">M</button>
             <button class="ctl-btn" :class="{ on: track.soloed }" :title="t('arrange.solo')" @click="toggleSolo(track)">S</button>
             <button class="ctl-btn x" :title="t('arrange.removeTrack')" @click="removeTrack(track)">×</button>
@@ -250,7 +256,18 @@ onBeforeUnmount(() => {
             :track="track"
             @close="openFxTrackId = null"
           />
+          <!-- Automation lane label — sits in the header column to keep
+               vertical alignment with the SVG lane in the lanes column. -->
         </div>
+        <div
+          v-if="track.automationLaneOpen"
+          class="auto-header"
+          :style="{ '--track-color': track.color }"
+        >
+          <span class="auto-label mono">{{ t('arrange.automationLane') }}</span>
+          <span class="auto-param-tag mono">{{ t(`arrange.autoParam.${track.automationParam}`) }}</span>
+        </div>
+        </template>
         <div v-if="store.tracks.length === 0" class="empty-headers">
           {{ t('arrange.empty') }}
         </div>
@@ -273,9 +290,8 @@ onBeforeUnmount(() => {
           </div>
 
           <!-- Track lanes -->
+          <template v-for="track in store.tracks" :key="`l-${track.id}`">
           <div
-            v-for="track in store.tracks"
-            :key="`l-${track.id}`"
             class="lane"
             :class="{ muted: track.muted }"
             :style="{ '--track-color': track.color }"
@@ -305,6 +321,12 @@ onBeforeUnmount(() => {
               <button class="clip-x" :title="t('arrange.removeClip')" @click.stop="removeClip(track, clip)">×</button>
             </div>
           </div>
+          <AutomationLane
+            v-if="track.automationLaneOpen"
+            :track="track"
+            :width-px="widthPx"
+          />
+          </template>
 
           <!-- Playhead spans all lanes -->
           <div
@@ -527,6 +549,32 @@ onBeforeUnmount(() => {
   color: var(--text-muted);
   text-align: center;
   line-height: 1.5;
+}
+.auto-header {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.2rem;
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  border-left: 4px solid var(--track-color);
+  background: var(--bg-elevated);
+  /* Heights match AutomationLane: 33 (own header) + 56 (svg) + 1 border = 90 */
+  min-height: 90px;
+  box-sizing: border-box;
+}
+.auto-label {
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+.auto-param-tag {
+  font-size: 0.78rem;
+  color: var(--accent-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 700;
 }
 
 .lanes-wrap {

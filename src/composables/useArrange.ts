@@ -60,8 +60,9 @@ function clearScheduled() {
 
 /**
  * Build the per-track FX chain for an audio track. Returns an entry node
- * (connect the source here), an exit node (already routed onward to the
- * given destination), and the list of nodes to dispose afterwards.
+ * (connect the source here), the list of nodes to dispose afterwards,
+ * and individual references to reverb / delay / filter so the automation
+ * scheduler can ramp their AudioParams while the clip plays.
  *
  * Today's chain: Reverb (wet/dry mix) → FeedbackDelay → Lowpass Filter.
  * Each effect is bypassed when its `enabled` flag is false (wet/feedback
@@ -70,7 +71,13 @@ function clearScheduled() {
 function buildTrackFxChain(
   fx: import('@/lib/types').ArrangeTrackFx,
   destination: Tone.ToneAudioNode,
-): { entry: Tone.ToneAudioNode; nodes: Tone.ToneAudioNode[] } {
+): {
+  entry: Tone.ToneAudioNode
+  nodes: Tone.ToneAudioNode[]
+  reverb: Tone.Reverb
+  delay: Tone.FeedbackDelay
+  filter: Tone.Filter
+} {
   const reverb = new Tone.Reverb({
     decay: 1 + fx.reverb.amount * 4,
     wet: fx.reverb.enabled ? fx.reverb.amount : 0,
@@ -86,7 +93,7 @@ function buildTrackFxChain(
     Q: 1,
   })
   reverb.chain(delay, filter, destination)
-  return { entry: reverb, nodes: [reverb, delay, filter] }
+  return { entry: reverb, nodes: [reverb, delay, filter], reverb, delay, filter }
 }
 
 export function useArrange() {
@@ -111,7 +118,8 @@ export function useArrange() {
     // the chain's disposal lifecycle ties to the scheduled-clip cleanup,
     // and overlapping clips on the same track each want their own
     // delay/reverb tail. Cheap enough — ~3 nodes per scheduled clip.
-    const { entry: fxEntry, nodes: fxNodes } = buildTrackFxChain(track.fx, dest)
+    const fx = buildTrackFxChain(track.fx, dest)
+    const { entry: fxEntry, nodes: fxNodes, reverb, delay, filter } = fx
 
     // Apply the recorder clip's existing pitch-shift so a clip the user
     // tuned in the recorder still plays in the right key on the timeline.
@@ -119,14 +127,99 @@ export function useArrange() {
     pitch.connect(fxEntry)
     const player = new Tone.Player(recClip.buffer)
     player.connect(pitch)
-    player.volume.value = Tone.gainToDb(Math.max(0.001, track.volume))
     player.playbackRate = recClip.speed
+
+    // — Schedule volume and FX automation ramps over this clip's range —
+    // We use Tone's own AudioParam scheduling so all ramps run at audio-
+    // rate and stay sample-accurate even under heavy CPU pressure.
+    // Pre-clip "anchor" points at clip.startSec snap the parameter to its
+    // sampled curve value before any in-clip ramps fire; without that, a
+    // very first point that lies AFTER the clip start would never be
+    // honored (the AudioParam would stay at its construction default).
+    scheduleParamRamps(
+      player.volume,
+      track,
+      'volume',
+      clip.startSec,
+      clip.durationSec,
+      track.volume,
+      // Volume curve [0..1] → dB. Floor at 0.001 to avoid -Infinity that
+      // would freeze the ramp when the curve dips to silence.
+      (v) => Tone.gainToDb(Math.max(0.001, v)),
+    )
+    if (track.fx.reverb.enabled) {
+      scheduleParamRamps(reverb.wet, track, 'reverb', clip.startSec, clip.durationSec, track.fx.reverb.amount, (v) => v)
+    }
+    if (track.fx.delay.enabled) {
+      scheduleParamRamps(delay.wet, track, 'delay', clip.startSec, clip.durationSec, track.fx.delay.amount, (v) => v)
+    }
+    if (track.fx.filter.enabled) {
+      // Filter cutoff: amount 0 = bright (20 kHz), amount 1 = dark (200 Hz)
+      // — same mapping the static FX panel uses. Mapped here per-ramp so
+      // the curve's 0..1 range stays intuitive ("100% closed" = dark).
+      scheduleParamRamps(
+        filter.frequency,
+        track,
+        'filter',
+        clip.startSec,
+        clip.durationSec,
+        track.fx.filter.amount,
+        (v) => 200 + (1 - v) * 19800,
+      )
+    }
 
     // Tone.Player.start(time, offset, duration). Both 'time' and 'duration'
     // are at audio-rate so they run on Tone.Transport's clock — even if the
     // user pauses, the schedule resumes with the correct offset.
     player.start(`+${clip.startSec}`, src.offsetSec, clip.durationSec)
     scheduled.push({ player, pitch, fxNodes })
+  }
+
+  /**
+   * Pre-schedule a ramp sequence on any AudioParam-like Tone target from
+   * automation points falling inside [startSec, startSec + durationSec].
+   * Duck-typed because Tone exposes the same scheduling methods on both
+   * Param<T> and Signal<T> but the two are not assignable to one
+   * another in the public types.
+   */
+  type RampableParam = {
+    setValueAtTime(value: number, time: Tone.Unit.Time): unknown
+    cancelScheduledValues(time: Tone.Unit.Time): unknown
+    linearRampToValueAtTime(value: number, time: Tone.Unit.Time): unknown
+  }
+  function scheduleParamRamps(
+    param: RampableParam,
+    track: ArrangeTrack,
+    paramId: import('@/lib/types').AutomationParam,
+    startSec: number,
+    durationSec: number,
+    fallback: number,
+    map: (v: number) => number,
+  ) {
+    const lane = track.automation[paramId]
+    if (!lane || lane.length === 0) {
+      param.setValueAtTime(map(fallback), `+${startSec}`)
+      return
+    }
+    // Anchor at startSec by sampling the curve so ramps inside the clip
+    // depart from the right value even if the first lane point is later.
+    const startVal = store.sampleAutomation(track, paramId, startSec) ?? fallback
+    param.cancelScheduledValues(`+${startSec}`)
+    param.setValueAtTime(map(startVal), `+${startSec}`)
+    const endSec = startSec + durationSec
+    for (const point of lane) {
+      if (point.time <= startSec) continue
+      if (point.time >= endSec) break
+      // 0.005 s ramps land just below the threshold of perceivable steps
+      // for synth/percussion material — we use linearRampTo for both
+      // freq and gain because exponential ramps require strictly-positive
+      // values which automation can't guarantee.
+      param.linearRampToValueAtTime(map(point.value), `+${point.time}`)
+    }
+    // Hold the final value at clip end so the param doesn't decay during
+    // the FX tail captured by stem export.
+    const tailVal = store.sampleAutomation(track, paramId, endSec) ?? fallback
+    param.linearRampToValueAtTime(map(tailVal), `+${endSec}`)
   }
 
   function schedulePatternClip(track: ArrangeTrack, clip: ArrangeClip) {
@@ -152,11 +245,16 @@ export function useArrange() {
         // Capture the index by closure so each event reads its own step.
         const idx = stepIdx
         const id = Tone.getTransport().schedule((time) => {
+          // Pattern tracks only support volume automation today (their FX
+          // live on the global per-instrument chain). Sample the curve at
+          // step-trigger time and fold it into the velocity multiplier.
+          const automatedVol = store.sampleAutomation(track, 'volume', absoluteT)
+          const trackVol = automatedVol !== null ? automatedVol : track.volume
           for (const t of pattern.tracks) {
             if (t.muted) continue
             const step = t.steps[idx]
             if (!step || !step.active) continue
-            const vel = Math.round(step.velocity * t.volume * track.volume)
+            const vel = Math.round(step.velocity * t.volume * trackVol)
             Tone.getDraw().schedule(() => {
               void playOnTimed(t.instrument, t.note, stepDur, vel)
             }, time)
