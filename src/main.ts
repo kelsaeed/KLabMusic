@@ -1,14 +1,18 @@
-// Filter Chrome's "AudioContext was not allowed to start" warnings.
-// Tone.js v15 creates internal nodes (Transport ConstantSourceNode, etc.) at
-// module-init time which ping the suspended AudioContext, and Chrome warns
-// once per ping. The page works correctly — context resumes properly on the
-// first user gesture — so these are cosmetic noise. Done before any other
-// imports so it catches Tone's eager-init logging too.
+// Filter cosmetic Tone.js v15 console noise:
+//   - "AudioContext was not allowed to start" — Tone creates internal nodes at
+//     module-init that ping the suspended context until the first gesture
+//   - "deprecated: use load instead" — Tone.loaded() is being phased out in
+//     favour of Tone.load(); we use it intentionally for sample-pack waits and
+//     the warning fires repeatedly as soundfonts arrive
+// Both are non-actionable for the user and the page works correctly.
 {
   const origWarn = console.warn.bind(console)
   console.warn = (...args: unknown[]) => {
     const first = args[0]
-    if (typeof first === 'string' && first.includes('AudioContext was not allowed to start')) return
+    if (typeof first === 'string') {
+      if (first.includes('AudioContext was not allowed to start')) return
+      if (first.includes('deprecated: use load instead')) return
+    }
     origWarn(...args)
   }
 }

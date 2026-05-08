@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useBeatMakerStore } from '@/stores/beatmaker'
 import { useRecorderStore } from '@/stores/recorder'
 import { INSTRUMENTS } from '@/lib/instruments'
+import BeatNotePicker from './BeatNotePicker.vue'
 import type { BeatTrack } from '@/lib/types'
 
 const props = defineProps<{ track: BeatTrack }>()
@@ -25,6 +26,11 @@ const label = computed(() => {
 })
 
 const velocityEditing = ref<number | null>(null)
+const notePickerOpen = ref(false)
+
+function setNote(next: string) {
+  store.updateTrack(props.track.id, { note: next })
+}
 
 function onPointerDown(stepIndex: number, e: PointerEvent) {
   if (e.button === 2) return
@@ -53,7 +59,15 @@ function remove() { store.removeTrack(props.track.id) }
 <template>
   <div class="row" :class="{ muted: track.muted, soloed: track.soloed }">
     <div class="head">
-      <span class="icon" :title="label">{{ clip ? '🎵' : meta.icon }}</span>
+      <button
+        v-if="!clip"
+        class="icon icon-btn"
+        :title="t('binding.note') + ': ' + track.note"
+        @click="notePickerOpen = !notePickerOpen"
+      >
+        {{ meta.icon }}
+      </button>
+      <span v-else class="icon" :title="label">🎵</span>
       <div class="title">
         <span class="name">{{ label }}</span>
         <div class="vol-wrap">
@@ -69,6 +83,14 @@ function remove() { store.removeTrack(props.track.id) }
         <button class="s" :class="{ on: track.soloed }" :title="t('beat.solo')" @click="toggleSolo">S</button>
         <button class="x" :title="t('beat.clearTrack')" @click="clear">⌫</button>
         <button class="d" :title="t('beat.removeTrack')" @click="remove">×</button>
+      </div>
+      <div v-if="notePickerOpen && !clip" class="note-popup" @pointerdown.stop>
+        <BeatNotePicker
+          :model-value="track.note"
+          :instrument="track.instrument"
+          @update:model-value="setNote"
+        />
+        <button class="close-pop mono" @click="notePickerOpen = false">{{ t('common.close') }}</button>
       </div>
     </div>
 
@@ -127,8 +149,43 @@ function remove() { store.removeTrack(props.track.id) }
   gap: 0.4rem;
   align-items: center;
   min-width: 0;
+  position: relative;
 }
 .icon { font-size: 1.1rem; text-align: center; }
+.icon-btn {
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.icon-btn:hover { border-color: var(--accent-primary); }
+.note-popup {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  padding: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--accent-primary);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.close-pop {
+  align-self: flex-end;
+  font-size: 0.7rem;
+  padding: 0.3rem 0.7rem;
+  background: transparent;
+}
 .title { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
 .name {
   font-size: 0.78rem;

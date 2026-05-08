@@ -7,6 +7,10 @@ import { INSTRUMENTS, EFFECT_ORDER } from '@/lib/instruments'
 
 interface VoiceAdapter {
   attack: (note: string, velocity: number) => void
+  // Beat maker uses this to fire a note with a defined duration so it auto-releases.
+  // Sample-based one-shots (drums, glitch noise) ignore the duration since they
+  // already auto-decay; synth voices use it to schedule the release.
+  attackRelease: (note: string, durationSec: number, velocity: number) => void
   release: (note?: string) => void
   damp: () => void
   output: Tone.ToneAudioNode
@@ -97,16 +101,7 @@ async function ensureToneStarted() {
     await waitForFirstGesture()
     await Tone.start()
   }
-  if (toneStarted) return
   toneStarted = true
-  // Master starts at -100 dB (silent). Fade in over 0.4 s after the first
-  // user gesture to avoid the AudioContext-resume "zzz" click.
-  if (masterVolume) {
-    const target = useAudioStore().masterVolumeDb
-    masterVolume.volume.cancelScheduledValues(Tone.now())
-    masterVolume.volume.setValueAtTime(-100, Tone.now())
-    masterVolume.volume.linearRampToValueAtTime(target, Tone.now() + 0.4)
-  }
 }
 
 function buildGlobalFx(): FxChain {
@@ -123,8 +118,14 @@ function buildGlobalFx(): FxChain {
 
 function ensureMaster() {
   if (masterReady) return
-  // Boot silent. ensureToneStarted ramps in once the user gestures.
-  masterVolume = new Tone.Volume(-100)
+  // Boot directly at the user's chosen master dB. The previous design booted
+  // at -100 and ramped on first gesture, but the ramp lived in
+  // ensureToneStarted which runs BEFORE this function — so masterVolume was
+  // null when the ramp tried to schedule, and the volume stayed at -100
+  // forever. Symptom: the page was silent on every refresh until the user
+  // moved the master slider (which fires the rampTo watcher). Initializing
+  // at the target dB makes audio audible from the very first key press.
+  masterVolume = new Tone.Volume(useAudioStore().masterVolumeDb)
   chaosFilter = new Tone.Filter({ frequency: 20000, type: 'lowpass', Q: 1 })
   chaosReverb = new Tone.Reverb({ decay: 3, wet: 0 })
   chaosCrush = new Tone.BitCrusher(16)
@@ -153,6 +154,8 @@ function ensureMaster() {
 function wrapPolyphonic(s: Tone.Sampler): VoiceAdapter {
   return {
     attack: (note, vel) => s.triggerAttack(note, undefined, Math.max(0.01, vel / 127)),
+    attackRelease: (note, dur, vel) =>
+      s.triggerAttackRelease(note, dur, undefined, Math.max(0.01, vel / 127)),
     release: (note) => (note ? s.triggerRelease(note) : s.releaseAll()),
     damp: () => s.releaseAll(),
     output: s,
@@ -179,6 +182,8 @@ function buildElectricPiano(): VoiceAdapter {
   })
   return {
     attack: (note, vel) => synth.triggerAttack(note, undefined, Math.max(0.01, vel / 127)),
+    attackRelease: (note, dur, vel) =>
+      synth.triggerAttackRelease(note, dur, undefined, Math.max(0.01, vel / 127)),
     release: (note) => (note ? synth.triggerRelease(note) : synth.releaseAll()),
     damp: () => synth.releaseAll(),
     output: synth,
@@ -190,8 +195,12 @@ function buildElectricPiano(): VoiceAdapter {
 
 function buildGuitar(): VoiceAdapter {
   // Real classical / nylon-string guitar samples via smplr's Soundfont (General MIDI).
+  // The nylon SF2 samples are mastered conservatively and many notes (especially
+  // the higher register on strings 1 and 2) sit ~10 dB below piano/synth output
+  // through the same chain. Boost the post-Soundfont gain by ~+8 dB so the
+  // quietest notes are still clearly audible without making the loudest ones clip.
   const ctx = Tone.getContext().rawContext as unknown as AudioContext
-  const out = new Tone.Gain(1)
+  const out = new Tone.Gain(2.5)
   const guitar = new Soundfont(ctx, {
     instrument: 'acoustic_guitar_nylon',
     destination: out.input as unknown as AudioNode,
@@ -201,13 +210,16 @@ function buildGuitar(): VoiceAdapter {
     attack: (note, vel) => {
       void guitar.start({ note, velocity: Math.max(1, vel) })
     },
+    attackRelease: (note, dur, vel) => {
+      void guitar.start({ note, velocity: Math.max(1, vel), duration: dur })
+    },
     release: (note) => {
       if (note) guitar.stop({ stopId: note })
       else guitar.stop()
     },
     damp: () => guitar.stop(),
     output: out,
-    setVolumeDb: (db) => { out.gain.value = Tone.dbToGain(db) },
+    setVolumeDb: (db) => { out.gain.value = 2.5 * Tone.dbToGain(db) },
     setBendCents: () => { /* sample-based; pitch baked in */ },
     loaded: guitar.loaded().then(() => undefined),
     dispose: () => {
@@ -225,6 +237,8 @@ function buildBass(): VoiceAdapter {
   })
   return {
     attack: (note, vel) => synth.triggerAttack(note, undefined, Math.max(0.01, vel / 127)),
+    attackRelease: (note, dur, vel) =>
+      synth.triggerAttackRelease(note, dur, undefined, Math.max(0.01, vel / 127)),
     release: () => synth.triggerRelease(),
     damp: () => synth.triggerRelease(),
     output: synth,
@@ -242,6 +256,8 @@ function buildPad(): VoiceAdapter {
   })
   return {
     attack: (note, vel) => synth.triggerAttack(note, undefined, Math.max(0.01, vel / 127)),
+    attackRelease: (note, dur, vel) =>
+      synth.triggerAttackRelease(note, dur, undefined, Math.max(0.01, vel / 127)),
     release: (note) => (note ? synth.triggerRelease(note) : synth.releaseAll()),
     damp: () => synth.releaseAll(),
     output: synth,
@@ -259,6 +275,8 @@ function buildLead(): VoiceAdapter {
   }).connect(vibrato)
   return {
     attack: (note, vel) => synth.triggerAttack(note, undefined, Math.max(0.01, vel / 127)),
+    attackRelease: (note, dur, vel) =>
+      synth.triggerAttackRelease(note, dur, undefined, Math.max(0.01, vel / 127)),
     release: () => synth.triggerRelease(),
     damp: () => synth.triggerRelease(),
     output: vibrato,
@@ -276,6 +294,8 @@ function buildOrgan(): VoiceAdapter {
   })
   return {
     attack: (note, vel) => synth.triggerAttack(note, undefined, Math.max(0.01, vel / 127)),
+    attackRelease: (note, dur, vel) =>
+      synth.triggerAttackRelease(note, dur, undefined, Math.max(0.01, vel / 127)),
     release: (note) => (note ? synth.triggerRelease(note) : synth.releaseAll()),
     damp: () => synth.releaseAll(),
     output: synth,
@@ -313,17 +333,21 @@ function buildDrums(): VoiceAdapter {
     tom: 47,
   }
 
+  const fire = (name: string, vel: number) => {
+    if (name === 'ride') {
+      const v = Math.max(0.05, vel / 127)
+      ride.triggerAttackRelease('C4', '4n', Tone.now(), v)
+      return
+    }
+    const note = SAMPLE_MIDI[name]
+    if (note === undefined) return
+    drums.start({ note, velocity: vel })
+  }
+
   return {
-    attack: (name, vel) => {
-      if (name === 'ride') {
-        const v = Math.max(0.05, vel / 127)
-        ride.triggerAttackRelease('C4', '4n', Tone.now(), v)
-        return
-      }
-      const note = SAMPLE_MIDI[name]
-      if (note === undefined) return
-      drums.start({ note, velocity: vel })
-    },
+    attack: fire,
+    // Drums are one-shot percussion samples — duration arg is ignored on purpose.
+    attackRelease: (name, _dur, vel) => fire(name, vel),
     release: () => { /* one-shots */ },
     damp: () => { /* one-shots */ },
     output: out,
@@ -350,6 +374,8 @@ function buildGlitch(): VoiceAdapter {
   return {
     attack: (_note, vel) =>
       synth.triggerAttackRelease('16n', Tone.now(), Math.max(0.01, vel / 127)),
+    attackRelease: (_note, dur, vel) =>
+      synth.triggerAttackRelease(dur, Tone.now(), Math.max(0.01, vel / 127)),
     release: () => { /* one-shot; nothing to release */ },
     damp: () => { /* one-shot; auto-decays */ },
     output: crush,
@@ -373,23 +399,27 @@ const BUILDERS: Record<InstrumentId, () => VoiceAdapter | null> = {
 }
 
 function applyEffect(fx: FxChain, id: EffectId, enabled: boolean, amount: number) {
-  const v = enabled ? amount : 0
+  // Each branch sets BOTH wet and the depth-shaping parameter. When disabled we
+  // pin every depth/intensity field to its no-op value too, so a previously
+  // cranked-up effect is guaranteed silent the moment its toggle goes off —
+  // not just dialed back to wet=0 (which can still leave audible coloration on
+  // some Tone nodes whose dry path is shaped by their parameters).
   switch (id) {
     case 'reverb':
-      fx.reverb.wet.value = v
-      fx.reverb.decay = 1 + amount * 4
+      fx.reverb.wet.value = enabled ? amount : 0
+      if (enabled && amount > 0) fx.reverb.decay = 1 + amount * 4
       break
     case 'delay':
-      fx.delay.wet.value = v
-      fx.delay.feedback.value = amount * 0.7
+      fx.delay.wet.value = enabled ? amount : 0
+      fx.delay.feedback.value = enabled ? amount * 0.7 : 0
       break
     case 'distortion':
       fx.distortion.wet.value = enabled ? 1 : 0
       fx.distortion.distortion = enabled ? amount : 0
       break
     case 'chorus':
-      fx.chorus.wet.value = v
-      fx.chorus.depth = amount
+      fx.chorus.wet.value = enabled ? amount : 0
+      fx.chorus.depth = enabled ? amount : 0
       if (enabled) fx.chorus.start()
       else fx.chorus.stop()
       break
@@ -399,7 +429,7 @@ function applyEffect(fx: FxChain, id: EffectId, enabled: boolean, amount: number
       break
     }
     case 'bitcrusher':
-      fx.bitcrusher.wet.value = v
+      fx.bitcrusher.wet.value = enabled ? amount : 0
       fx.bitcrusher.bits.value = enabled ? Math.max(1, Math.round(16 - amount * 12)) : 16
       break
     case 'compressor':
@@ -518,9 +548,7 @@ function wireWatchers() {
   watch(
     () => store.masterVolumeDb,
     (db) => {
-      // Skip ramping until Tone has started — otherwise we override the silent
-      // boot fade-in and reintroduce the startup click.
-      if (masterVolume && toneStarted) masterVolume.volume.rampTo(db, 0.05)
+      if (masterVolume) masterVolume.volume.rampTo(db, 0.05)
     },
   )
   watch(
@@ -564,6 +592,18 @@ export function useAudio() {
     if (!node) return
     node.voice.attack(note, velocity)
     if (!silent && INSTRUMENTS[id].playMode === 'note') store.noteOn(note)
+  }
+
+  // Like playOn but auto-releases the note after `durationSec`. The beat maker
+  // uses this so synth-based voices (bass MonoSynth, lead, pad, organ,
+  // electricPiano) don't latch on indefinitely when their step isn't followed
+  // by an explicit release. Sample-based voices (drums, glitch noise) ignore
+  // the duration arg — they're already one-shots.
+  async function playOnTimed(id: InstrumentId, note: string, durationSec: number, velocity = 100) {
+    await ensureToneStarted()
+    const node = await ensureInstrument(id)
+    if (!node) return
+    node.voice.attackRelease(note, durationSec, velocity)
   }
 
   function stopOn(id?: InstrumentId, note?: string) {
@@ -641,6 +681,7 @@ export function useAudio() {
     playNote,
     stopNote,
     playOn,
+    playOnTimed,
     stopOn,
     stopAll,
     dampInstrument,

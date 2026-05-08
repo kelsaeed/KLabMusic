@@ -3,7 +3,8 @@ import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useBeatMakerStore } from '@/stores/beatmaker'
 import { useRecorderStore } from '@/stores/recorder'
-import { INSTRUMENTS, INSTRUMENT_ORDER, DEFAULT_NOTE_FOR, noteOptionsFor } from '@/lib/instruments'
+import { INSTRUMENTS, INSTRUMENT_ORDER, DEFAULT_NOTE_FOR } from '@/lib/instruments'
+import BeatNotePicker from './BeatNotePicker.vue'
 import type { InstrumentId } from '@/lib/types'
 
 defineProps<{ open: boolean }>()
@@ -68,15 +69,10 @@ function pickInstrument(id: InstrumentId) {
             </button>
           </div>
 
-          <label v-if="!useClip" class="note-row">
+          <div v-if="!useClip" class="note-row">
             <span class="lbl">{{ t('binding.note') }}</span>
-            <select v-if="INSTRUMENTS[instrument].playMode === 'sample'" v-model="note">
-              <option v-for="s in INSTRUMENTS[instrument].samples" :key="s" :value="s">{{ s }}</option>
-            </select>
-            <select v-else v-model="note">
-              <option v-for="n in noteOptionsFor(instrument)" :key="n" :value="n">{{ n }}</option>
-            </select>
-          </label>
+            <BeatNotePicker v-model="note" :instrument="instrument" />
+          </div>
 
           <label v-else class="note-row">
             <span class="lbl">{{ t('beat.pickClip') }}</span>

@@ -39,7 +39,15 @@ export function useBeatMaker() {
   const store = useBeatMakerStore()
   const recorderStore = useRecorderStore()
   const userStore = useUserStore()
-  const { playOn, ensureToneStarted, ensureInstrument } = useAudio()
+  const { playOnTimed, dampInstrument, ensureToneStarted, ensureInstrument } = useAudio()
+
+  function stepDurationSec(): number {
+    // Length of a single step in seconds — one 16th (or 32nd) note at the
+    // current tempo. Used as the auto-release duration for synth voices so a
+    // bass/lead/pad note can never latch beyond its own step.
+    const sub = store.stepCount === 32 ? 8 : 4
+    return 60 / Math.max(20, store.bpm) / sub
+  }
 
   function buildLoop() {
     if (loop) {
@@ -87,7 +95,11 @@ export function useBeatMaker() {
       player.start(time)
       return
     }
-    void playOn(track.instrument, track.note, velocity, true)
+    // Use a duration-bound trigger so synth voices auto-release at the step
+    // boundary. Without this, bass/lead/pad notes from the beat-maker latched
+    // forever — pressing Stop only halted scheduling, leaving the held note
+    // ringing until a full page refresh.
+    void playOnTimed(track.instrument, track.note, stepDurationSec(), velocity)
     void time
   }
 
@@ -153,6 +165,17 @@ export function useBeatMaker() {
     store.playing = false
     stepCursor = 0
     store.currentStep = 0
+    // Belt-and-braces: kill any voice that was last fired by the beat maker —
+    // covers the case where a step ran and its scheduled release hasn't landed
+    // yet, and also catches sustaining instruments the user may have removed
+    // from the pattern mid-loop. Without this, hitting Stop on a bass row
+    // could leave the last bass note ringing indefinitely.
+    const seen = new Set<string>()
+    for (const t of store.activePattern.tracks) {
+      if (t.clipId || seen.has(t.instrument)) continue
+      seen.add(t.instrument)
+      dampInstrument(t.instrument)
+    }
   }
 
   function toggle() {
