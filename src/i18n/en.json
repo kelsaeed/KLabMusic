@@ -332,6 +332,42 @@
       "cassette": { "name": "Cassette", "desc": "Tilt EQ and tape colour. Lo-fi mid-fidelity vibe." }
     }
   },
+  "loops": {
+    "title": "Sound library",
+    "openButton": "Browse loops",
+    "searchPlaceholder": "Search loops, key, BPM…",
+    "category": "Category",
+    "genreLabel": "Genre",
+    "preview": "Preview",
+    "stopPreview": "Stop preview",
+    "addToBeat": "Add to Beat Maker",
+    "noResults": "No loops match those filters.",
+    "footerNote": "Loops play through your studio's voices, theme, and mastering preset — they sound like your project.",
+    "bpm": "BPM",
+    "key": "Key",
+    "steps": "steps",
+    "cat": {
+      "all": "All",
+      "drums": "Drums",
+      "bass": "Bass",
+      "chords": "Chords",
+      "melody": "Melody",
+      "fx": "FX"
+    },
+    "genreName": {
+      "all": "All",
+      "hip-hop": "Hip-Hop",
+      "lofi": "Lo-Fi",
+      "trap": "Trap",
+      "house": "House",
+      "edm": "EDM",
+      "jazz": "Jazz",
+      "rock": "Rock",
+      "rnb": "R&B",
+      "pop": "Pop",
+      "ambient": "Ambient"
+    }
+  },
   "fxlib": {
     "title": "Effects library",
     "openButton": "Browse effects",

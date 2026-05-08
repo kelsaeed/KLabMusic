@@ -9,6 +9,7 @@ import TrackRow from './TrackRow.vue'
 import SongMode from './SongMode.vue'
 import AddTrackDialog from './AddTrackDialog.vue'
 import ExportDialog from './ExportDialog.vue'
+import LoopBrowser from '@/components/loops/LoopBrowser.vue'
 
 const store = useBeatMakerStore()
 const { ensureWatchers, exportPatternsJson, importPatternsJson, saveToCloud } = useBeatMaker()
@@ -16,6 +17,7 @@ const { t } = useI18n()
 
 const addOpen = ref(false)
 const exportOpen = ref(false)
+const loopBrowserOpen = ref(false)
 const status = ref('')
 const fileInput = ref<HTMLInputElement | null>(null)
 
@@ -64,6 +66,9 @@ onMounted(() => {
         <h3>{{ t('beat.tracks') }}</h3>
         <div class="grid-actions">
           <button class="ghost mono" @click="addOpen = true">+ {{ t('beat.addTrack') }}</button>
+          <button class="loop-browse mono" @click="loopBrowserOpen = true">
+            🎵 {{ t('loops.openButton') }}
+          </button>
           <button class="ghost mono" @click="exportOpen = true">{{ t('export.short') }}</button>
           <button class="ghost mono" @click="downloadJson">{{ t('binding.export') }}</button>
           <button class="ghost mono" @click="fileInput?.click()">{{ t('binding.import') }}</button>
@@ -96,6 +101,7 @@ onMounted(() => {
 
     <AddTrackDialog :open="addOpen" @close="addOpen = false" />
     <ExportDialog :open="exportOpen" @close="exportOpen = false" />
+    <LoopBrowser :open="loopBrowserOpen" @close="loopBrowserOpen = false" />
   </div>
 </template>
 
@@ -140,6 +146,22 @@ onMounted(() => {
   background: transparent;
   font-size: 0.7rem;
   padding: 0.4rem 0.7rem;
+}
+.loop-browse {
+  font-size: 0.7rem;
+  padding: 0.4rem 0.85rem;
+  background: var(--accent-primary);
+  color: var(--text-inverse);
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+.loop-browse:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px var(--accent-glow);
 }
 .primary {
   background: var(--accent-primary);
