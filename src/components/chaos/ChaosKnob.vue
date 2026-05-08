@@ -14,7 +14,12 @@ const { t } = useI18n()
       <span class="hint mono">{{ Math.round(chaosAmount * 100) }}%</span>
     </header>
     <div class="row">
-      <Knob :model-value="chaosAmount" :size="80" @update:model-value="setChaosAmount" />
+      <Knob
+        :model-value="chaosAmount"
+        :size="80"
+        :label="t('chaos.chaosKnob')"
+        @update:model-value="setChaosAmount"
+      />
       <button class="glitch" @click="glitchBurst(1.2)">
         <span class="bolt">⚡</span>
         {{ t('chaos.glitch') }}

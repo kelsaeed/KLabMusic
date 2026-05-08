@@ -80,7 +80,7 @@ function onWheel(e: WheelEvent) {
       :aria-valuenow="modelValue"
       :aria-valuemin="min"
       :aria-valuemax="max"
-      :aria-label="label"
+      :aria-label="label || 'knob'"
       tabindex="0"
       @pointerdown="startDrag"
       @wheel.passive="onWheel"
@@ -164,16 +164,16 @@ function onWheel(e: WheelEvent) {
   grid-template-columns: auto 1fr auto;
   gap: 0.4rem;
   align-items: baseline;
-  font-size: 0.55rem;
-  letter-spacing: 0.05em;
-  color: var(--text-muted);
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--text-primary);
   width: 100%;
 }
-.r-min { color: var(--accent-secondary); }
-.r-max { color: var(--accent-primary); }
+.r-min, .r-max { color: var(--text-primary); }
 .r-val {
   text-align: center;
-  font-size: 0.7rem;
+  font-size: 0.72rem;
   color: var(--text-primary);
 }
 .label {

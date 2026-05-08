@@ -34,6 +34,7 @@ function onAmount(id: EffectId, value: number) {
         </button>
         <Knob
           :model-value="controls[id].amount"
+          :label="t(`audio.effect.${id}`)"
           :disabled="!controls[id].enabled"
           @update:model-value="(v: number) => onAmount(id, v)"
         />
