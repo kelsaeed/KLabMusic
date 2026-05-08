@@ -42,8 +42,12 @@ interface MasteringChain {
   compressor: Tone.Compressor
   limiter: Tone.Limiter
   // Pre-makeup gain before the limiter so "Louder" presets actually push the
-  // signal into the ceiling instead of merely shaping it.
-  makeup: Tone.Volume
+  // signal into the ceiling instead of merely shaping it. Tone.Gain (not
+  // Tone.Volume) because the louder/cranked presets specify positive dB
+  // makeup (up to +6) and Tone.Volume's volume Param is clamped to
+  // [-100, 0] dB in v15+ — passing a positive number triggers the
+  // RangeError we hit in production when applyMasteringPreset ran.
+  makeup: Tone.Gain
 }
 
 export type MasteringPresetId =
@@ -239,7 +243,9 @@ function ensureMaster() {
   // it INSIDE ensureMaster instead of ensureToneStarted because the previous
   // design ran the ramp before this function created masterVolume, leaving
   // master clamped at -100 dB and producing the silent-on-refresh bug.
-  const targetDb = useAudioStore().masterVolumeDb
+  // Clamp to [-100, 0] dB — Tone.Volume.volume rejects positive values in
+  // v15+, and the slider lets users go up to +6 for "headroom" UX.
+  const targetDb = Math.max(-100, Math.min(0, useAudioStore().masterVolumeDb))
   masterVolume = new Tone.Volume(-60)
   const now = Tone.now()
   masterVolume.volume.cancelScheduledValues(now)
@@ -293,7 +299,7 @@ function buildMasteringChain(): MasteringChain {
     release: 0.2,
     knee: 6,
   })
-  const makeup = new Tone.Volume(0)
+  const makeup = new Tone.Gain(1)
   const limiter = new Tone.Limiter(0)
   return { eq, compressor, makeup, limiter }
 }
@@ -310,7 +316,9 @@ function applyMasteringPreset(id: MasteringPresetId) {
   mastering.compressor.ratio.rampTo(cfg.comp.ratio, 0.08)
   mastering.compressor.attack.rampTo(cfg.comp.attack, 0.08)
   mastering.compressor.release.rampTo(cfg.comp.release, 0.08)
-  mastering.makeup.volume.rampTo(cfg.makeup, 0.08)
+  // Convert dB → linear gain for Tone.Gain. dB +6 → ~2.0× linear, +0 → 1.0×,
+  // -6 → 0.5×. Linear-units rampTo doesn't have the dB range issue.
+  mastering.makeup.gain.rampTo(Tone.dbToGain(cfg.makeup), 0.08)
   mastering.limiter.threshold.rampTo(cfg.limit, 0.08)
 }
 
@@ -551,6 +559,146 @@ function buildDrums(): VoiceAdapter {
   }
 }
 
+// — Synth fallbacks for sampled instruments —
+//
+// When the sample CDN is unreachable / glacial / blocked, we don't want
+// the user staring at a "Loading Piano…" toast for 30 s only to never
+// hear a sound. These build pure-Tone synth approximations that always
+// load instantly, so even on a flaky network the studio is playable.
+// The user gets a slightly less authentic timbre, but every key works.
+
+function buildPianoSynthFallback(): VoiceAdapter {
+  // Triangle base + soft envelope reads vaguely "felt-piano". Polyphonic so
+  // chords work, attack 0.005 to mimic a hammer strike.
+  const synth = new Tone.PolySynth(Tone.Synth, {
+    oscillator: { type: 'triangle' },
+    envelope: { attack: 0.005, decay: 0.6, sustain: 0.35, release: 1.2 },
+  })
+  return {
+    attack: (note, vel) => synth.triggerAttack(note, undefined, Math.max(0.01, vel / 127)),
+    attackRelease: (note, dur, vel) =>
+      synth.triggerAttackRelease(note, dur, undefined, Math.max(0.01, vel / 127)),
+    release: (note) => (note ? synth.triggerRelease(note) : synth.releaseAll()),
+    damp: () => synth.releaseAll(),
+    output: synth,
+    setVolumeDb: (db) => { synth.volume.value = db },
+    setBendCents: (c) => synth.set({ detune: c }),
+    dispose: () => synth.dispose(),
+  }
+}
+
+function buildGuitarSynthFallback(): VoiceAdapter {
+  // PluckSynth = Karplus-Strong physical-modelling plucked string. Best
+  // synth approximation for a guitar / harp / kalimba family.
+  const synth = new Tone.PluckSynth({
+    attackNoise: 1,
+    dampening: 4000,
+    resonance: 0.7,
+  })
+  // PluckSynth is monophonic; for polyphony we'd need PolySynth(PluckSynth)
+  // but that's broken in Tone v15 for some configs. Mono is fine for a
+  // fallback — the real guitar comes back when the network works.
+  // PluckSynth.triggerAttack only accepts (note, time) — no velocity arg —
+  // so velocity feeds into the synth's volume right before firing.
+  return {
+    attack: (note, vel) => {
+      synth.volume.value = Math.max(-30, Tone.gainToDb(Math.max(0.01, vel / 127)))
+      synth.triggerAttack(note)
+    },
+    attackRelease: (note, dur, vel) => {
+      synth.volume.value = Math.max(-30, Tone.gainToDb(Math.max(0.01, vel / 127)))
+      synth.triggerAttackRelease(note, dur)
+    },
+    release: () => { /* PluckSynth auto-decays */ },
+    damp: () => { /* idem */ },
+    output: synth,
+    setVolumeDb: (db) => { synth.volume.value = db },
+    setBendCents: () => { /* sample-style; skip */ },
+    dispose: () => synth.dispose(),
+  }
+}
+
+function buildDrumsSynthFallback(): VoiceAdapter {
+  // Classic synth drum kit: MembraneSynth for kick + tom, NoiseSynth for
+  // snare / hihats / clap, MetalSynth for ride. Each fires with attack-
+  // release semantics so they're one-shot like the real DrumMachine.
+  const kick = new Tone.MembraneSynth({
+    pitchDecay: 0.05,
+    octaves: 6,
+    envelope: { attack: 0.001, decay: 0.4, sustain: 0, release: 0.5 },
+  })
+  const snare = new Tone.NoiseSynth({
+    noise: { type: 'white' },
+    envelope: { attack: 0.001, decay: 0.18, sustain: 0 },
+  })
+  const hihat = new Tone.NoiseSynth({
+    noise: { type: 'white' },
+    envelope: { attack: 0.001, decay: 0.06, sustain: 0 },
+  })
+  const hihatO = new Tone.NoiseSynth({
+    noise: { type: 'white' },
+    envelope: { attack: 0.001, decay: 0.3, sustain: 0 },
+  })
+  const clap = new Tone.NoiseSynth({
+    noise: { type: 'pink' },
+    envelope: { attack: 0.001, decay: 0.2, sustain: 0 },
+  })
+  const tom = new Tone.MembraneSynth({
+    pitchDecay: 0.05,
+    octaves: 4,
+    envelope: { attack: 0.001, decay: 0.3, sustain: 0, release: 0.4 },
+  })
+  const ride = new Tone.MetalSynth({
+    envelope: { attack: 0.001, decay: 0.9, release: 0.4 },
+    harmonicity: 8,
+    modulationIndex: 18,
+    resonance: 3000,
+    octaves: 2,
+  })
+  ride.volume.value = -18
+  const out = new Tone.Gain(1)
+  kick.connect(out)
+  snare.connect(out)
+  hihat.connect(out)
+  hihatO.connect(out)
+  clap.connect(out)
+  tom.connect(out)
+  ride.connect(out)
+
+  const fire = (name: string, vel: number) => {
+    const v = Math.max(0.05, vel / 127)
+    switch (name) {
+      case 'kick': kick.triggerAttackRelease('C2', '8n', undefined, v); break
+      case 'snare': snare.triggerAttackRelease('16n', undefined, v); break
+      case 'hihat': hihat.triggerAttackRelease('32n', undefined, v); break
+      case 'hihatO': hihatO.triggerAttackRelease('8n', undefined, v); break
+      case 'clap': clap.triggerAttackRelease('8n', undefined, v); break
+      case 'tom': tom.triggerAttackRelease('A2', '8n', undefined, v); break
+      case 'ride': ride.triggerAttackRelease('C4', '4n', Tone.now(), v); break
+    }
+  }
+
+  return {
+    attack: fire,
+    attackRelease: (name, _dur, vel) => fire(name, vel),
+    release: () => { /* one-shots */ },
+    damp: () => { /* one-shots */ },
+    output: out,
+    setVolumeDb: (db) => { out.gain.value = Tone.dbToGain(db) },
+    setBendCents: () => { /* drums don't bend */ },
+    dispose: () => {
+      kick.dispose(); snare.dispose(); hihat.dispose(); hihatO.dispose()
+      clap.dispose(); tom.dispose(); ride.dispose(); out.dispose()
+    },
+  }
+}
+
+const FALLBACK_BUILDERS: Partial<Record<InstrumentId, () => VoiceAdapter>> = {
+  piano: buildPianoSynthFallback,
+  guitar: buildGuitarSynthFallback,
+  drums: buildDrumsSynthFallback,
+}
+
 function buildGlitch(): VoiceAdapter {
   // One-shot pink-noise burst through a bit-crusher. NoiseSynth auto-stops,
   // so this can never hang on the system if a release event is missed.
@@ -672,19 +820,47 @@ async function ensureInstrument(id: InstrumentId): Promise<InstrumentNode | null
     const store = useAudioStore()
     store.setLoadState(id, 'loading')
 
-    const voice = BUILDERS[id]()
+    let voice = BUILDERS[id]()
     if (!voice || !masterVolume) {
       store.setLoadState(id, 'error')
       return null
     }
 
-    const channel = new Tone.Volume(0).connect(masterVolume)
+    let channel = new Tone.Volume(0).connect(masterVolume)
     voice.output.connect(channel)
 
-    if (voice.loaded) {
-      await voice.loaded
-    } else if (meta.category === 'sampled') {
-      await Tone.loaded()
+    // Race the sample load against a 12-second timeout. The Salamander
+    // piano lives on GitHub Pages and the smplr Soundfont CDN can be
+    // 30+ s on slow / blocked networks — without this, "Loading Piano…"
+    // hangs forever and the user can't play anything. On timeout we
+    // swap in a synth approximation so every instrument is always
+    // playable, even offline-ish.
+    const SAMPLE_LOAD_TIMEOUT_MS = 12000
+    const loadPromise: Promise<void> | null = voice.loaded
+      ? voice.loaded
+      : meta.category === 'sampled'
+        ? Tone.loaded()
+        : null
+
+    if (loadPromise) {
+      const timedOut = await Promise.race([
+        loadPromise.then(() => false as const),
+        new Promise<true>((resolve) => setTimeout(() => resolve(true), SAMPLE_LOAD_TIMEOUT_MS)),
+      ])
+      if (timedOut) {
+        const fallbackBuilder = FALLBACK_BUILDERS[id]
+        if (fallbackBuilder) {
+          // Tear down the stuck sampled voice + its half-wired channel,
+          // then build the synth fallback in its place. The user gets
+          // playable audio immediately and can retry the sampled one
+          // later by removing the cached node (page reload).
+          try { voice.dispose() } catch { /* node may already be partial */ }
+          try { channel.dispose() } catch { /* same */ }
+          voice = fallbackBuilder()
+          channel = new Tone.Volume(0).connect(masterVolume!)
+          voice.output.connect(channel)
+        }
+      }
     }
 
     const node: InstrumentNode = { voice, channelVolume: channel }
@@ -761,7 +937,19 @@ function wireWatchers() {
   watch(
     () => store.masterVolumeDb,
     (db) => {
-      if (masterVolume) masterVolume.volume.rampTo(db, 0.05)
+      if (!masterVolume) return
+      // Tone.Volume's volume Param clamps to [-100, 0] in v15+; the slider
+      // exposes [-40, 6] for headroom but we MUST clamp before sending or
+      // Tone throws a RangeError on every keystroke. Use linearRampToValueAtTime
+      // directly because Param.rampTo() routes through exponentialRampTo for
+      // dB units, and that path internally substitutes a tiny positive
+      // epsilon (1e-7) for zero target, which then re-fails the [-100, 0]
+      // assertion. Linear ramps have no such gymnastics.
+      const clamped = Math.max(-100, Math.min(0, db))
+      const now = Tone.now()
+      masterVolume.volume.cancelScheduledValues(now)
+      masterVolume.volume.setValueAtTime(masterVolume.volume.value, now)
+      masterVolume.volume.linearRampToValueAtTime(clamped, now + 0.05)
     },
   )
   watch(

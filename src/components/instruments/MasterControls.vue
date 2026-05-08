@@ -16,7 +16,7 @@ const { t } = useI18n()
           v-model.number="store.masterVolumeDb"
           type="range"
           min="-40"
-          max="6"
+          max="0"
           step="0.5"
         />
       </label>
