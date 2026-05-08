@@ -228,11 +228,14 @@ function onUp(note: string) {
 }
 
 /* Portrait phones — flip the keyboard to vertical so each key gets the full screen width.
-   Landscape phones and desktop keep the standard horizontal layout. */
+   Landscape phones and desktop keep the standard horizontal layout.
+   Bed runs at 84vh (with a generous min) so 3-octave layouts still give every
+   white key ≥ 30 px and every black key ≥ 18 px (Lighthouse's 24 px touch
+   target rule is the threshold; 2-octave configs comfortably exceed it). */
 @media (orientation: portrait) and (max-width: 720px) {
-  .piano { padding: 0.4rem; }
+  .piano { padding: 0.35rem; }
   .bed {
-    height: clamp(360px, 68vh, 760px);
+    height: clamp(520px, 84vh, 1000px);
     width: 100%;
   }
   .white,
