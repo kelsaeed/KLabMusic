@@ -106,6 +106,9 @@ function clipLabel(clip: ArrangeClip): string {
     const c = recorderStore.clips.find((x) => x.id === src.recorderClipId)
     return c?.name ?? '—'
   }
+  if (src.kind === 'liveTake') {
+    return src.name || 'Live take'
+  }
   const p = beatStore.patterns.find((x) => x.id === src.patternId)
   return p?.name ?? 'Pattern'
 }

@@ -5,7 +5,7 @@ import { useRecorderStore } from '@/stores/recorder'
 import { useBeatMakerStore } from '@/stores/beatmaker'
 import { useAudio } from '@/composables/useAudio'
 import { bufferToWavBlob, downloadBlob, sanitizeFilename } from '@/lib/wav'
-import type { ArrangeClip, ArrangeTrack } from '@/lib/types'
+import type { ArrangeClip, ArrangeTrack, LiveTakeEvent } from '@/lib/types'
 
 // Stem export state, exposed to the UI for progress feedback.
 export interface StemExportProgress {
@@ -291,7 +291,8 @@ export function useArrange() {
       if (!store.shouldPlayTrack(track)) continue
       for (const clip of track.clips) {
         if (clip.source.kind === 'audio') scheduleAudioClip(track, clip)
-        else schedulePatternClip(track, clip)
+        else if (clip.source.kind === 'pattern') schedulePatternClip(track, clip)
+        else if (clip.source.kind === 'liveTake') scheduleLiveTakeClip(track, clip)
       }
     }
 
@@ -362,6 +363,56 @@ export function useArrange() {
       durationSec: patternDur * bars,
       source: { kind: 'pattern', patternId },
     })
+  }
+
+  /**
+   * Schedule a live-take clip — replays each captured note at its
+   * relative time, offset by the clip's startSec on the timeline.
+   * Uses playOnTimed so the per-event duration the user "performed" is
+   * honoured even if they held a key longer than the clip's bounds.
+   */
+  function scheduleLiveTakeClip(track: ArrangeTrack, clip: ArrangeClip) {
+    if (clip.source.kind !== 'liveTake') return
+    const events = clip.source.events
+    const eventIds: number[] = []
+    const trackVolMul = track.volume
+    for (const ev of events) {
+      const absoluteT = clip.startSec + ev.time
+      // Cap to clip end so editing the clip's durationSec down truncates
+      // its tail, matching audio clip behaviour.
+      if (ev.time >= clip.durationSec) continue
+      const remaining = Math.min(ev.duration, clip.durationSec - ev.time)
+      const id = Tone.getTransport().schedule((time) => {
+        // Sample the volume curve at trigger time so live takes pick up
+        // automation just like pattern clips do.
+        const automatedVol = store.sampleAutomation(track, 'volume', absoluteT)
+        const vol = automatedVol !== null ? automatedVol : trackVolMul
+        Tone.getDraw().schedule(() => {
+          void playOnTimed(ev.instrument, ev.note, remaining, Math.round(ev.velocity * vol))
+        }, time)
+      }, absoluteT)
+      eventIds.push(id)
+    }
+    scheduled.push({ patternEvents: eventIds })
+  }
+
+  /**
+   * Take a freshly-finished live-take recording from the Live Play stage
+   * and drop it onto the timeline. Creates a new pattern-kind track
+   * named after the user's chosen take name (or "Live take N"), with the
+   * clip starting at the current playhead.
+   */
+  function addLiveTakeToTimeline(events: LiveTakeEvent[], durationSec: number, name: string) {
+    if (events.length === 0 || durationSec <= 0) {
+      return { ok: false as const, message: 'Empty take.' }
+    }
+    const track = store.addPatternTrack(name)
+    store.addClip(track.id, {
+      startSec: store.playheadSec,
+      durationSec,
+      source: { kind: 'liveTake', events, name },
+    })
+    return { ok: true as const, trackId: track.id }
   }
 
   /**
@@ -512,6 +563,7 @@ export function useArrange() {
     toggle,
     addRecorderClipToTrack,
     addPatternClipToTrack,
+    addLiveTakeToTimeline,
     exportStems,
     stemExportProgress,
   }

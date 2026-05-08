@@ -7,6 +7,7 @@ import { useToast } from '@/composables/useToast'
 import WaveformCanvas from './WaveformCanvas.vue'
 import ClipList from './ClipList.vue'
 import ClipControls from './ClipControls.vue'
+import SmartTunePanel from './SmartTunePanel.vue'
 
 const store = useRecorderStore()
 const {
@@ -151,6 +152,7 @@ function onScrub(ratio: number) {
           {{ t('recorder.dropOrRecord') }}
         </div>
         <ClipControls v-if="store.activeClip" :clip="store.activeClip" />
+        <SmartTunePanel v-if="store.clips.length > 0" />
       </div>
     </div>
   </section>

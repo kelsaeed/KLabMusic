@@ -11,9 +11,11 @@ import {
   midiFloatToPitchResult,
   KEY_NAMES,
   type Scale,
+  type Key,
   type TuneResult,
   type PitchResult,
 } from '@/lib/pitch'
+import { detectKey, type KeyDetectionResult } from '@/lib/keyDetection'
 import type { Clip } from '@/lib/types'
 
 const WAVEFORM_BUCKETS = 600
@@ -392,6 +394,33 @@ export function useRecorder() {
     return result
   }
 
+  /**
+   * Smart Tune — analyse every clip in the library, build a combined
+   * chromagram, match it against all 24 major/minor key profiles, and
+   * return the best fit. Used by the SmartTunePanel to suggest a song
+   * key before the user commits to bulk-tuning every clip.
+   */
+  function detectSongKey(): KeyDetectionResult | null {
+    if (store.clips.length === 0) return null
+    return detectKey(store.clips.map((c) => c.buffer))
+  }
+
+  /**
+   * Apply tuneClipToKey to every clip in one shot. Returns counts for the
+   * UI so the user sees how many clips were corrected vs. how many had no
+   * detectable pitch (silence, polyphonic content, breath noise).
+   */
+  function tuneAllClipsToKey(key: Key, scale: Scale): { tuned: number; skipped: number } {
+    let tuned = 0
+    let skipped = 0
+    for (const clip of store.clips) {
+      const result = tuneClipToKeyNow(clip.id, key, scale)
+      if (result) tuned++
+      else skipped++
+    }
+    return { tuned, skipped }
+  }
+
   function exportClipWav(clipId: string) {
     const clip = store.clips.find((c) => c.id === clipId)
     if (!clip) return
@@ -456,6 +485,8 @@ export function useRecorder() {
     detectClipBpm,
     detectClipPitch,
     tuneClipToKeyNow,
+    detectSongKey,
+    tuneAllClipsToKey,
     startMonitoring,
     stopMonitoring,
     setMonitorGain,

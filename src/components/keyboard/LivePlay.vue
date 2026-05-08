@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useLivePlay, type PlayMode } from '@/composables/useLivePlay'
 import { useAudioStore } from '@/stores/audio'
+import { useArrange } from '@/composables/useArrange'
+import { useToast } from '@/composables/useToast'
 import Piano from './Piano.vue'
 import DrumPad from './DrumPad.vue'
 import GuitarPad from './GuitarPad.vue'
@@ -15,12 +17,66 @@ const {
   octaveCount,
   showLabels,
   playMode,
+  isRecordingLive,
+  liveTakeEvents,
   press,
   release,
   octaveUp,
   octaveDown,
+  startLiveTake,
+  stopLiveTake,
+  clearLiveTake,
 } = useLivePlay()
+const { addLiveTakeToTimeline } = useArrange()
+const { show } = useToast()
 const { t } = useI18n()
+
+// Local state for the post-stop "review" view: the user just hit Stop and
+// can either drop the take onto the timeline (give it a name first) or
+// throw it away and re-record. Clears when either button is pressed or
+// when the user starts a new take.
+const reviewing = ref<{ events: ReturnType<typeof stopLiveTake>['events']; durationSec: number } | null>(null)
+const takeName = ref<string>('')
+
+function toggleRecord() {
+  if (isRecordingLive.value) {
+    const result = stopLiveTake()
+    if (result.events.length === 0) {
+      show({ type: 'info', title: t('liveTake.empty'), duration: 1800 })
+      reviewing.value = null
+      return
+    }
+    reviewing.value = result
+    takeName.value = `Live take ${new Date().toLocaleTimeString()}`
+    return
+  }
+  reviewing.value = null
+  startLiveTake()
+  show({ type: 'info', title: t('liveTake.armed'), duration: 1800 })
+}
+
+function dropOntoTimeline() {
+  if (!reviewing.value) return
+  const result = addLiveTakeToTimeline(
+    reviewing.value.events,
+    reviewing.value.durationSec,
+    takeName.value.trim() || `Live take`,
+  )
+  if (result.ok) {
+    show({
+      type: 'success',
+      title: t('liveTake.added', { count: reviewing.value.events.length }),
+      duration: 2200,
+    })
+    reviewing.value = null
+    clearLiveTake()
+  }
+}
+
+function discardTake() {
+  reviewing.value = null
+  clearLiveTake()
+}
 
 const layout = computed<'piano' | 'drums' | 'guitar'>(() => {
   const id = audioStore.activeInstrument
@@ -52,6 +108,34 @@ function onPianoRelease(note: string) {
     <header class="head">
       <h3>{{ t(`live.heading.${layout}`) }}</h3>
       <span v-if="layout === 'piano'" class="hint mono">{{ octaveRange }}</span>
+      <div class="take-bar">
+        <button
+          class="rec-take"
+          :class="{ live: isRecordingLive }"
+          :title="isRecordingLive ? t('liveTake.stopHint') : t('liveTake.startHint')"
+          @click="toggleRecord"
+        >
+          <span class="rec-take-dot" />
+          {{ isRecordingLive ? t('liveTake.stop', { n: liveTakeEvents.length }) : t('liveTake.record') }}
+        </button>
+        <Transition name="fade">
+          <div v-if="reviewing" class="review-bar">
+            <span class="review-count mono">
+              {{ t('liveTake.captured', { n: reviewing.events.length, dur: reviewing.durationSec.toFixed(1) }) }}
+            </span>
+            <input
+              v-model="takeName"
+              class="take-name mono"
+              :placeholder="t('liveTake.namePlaceholder')"
+              @keydown.enter="dropOntoTimeline"
+            />
+            <button class="add-take" @click="dropOntoTimeline">
+              🎬 {{ t('liveTake.addToTimeline') }}
+            </button>
+            <button class="discard-take" @click="discardTake">×</button>
+          </div>
+        </Transition>
+      </div>
     </header>
 
     <div v-if="layout === 'piano'" class="toolbar">
@@ -123,6 +207,105 @@ function onPianoRelease(note: string) {
   text-transform: uppercase;
   color: var(--text-muted);
 }
+.take-bar {
+  margin-inline-start: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.rec-take {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.4rem 0.85rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-family: var(--font-mono);
+  background: transparent;
+  border: 1px solid var(--accent-secondary);
+  color: var(--accent-secondary);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+.rec-take:hover { background: rgba(255, 0, 110, 0.12); }
+.rec-take.live {
+  background: var(--accent-secondary);
+  color: var(--text-inverse);
+  animation: rec-pulse 1.4s ease-in-out infinite;
+}
+.rec-take-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+@keyframes rec-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 0, 110, 0.55); }
+  50% { box-shadow: 0 0 0 7px rgba(255, 0, 110, 0); }
+}
+
+.review-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.5rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--accent-primary);
+  border-radius: var(--radius);
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+.review-count {
+  font-size: 0.65rem;
+  color: var(--accent-primary);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.take-name {
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  border-radius: var(--radius);
+  padding: 0.3rem 0.55rem;
+  font-size: 0.75rem;
+  min-width: 140px;
+  outline: none;
+}
+.take-name:focus { border-color: var(--accent-primary); }
+.add-take {
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+  padding: 0.35rem 0.7rem;
+  background: var(--accent-primary);
+  color: var(--text-inverse);
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-family: var(--font-mono);
+}
+.add-take:hover { box-shadow: 0 4px 14px var(--accent-glow); }
+.discard-take {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+.discard-take:hover {
+  background: var(--accent-secondary);
+  color: var(--text-inverse);
+  border-color: var(--accent-secondary);
+}
+.fade-enter-active, .fade-leave-active { transition: opacity var(--transition-fast); }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
 .hint {
   font-size: 0.7rem;
   color: var(--accent-primary);

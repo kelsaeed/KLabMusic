@@ -10,6 +10,21 @@ export type Locale = 'en' | 'ar'
 
 export type ModuleTab = 'live' | 'beat' | 'loop' | 'chaos' | 'learn' | 'arrange'
 
+/**
+ * A single note triggered during a Live-Play recording. Captured by the
+ * Live Play stage's "Record performance" button and replayed verbatim on
+ * the arrangement when the resulting LiveTake clip plays.
+ */
+export interface LiveTakeEvent {
+  /** Time in seconds from the start of the live-take clip. */
+  time: number
+  /** Length of the note in seconds — fed into voice.attackRelease. */
+  duration: number
+  instrument: InstrumentId
+  note: string
+  velocity: number
+}
+
 export interface ArrangeClip {
   id: string
   /** Absolute start time in seconds, on the arrangement timeline. */
@@ -20,6 +35,7 @@ export interface ArrangeClip {
   source:
     | { kind: 'audio'; recorderClipId: string; offsetSec: number }
     | { kind: 'pattern'; patternId: string }
+    | { kind: 'liveTake'; events: LiveTakeEvent[]; name: string }
   color?: string
 }
 

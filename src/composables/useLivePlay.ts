@@ -4,6 +4,7 @@ import { useAudio } from '@/composables/useAudio'
 import { useAudioStore } from '@/stores/audio'
 import { useKeyBindingsStore } from '@/stores/keybindings'
 import { useMultiplayer } from '@/composables/useMultiplayer'
+import type { InstrumentId, LiveTakeEvent } from '@/lib/types'
 
 export type PlayMode = 'normal' | 'chord' | 'strum'
 
@@ -20,6 +21,17 @@ const pitchBend = ref(0)
 const modWheel = ref(0)
 const activeKeyChords = new Map<string, ChordHold>()
 let watchersWired = false
+
+// — Live-take recording state —
+// Capture every press / release while the user has "Record performance"
+// armed in the Live Play stage. On stop, we hand back a list of
+// LiveTakeEvents the arrangement engine can replay verbatim. State is
+// module-scoped so the recording survives component remounts (the user
+// can switch instruments while recording without losing their take).
+const isRecordingLive = ref(false)
+const liveTakeEvents = ref<LiveTakeEvent[]>([])
+let liveTakeStartedAt = 0
+const livePending = new Map<string, { instrument: InstrumentId; note: string; velocity: number; startedAt: number }>()
 
 export function useLivePlay() {
   const audioStore = useAudioStore()
@@ -58,8 +70,37 @@ export function useLivePlay() {
     }
   }
 
+  function captureNoteOn(note: string, velocity: number) {
+    if (!isRecordingLive.value) return
+    const key = `${audioStore.activeInstrument}:${note}`
+    livePending.set(key, {
+      instrument: audioStore.activeInstrument,
+      note,
+      velocity,
+      startedAt: performance.now(),
+    })
+  }
+
+  function captureNoteOff(note: string) {
+    if (!isRecordingLive.value) return
+    const key = `${audioStore.activeInstrument}:${note}`
+    const pending = livePending.get(key)
+    if (!pending) return
+    livePending.delete(key)
+    const time = (pending.startedAt - liveTakeStartedAt) / 1000
+    const duration = (performance.now() - pending.startedAt) / 1000
+    liveTakeEvents.value.push({
+      time: Math.max(0, time),
+      duration: Math.max(0.05, duration),
+      instrument: pending.instrument,
+      note: pending.note,
+      velocity: pending.velocity,
+    })
+  }
+
   async function press(rootNote: string, velocity: number) {
     if (playMode.value === 'normal') {
+      captureNoteOn(rootNote, velocity)
       await playNote(rootNote, velocity)
       broadcastNote(audioStore.activeInstrument, rootNote, velocity)
       return
@@ -68,13 +109,17 @@ export function useLivePlay() {
     const hold: ChordHold = { notes, cancelled: false }
     activeKeyChords.set(rootNote, hold)
     if (playMode.value === 'chord') {
-      for (const n of notes) await playNote(n, velocity)
+      for (const n of notes) {
+        captureNoteOn(n, velocity)
+        await playNote(n, velocity)
+      }
       for (const n of notes) broadcastNote(audioStore.activeInstrument, n, velocity)
     } else {
       for (let i = 0; i < notes.length; i++) {
         const note = notes[i]
         setTimeout(() => {
           if (hold.cancelled) return
+          captureNoteOn(note, velocity)
           void playNote(note, velocity)
           broadcastNote(audioStore.activeInstrument, note, velocity)
         }, i * 70)
@@ -87,14 +132,57 @@ export function useLivePlay() {
     if (hold) {
       hold.cancelled = true
       for (const n of hold.notes) {
+        captureNoteOff(n)
         stopNote(n)
         broadcastNoteStop(audioStore.activeInstrument, n)
       }
       activeKeyChords.delete(rootNote)
       return
     }
+    captureNoteOff(rootNote)
     stopNote(rootNote)
     broadcastNoteStop(audioStore.activeInstrument, rootNote)
+  }
+
+  function startLiveTake() {
+    liveTakeEvents.value = []
+    livePending.clear()
+    liveTakeStartedAt = performance.now()
+    isRecordingLive.value = true
+  }
+
+  /**
+   * Stop recording. Returns a snapshot of the captured events plus the
+   * total duration (used to size the resulting arrangement clip). Any
+   * note still being held when the user stops is closed out at "now"
+   * so a long-held bell ring isn't truncated to zero length.
+   */
+  function stopLiveTake(): { events: LiveTakeEvent[]; durationSec: number } {
+    isRecordingLive.value = false
+    // Close out any held notes so an open press doesn't get dropped.
+    const now = performance.now()
+    for (const [, pending] of livePending) {
+      const time = (pending.startedAt - liveTakeStartedAt) / 1000
+      const duration = (now - pending.startedAt) / 1000
+      liveTakeEvents.value.push({
+        time: Math.max(0, time),
+        duration: Math.max(0.05, duration),
+        instrument: pending.instrument,
+        note: pending.note,
+        velocity: pending.velocity,
+      })
+    }
+    livePending.clear()
+    const events = [...liveTakeEvents.value].sort((a, b) => a.time - b.time)
+    const durationSec = events.length === 0
+      ? 0
+      : Math.max(...events.map((e) => e.time + e.duration)) + 0.2
+    return { events, durationSec }
+  }
+
+  function clearLiveTake() {
+    liveTakeEvents.value = []
+    livePending.clear()
   }
 
   function octaveUp() {
@@ -121,6 +209,8 @@ export function useLivePlay() {
     playMode,
     pitchBend,
     modWheel,
+    isRecordingLive,
+    liveTakeEvents,
     press,
     release,
     octaveUp,
@@ -128,5 +218,8 @@ export function useLivePlay() {
     setBend,
     releaseBend,
     setMod,
+    startLiveTake,
+    stopLiveTake,
+    clearLiveTake,
   }
 }

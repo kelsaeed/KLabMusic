@@ -380,6 +380,32 @@
       "cassette": { "name": "Cassette", "desc": "Tilt EQ and tape colour. Lo-fi mid-fidelity vibe." }
     }
   },
+  "smartTune": {
+    "title": "Smart Tune",
+    "subtitle": "Detect the song's key and snap every clip to it.",
+    "detectKey": "Detect song key",
+    "detecting": "Listening…",
+    "tuneAll": "Tune all clips to this key",
+    "tuning": "Tuning…",
+    "tunedSummary": "{tuned} tuned · {skipped} skipped",
+    "noClips": "Record or upload clips first.",
+    "couldNotDetect": "Couldn't pin down a key — recordings may be too quiet or too polyphonic.",
+    "confidenceHigh": "Confident",
+    "confidenceMedium": "Likely",
+    "confidenceLow": "Best guess"
+  },
+  "liveTake": {
+    "record": "Record take",
+    "stop": "Stop · {n} notes",
+    "armed": "Recording every note you play. Hit Stop to finish the take.",
+    "empty": "Nothing was captured — try playing a few notes after Record.",
+    "captured": "Captured {n} notes · {dur}s",
+    "namePlaceholder": "Name your take…",
+    "addToTimeline": "Add to timeline",
+    "added": "Added {count} notes to a new track on the timeline.",
+    "startHint": "Record what you play next as a clip you can drop onto the Arrange timeline.",
+    "stopHint": "Stop recording and review the take."
+  },
   "preset": {
     "placeholder": "— Choose a preset —",
     "factoryGroup": "Factory",
