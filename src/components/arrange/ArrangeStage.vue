@@ -8,6 +8,7 @@ import { useBeatMakerStore } from '@/stores/beatmaker'
 import AddArrangeTrackDialog from './AddArrangeTrackDialog.vue'
 import TrackFxPopover from './TrackFxPopover.vue'
 import AutomationLane from './AutomationLane.vue'
+import SyncBadge from '@/components/multiplayer/SyncBadge.vue'
 import { useToast } from '@/composables/useToast'
 import type { ArrangeTrack, ArrangeClip } from '@/lib/types'
 
@@ -212,6 +213,7 @@ onBeforeUnmount(() => {
       >
         ⤓ {{ t('arrange.exportStems') }}
       </button>
+      <SyncBadge />
     </header>
 
     <div class="grid">

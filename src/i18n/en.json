@@ -143,6 +143,8 @@
     "detectBpm": "Detect BPM",
     "exportWav": "Export WAV",
     "saveCloud": "Save to cloud",
+    "shareToRoom": "Share to room",
+    "shareToRoomTooltip": "Upload this clip and broadcast it to everyone in your multiplayer room — they'll see it appear in their recorder.",
     "cloudUploading": "Uploading clip to cloud…",
     "tune": {
       "title": "Vocal tuning",
@@ -274,7 +276,9 @@
     "chat": "Chat",
     "chatPlaceholder": "Say something…",
     "noMessages": "No messages yet. Drop a 🔥.",
-    "notConfigured": "Multiplayer needs Supabase env vars set."
+    "notConfigured": "Multiplayer needs Supabase env vars set.",
+    "syncedWith": "Synced · {n} others",
+    "syncTooltip": "Beat Maker + Arrange edits replicate to everyone in the room. Edits anywhere become edits everywhere within ~250 ms."
   },
   "loop": {
     "title": "Loop Station",

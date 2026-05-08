@@ -3,12 +3,15 @@ import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRecorderStore } from '@/stores/recorder'
 import { useRecorder } from '@/composables/useRecorder'
+import { useMultiplayer } from '@/composables/useMultiplayer'
+import { useMultiplayerStore } from '@/stores/multiplayer'
 import { useToast } from '@/composables/useToast'
 import { KEY_NAMES, type Scale, type Key, type PitchResult } from '@/lib/pitch'
 import type { Clip } from '@/lib/types'
 
 const props = defineProps<{ clip: Clip }>()
 const store = useRecorderStore()
+const mpStore = useMultiplayerStore()
 const {
   normalize,
   detectClipBpm,
@@ -19,9 +22,14 @@ const {
   playClip,
   stopPlayback,
 } = useRecorder()
+const { shareClip } = useMultiplayer()
 const { show, update } = useToast()
 const { t } = useI18n()
 const saveStatus = ref('')
+
+async function onShareToRoom(clipId: string) {
+  await shareClip(clipId)
+}
 
 // Vocal Tuning UI state. detectedPitch is the live readout shown next to
 // the Tune button so the user can see "we hear D♯4 ± 12¢" before they
@@ -143,6 +151,12 @@ function patch(clipId: string, key: keyof Clip, value: Clip[keyof Clip]) {
       </button>
       <button class="action" @click="exportClipWav(clip.id)">{{ t('recorder.exportWav') }}</button>
       <button class="action" @click="onSave(clip.id)">{{ t('recorder.saveCloud') }}</button>
+      <button
+        v-if="mpStore.isConnected"
+        class="action share-room"
+        :title="t('recorder.shareToRoomTooltip')"
+        @click="onShareToRoom(clip.id)"
+      >🎤 {{ t('recorder.shareToRoom') }}</button>
       <span v-if="saveStatus" class="status">{{ saveStatus }}</span>
     </div>
 
@@ -251,6 +265,14 @@ function patch(clipId: string, key: keyof Clip, value: Clip[keyof Clip]) {
 .toggle.on {
   color: var(--accent-primary);
   border-color: var(--accent-primary);
+}
+.share-room {
+  border-color: var(--accent-secondary);
+  color: var(--accent-secondary);
+}
+.share-room:hover {
+  background: var(--accent-secondary);
+  color: var(--text-inverse);
 }
 .bpm-pill {
   margin-inline-start: 0.4rem;

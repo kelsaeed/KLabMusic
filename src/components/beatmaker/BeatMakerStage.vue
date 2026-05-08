@@ -10,6 +10,7 @@ import SongMode from './SongMode.vue'
 import AddTrackDialog from './AddTrackDialog.vue'
 import ExportDialog from './ExportDialog.vue'
 import LoopBrowser from '@/components/loops/LoopBrowser.vue'
+import SyncBadge from '@/components/multiplayer/SyncBadge.vue'
 
 const store = useBeatMakerStore()
 const { ensureWatchers, exportPatternsJson, importPatternsJson, saveToCloud } = useBeatMaker()
@@ -63,7 +64,10 @@ onMounted(() => {
 
     <section class="grid-card">
       <header class="grid-head">
-        <h3>{{ t('beat.tracks') }}</h3>
+        <div class="title-with-sync">
+          <h3>{{ t('beat.tracks') }}</h3>
+          <SyncBadge />
+        </div>
         <div class="grid-actions">
           <button class="ghost mono" @click="addOpen = true">+ {{ t('beat.addTrack') }}</button>
           <button class="loop-browse mono" @click="loopBrowserOpen = true">
@@ -136,6 +140,12 @@ onMounted(() => {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-muted);
+}
+.title-with-sync {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
 }
 .grid-actions {
   display: flex;
