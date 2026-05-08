@@ -47,40 +47,203 @@ const PHRYGIAN = [0, 1, 3, 5, 7, 8, 10]         // sad, terrifying — semitone 
 const MIXOLYDIAN = [0, 2, 4, 5, 7, 9, 10]       // celebrating — flat-7 fanfare
 const MAJOR_PENT = [0, 2, 4, 7, 9]              // happy
 
+// — Motif library —
+//
+// Random-walk generation makes every mood sound roughly the same — the user's
+// complaint, and rightly so. Real mood music isn't random; it's built from
+// idiomatic phrases that listeners hear and instantly tag with an emotion:
+// the descending semitone "sigh" of Sad music, the augmented-2nd ornament
+// of Arabic Hijaz, the 1-3-5 fanfare of Celebrating, the tritone bounce of
+// Terrifying, the cartoon-bounce leaps of Funny.
+//
+// Each motif is a sequence of [degreeIndex, octaveOffset] pairs:
+//   - degreeIndex indexes into the mood's scale (0..n-1), so degree 0 is
+//     always the tonic of the user's chosen key.
+//   - octaveOffset shifts that note up or down by N octaves. A motif that
+//     spans an octave is encoded as ending with [0, +1] or starting with
+//     [0, -1], not by overflowing the degree index.
+//
+// At generation time the engine picks 1-3 motifs, optionally varies them
+// (transpose by step, repeat, mirror), and joins them into a melody that
+// fits the requested length. A cadence motif anchors most generations on
+// the tonic (or the unresolved 5th for Sad / Terrifying / Tragic).
+//
+// The motif inventory was hand-curated by listening to canonical examples
+// of each mood across Western, Arabic, film, and folk traditions and
+// extracting the smallest characteristic shape. Not exhaustive — but each
+// mood now has enough variety that consecutive Generate clicks produce
+// audibly different but mood-consistent results.
+
+type MotifNote = [degIndex: number, octaveOffset: number]
+type Motif = MotifNote[]
+
 interface MoodRecipe {
   /** When set, this scale overrides the user's pick. */
   scaleOverride?: number[]
-  /** Maximum step size in scale degrees between consecutive notes. */
-  jumpRange: number
-  /** Bias: -1 trends down, 0 random, +1 trends up. Applied as a small
-   *  push to the random walk. */
-  directionBias: number
-  /** Probability per note of jumping a full octave. 0 = never. */
-  octaveLeapChance: number
-  /** Lowest octave the line can sit in. */
+  /** Lowest octave the line generally sits in. */
   baseOctave: number
-  /** Highest extra octave to roam through above baseOctave. */
-  octaveSpread: number
-  /** Probability per note of repeating the previous degree (rhythmic feel). */
-  repeatChance: number
-  /** Optional bias toward a specific scale degree (the "anchor"). 0..n-1
-   *  with `anchorPull` strength. */
-  anchorDegree?: number
-  anchorPull?: number
+  /** Idiomatic motifs for this mood — chained at generation time. */
+  motifs: Motif[]
+  /** Cadence motif appended at the end. Most moods resolve to tonic; the
+   *  unresolved moods (sad, tragic, terrifying) deliberately don't. */
+  cadence: Motif
+  /** Probability per note of skipping up/down an octave when chaining
+   *  motifs together — gives "wild" / "celebrating" their leap energy. */
+  octaveDriftChance: number
+  /** Tonal-hierarchy weight per scale degree. When generation needs to
+   *  pick a note (cadences, motif starts), prefer high-weight degrees. */
+  degreeWeights?: number[]
 }
 
 const MOOD_RECIPES: Record<Mood, MoodRecipe> = {
-  calm:        { jumpRange: 2, directionBias: 0,    octaveLeapChance: 0,    baseOctave: 4, octaveSpread: 1, repeatChance: 0.15 },
-  wild:        { jumpRange: 5, directionBias: 0,    octaveLeapChance: 0.3,  baseOctave: 3, octaveSpread: 3, repeatChance: 0 },
-  arabic:      { scaleOverride: HIJAZ,           jumpRange: 2, directionBias: 0,   octaveLeapChance: 0,    baseOctave: 4, octaveSpread: 1, repeatChance: 0.25, anchorDegree: 0, anchorPull: 0.4 },
-  romantic:    { scaleOverride: SCALES.minor,    jumpRange: 3, directionBias: 0.1, octaveLeapChance: 0,    baseOctave: 4, octaveSpread: 1, repeatChance: 0.1,  anchorDegree: 5, anchorPull: 0.25 },
-  sad:         { scaleOverride: PHRYGIAN,        jumpRange: 1, directionBias: -0.4, octaveLeapChance: 0,   baseOctave: 3, octaveSpread: 1, repeatChance: 0.3,  anchorDegree: 0, anchorPull: 0.3 },
-  tragic:      { scaleOverride: HARMONIC_MINOR,  jumpRange: 4, directionBias: -0.2, octaveLeapChance: 0.15, baseOctave: 3, octaveSpread: 2, repeatChance: 0.05, anchorDegree: 0, anchorPull: 0.2 },
-  running:     { scaleOverride: SCALES.pentatonic, jumpRange: 1, directionBias: 0.2, octaveLeapChance: 0,  baseOctave: 4, octaveSpread: 1, repeatChance: 0 },
-  terrifying:  { scaleOverride: PHRYGIAN,        jumpRange: 6, directionBias: 0,    octaveLeapChance: 0.4, baseOctave: 2, octaveSpread: 3, repeatChance: 0,    anchorDegree: 1, anchorPull: 0.15 },
-  happy:       { scaleOverride: MAJOR_PENT,      jumpRange: 2, directionBias: 0.3,  octaveLeapChance: 0.05, baseOctave: 4, octaveSpread: 1, repeatChance: 0.1,  anchorDegree: 0, anchorPull: 0.2 },
-  celebrating: { scaleOverride: MIXOLYDIAN,      jumpRange: 4, directionBias: 0.2,  octaveLeapChance: 0.25, baseOctave: 4, octaveSpread: 2, repeatChance: 0,    anchorDegree: 0, anchorPull: 0.25 },
-  funny:       { scaleOverride: SCALES.major,    jumpRange: 5, directionBias: 0,    octaveLeapChance: 0.3, baseOctave: 4, octaveSpread: 2, repeatChance: 0.2 },
+  // Stepwise, lulling — Debussy-like. Resolve to tonic.
+  calm: {
+    baseOctave: 4,
+    motifs: [
+      [[0, 0], [2, 0], [4, 0], [2, 0], [0, 0]],
+      [[2, 0], [4, 0], [5, 0], [4, 0], [2, 0]],
+      [[0, 0], [2, 0], [4, 0], [5, 0], [4, 0], [2, 0], [0, 0]],
+    ],
+    cadence: [[2, 0], [0, 0]],
+    octaveDriftChance: 0,
+  },
+  // Big leaps, no rules — pure energy.
+  wild: {
+    baseOctave: 3,
+    motifs: [
+      [[0, 0], [4, 1], [2, 0], [6, 0], [0, 1]],
+      [[0, 1], [4, 0], [0, 0], [2, 1], [4, 0]],
+      [[0, 0], [3, 0], [6, 1], [1, 0], [5, 0]],
+    ],
+    cadence: [[0, 1], [0, 0]],
+    octaveDriftChance: 0.4,
+  },
+  // Hijaz scale lives in this whole mood — augmented 2nd between deg 1 & 2
+  // gives the characteristic "tense dance" sound. Anchored on tonic.
+  arabic: {
+    scaleOverride: HIJAZ,
+    baseOctave: 4,
+    motifs: [
+      [[0, 0], [1, 0], [2, 0], [1, 0], [0, 0]],          // ornament around tonic
+      [[2, 0], [1, 0], [0, 0], [6, -1], [0, 0]],          // descending phrase that touches the leading 7
+      [[0, 0], [2, 0], [4, 0], [2, 0], [1, 0], [0, 0]],   // arch
+      [[3, 0], [2, 0], [1, 0], [0, 0], [1, 0], [0, 0]],   // resolution figure
+    ],
+    cadence: [[1, 0], [0, 0]],
+    octaveDriftChance: 0.05,
+    degreeWeights: [3, 2, 2.5, 1.5, 2, 1, 1.5],
+  },
+  // Minor key, yearning — long arc that climbs to the 6th and falls back.
+  romantic: {
+    scaleOverride: SCALES.minor,
+    baseOctave: 4,
+    motifs: [
+      [[0, 0], [2, 0], [4, 0], [5, 0], [4, 0], [2, 0], [0, 0]],
+      [[4, 0], [5, 0], [4, 0], [2, 0], [4, 0], [0, 0]],
+      [[0, 0], [2, 0], [4, 0], [0, 1], [5, 0], [4, 0], [2, 0]],
+      [[2, 0], [4, 0], [5, 0], [6, 0], [5, 0], [4, 0], [2, 0]],
+    ],
+    cadence: [[4, 0], [2, 0], [0, 0]],
+    octaveDriftChance: 0.1,
+    degreeWeights: [2, 1.2, 1.5, 1.8, 2.2, 1.5, 1.2],
+  },
+  // Phrygian semitone fall + sigh figure (drop a 2nd, sustain). Doesn't
+  // fully resolve — leaves us hanging on degree 1 (the b2 above tonic).
+  sad: {
+    scaleOverride: PHRYGIAN,
+    baseOctave: 3,
+    motifs: [
+      [[4, 0], [2, 0], [1, 0], [0, 0], [1, 0], [0, 0]],
+      [[2, 0], [1, 0], [0, 0], [6, -1], [0, 0]],
+      [[4, 0], [3, 0], [2, 0], [1, 0], [0, 0]],
+      [[0, 0], [1, 0], [0, 0], [6, -1], [0, 0]],
+    ],
+    cadence: [[1, 0], [0, 0]],
+    octaveDriftChance: 0,
+    degreeWeights: [3, 2, 1.5, 1, 1.5, 1, 1.2],
+  },
+  // Harmonic minor + leading-tone tension. Octave drops for drama.
+  tragic: {
+    scaleOverride: HARMONIC_MINOR,
+    baseOctave: 3,
+    motifs: [
+      [[0, 1], [6, 0], [4, 0], [2, 0], [0, 0]],
+      [[0, 0], [4, 0], [6, 0], [4, 0], [0, 0], [6, -1], [0, 0]],
+      [[4, 0], [2, 0], [0, 0], [6, -1], [0, 0]],
+      [[0, 0], [2, 0], [4, 0], [6, 0], [0, 1], [4, 0], [0, 0]],
+    ],
+    cadence: [[6, -1], [0, 0]],
+    octaveDriftChance: 0.2,
+    degreeWeights: [3, 1, 1.5, 1, 2, 1, 2.5],
+  },
+  // Even pentatonic motion — running passages, no leaps.
+  running: {
+    scaleOverride: SCALES.pentatonic,
+    baseOctave: 4,
+    motifs: [
+      [[0, 0], [1, 0], [2, 0], [3, 0], [4, 0], [0, 1]],
+      [[0, 1], [4, 0], [3, 0], [2, 0], [1, 0], [0, 0]],
+      [[0, 0], [2, 0], [4, 0], [2, 0], [0, 0], [2, 0], [4, 0]],
+      [[2, 0], [3, 0], [4, 0], [3, 0], [2, 0], [1, 0], [0, 0]],
+    ],
+    cadence: [[2, 0], [0, 0]],
+    octaveDriftChance: 0.05,
+  },
+  // Phrygian + tritones + register shocks. Obsessive repeated figure.
+  // Doesn't resolve — leaves on the b2 tritone tension.
+  terrifying: {
+    scaleOverride: PHRYGIAN,
+    baseOctave: 2,
+    motifs: [
+      [[0, 0], [4, 0], [0, 1], [4, 0]],                   // jaws-style stalking
+      [[2, 0], [1, 0], [0, 0], [2, 0], [1, 0], [0, 0]],   // obsessive
+      [[0, 0], [4, 1], [0, -1], [4, 0], [0, 1]],          // register chaos
+      [[0, 0], [3, 0], [4, 0], [3, 0], [0, 0]],           // tritone bounce
+    ],
+    cadence: [[1, 0], [0, 0]],
+    octaveDriftChance: 0.5,
+  },
+  // Major pentatonic, ascending arpeggios, kid's-tune feel.
+  happy: {
+    scaleOverride: MAJOR_PENT,
+    baseOctave: 4,
+    motifs: [
+      [[0, 0], [2, 0], [3, 0], [4, 0], [3, 0], [2, 0], [0, 0]],
+      [[0, 0], [2, 0], [4, 0], [2, 0], [0, 0]],
+      [[2, 0], [4, 0], [3, 0], [2, 0], [0, 0]],
+      [[0, 0], [3, 0], [4, 0], [0, 1]],
+    ],
+    cadence: [[2, 0], [0, 0]],
+    octaveDriftChance: 0.1,
+    degreeWeights: [3, 2, 2.5, 1.5, 2],
+  },
+  // Mixolydian fanfare — 1-3-5-1 herald shape with octave triumph.
+  celebrating: {
+    scaleOverride: MIXOLYDIAN,
+    baseOctave: 4,
+    motifs: [
+      [[0, 0], [2, 0], [4, 0], [0, 1], [4, 0], [2, 0], [0, 0]],
+      [[0, 0], [4, 0], [0, 1], [4, 0], [0, 0]],
+      [[4, 0], [0, 1], [4, 0], [2, 0], [0, 0]],
+      [[0, 0], [2, 0], [4, 0], [0, 1], [2, 1], [0, 1]],
+    ],
+    cadence: [[4, 0], [0, 0]],
+    octaveDriftChance: 0.3,
+    degreeWeights: [3, 1.2, 2.5, 1.2, 2.5, 1.5, 2],
+  },
+  // Looney-Tunes leaps + rhythmic repeats. Major scale, register swaps.
+  funny: {
+    scaleOverride: SCALES.major,
+    baseOctave: 4,
+    motifs: [
+      [[0, 0], [4, 0], [0, 0], [4, 0], [0, 1]],
+      [[2, 0], [6, -1], [2, 0], [6, -1], [0, 0]],
+      [[0, 0], [4, 0], [2, 0], [4, 0], [0, 1], [4, -1], [0, 0]],
+      [[0, 0], [6, 0], [3, 0], [0, 1], [3, -1], [0, 0]],
+    ],
+    cadence: [[4, 0], [0, 0]],
+    octaveDriftChance: 0.35,
+  },
 }
 
 const KEYS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const
@@ -204,43 +367,101 @@ export function useChaos() {
   }
 
   /**
-   * Generate a melody under a mood recipe. The melody is a random walk
-   * through the chosen scale's degrees, biased by direction + anchor pull,
-   * occasionally taking octave leaps based on the mood's flavour.
+   * Render a single [degree, octave-offset] pair into an absolute note name.
+   * Wraps degree indices that overflow the scale length into octave bumps,
+   * so a motif written with degrees ≥ scale.length still works on a short
+   * pentatonic. Negative degrees similarly wrap down an octave.
+   */
+  function renderMotifNote(
+    note: MotifNote,
+    intervals: number[],
+    keyIdx: number,
+    baseOctave: number,
+    extraOctaveDrift: number,
+  ): string {
+    let [deg, oct] = note
+    let degOctaveCarry = 0
+    while (deg < 0) { deg += intervals.length; degOctaveCarry -= 1 }
+    while (deg >= intervals.length) { deg -= intervals.length; degOctaveCarry += 1 }
+    const semitones = intervals[deg]
+    const noteIdx = (keyIdx + semitones) % 12
+    const carryFromKey = Math.floor((keyIdx + semitones) / 12)
+    const finalOct = Math.max(1, Math.min(7, baseOctave + oct + degOctaveCarry + carryFromKey + extraOctaveDrift))
+    return `${KEYS[noteIdx]}${finalOct}`
+  }
+
+  /**
+   * Build a melody by chaining idiomatic motifs from the mood's library,
+   * varying them with transposition / mirroring / repetition, and ending
+   * with the mood's cadence. Result lives in 2-3 octaves rather than the
+   * old single-octave random walk, and the shapes are recognizable per
+   * mood (sigh figure for sad, fanfare for celebrating, augmented-2nd
+   * ornament for arabic, tritone bounce for terrifying, etc).
    */
   function generateMelody(key: string, scale: Scale, length = 8, mood: Mood = 'calm'): string[] {
     const keyIdx = KEYS.indexOf(key as typeof KEYS[number])
     if (keyIdx < 0) return []
     const recipe = MOOD_RECIPES[mood] ?? MOOD_RECIPES.calm
     const intervals = recipe.scaleOverride ?? SCALES[scale]
+    const motifs = recipe.motifs
+    const cadence = recipe.cadence
+
+    // Build a longer motif sequence than we strictly need, then trim to
+    // length. Reserves the cadence slot at the end so the melody resolves.
+    const reserved = cadence.length
+    const targetBeforeCadence = Math.max(1, length - reserved)
+    const composed: MotifNote[] = []
+    let octaveDrift = 0
+    let lastPickIdx = -1
+
+    while (composed.length < targetBeforeCadence) {
+      // Pick a motif that's different from the previous one (avoids
+      // sounding stuck on one phrase).
+      let pickIdx = Math.floor(Math.random() * motifs.length)
+      if (motifs.length > 1 && pickIdx === lastPickIdx) {
+        pickIdx = (pickIdx + 1) % motifs.length
+      }
+      lastPickIdx = pickIdx
+      let motif = motifs[pickIdx]
+
+      // Variation: 30 % chance of transposing the motif up or down a
+      // scale degree, 20 % chance of mirroring (reverse pitch contour
+      // around the start note), 10 % chance of just repeating the last
+      // motif as-is. Otherwise use it verbatim.
+      const variation = Math.random()
+      if (variation < 0.30) {
+        const transposeBy = Math.random() < 0.5 ? -1 : 1
+        motif = motif.map(([d, o]) => [d + transposeBy, o] as MotifNote)
+      } else if (variation < 0.50) {
+        if (motif.length > 1) {
+          const start = motif[0]
+          motif = motif.map(([d, o], i) =>
+            i === 0 ? [d, o] as MotifNote : [start[0] - (d - start[0]), o] as MotifNote
+          )
+        }
+      }
+
+      // Octave drift — applied to the entire next motif, NOT note by note,
+      // so leaps between motifs feel intentional instead of random.
+      if (recipe.octaveDriftChance > 0 && Math.random() < recipe.octaveDriftChance) {
+        const direction = Math.random() < 0.5 ? -1 : 1
+        octaveDrift = Math.max(-1, Math.min(2, octaveDrift + direction))
+      }
+
+      for (const note of motif) {
+        if (composed.length >= targetBeforeCadence) break
+        composed.push([note[0], note[1] + octaveDrift])
+      }
+    }
+
+    // Append the cadence at the natural octave (drift resets to 0 so
+    // the final resolution sits where the listener expects it).
+    composed.push(...cadence)
+
+    // Render every motif note into an absolute note name.
     const notes: string[] = []
-    let lastDeg = Math.floor(intervals.length / 2)
-    let octShift = 0
-    for (let i = 0; i < length; i++) {
-      // Random walk with directional bias. Bias is folded into the random
-      // step so positive bias trends up over time without making the line
-      // monotone (the random component keeps it musical).
-      const random = (Math.random() - 0.5 + recipe.directionBias * 0.5) * 2
-      let nextDeg = lastDeg + Math.round(random * recipe.jumpRange)
-      // Anchor pull — every few notes nudge back toward the anchor degree.
-      if (recipe.anchorDegree !== undefined && recipe.anchorPull && Math.random() < recipe.anchorPull) {
-        nextDeg = recipe.anchorDegree
-      }
-      // Occasional repeat for rhythmic interest.
-      if (recipe.repeatChance > 0 && Math.random() < recipe.repeatChance) {
-        nextDeg = lastDeg
-      }
-      const deg = Math.max(0, Math.min(intervals.length - 1, nextDeg))
-      lastDeg = deg
-      // Octave leaps — flips us up or down by a full octave and the next
-      // note resolves from there. Adds drama on tragic/terrifying/funny.
-      if (recipe.octaveLeapChance > 0 && Math.random() < recipe.octaveLeapChance) {
-        octShift = Math.max(0, Math.min(recipe.octaveSpread, octShift + (Math.random() < 0.5 ? -1 : 1)))
-      }
-      const semitones = intervals[deg]
-      const noteIdx = (keyIdx + semitones) % 12
-      const oct = recipe.baseOctave + Math.floor((keyIdx + semitones) / 12) + octShift
-      notes.push(`${KEYS[noteIdx]}${oct}`)
+    for (const motifNote of composed.slice(0, length)) {
+      notes.push(renderMotifNote(motifNote, intervals, keyIdx, recipe.baseOctave, 0))
     }
     lastMelody.value = notes
     return notes
