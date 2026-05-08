@@ -638,46 +638,71 @@ function applyAllEffectsForActive() {
   }
 }
 
+// In-flight load deduplication. Without this, every concurrent caller of
+// ensureInstrument(piano) — pressing a piano key while the InstrumentSelector
+// is still loading the piano, the prefetch firing the same instrument, the
+// AudioStage onMounted call, the multiplayer state apply triggering another
+// path — would each get past the `nodes.has` check (nodes isn't populated
+// until the load finishes) and create its own Tone.Sampler. Each new sampler
+// re-downloads the same Salamander samples AND wires another voice into the
+// master, so a fresh piano keypress would hit FIVE samplers at once. Keying
+// the in-flight promise per InstrumentId collapses that into one real load.
+const inflight = new Map<InstrumentId, Promise<InstrumentNode | null>>()
+
 async function ensureInstrument(id: InstrumentId): Promise<InstrumentNode | null> {
   if (nodes.has(id)) return nodes.get(id)!
+  const existing = inflight.get(id)
+  if (existing) return existing
   const meta = INSTRUMENTS[id]
   if (!meta.available) return null
 
-  // Don't construct any Tone nodes (synths, effects, master chain) until the
-  // AudioContext is actually running. Tone's constructors create
-  // AudioBufferSourceNodes / ConstantSourceNodes that ping the context on
-  // creation, and a suspended context floods the console with autoplay
-  // warnings on every ping. Waiting here keeps page load and direct /app
-  // navigation completely silent.
-  if (Tone.getContext().state !== 'running') {
-    await ensureToneStarted()
+  const promise = (async (): Promise<InstrumentNode | null> => {
+    // Don't construct any Tone nodes (synths, effects, master chain) until the
+    // AudioContext is actually running. Tone's constructors create
+    // AudioBufferSourceNodes / ConstantSourceNodes that ping the context on
+    // creation, and a suspended context floods the console with autoplay
+    // warnings on every ping. Waiting here keeps page load and direct /app
+    // navigation completely silent.
+    if (Tone.getContext().state !== 'running') {
+      await ensureToneStarted()
+    }
+
+    ensureMaster()
+
+    const store = useAudioStore()
+    store.setLoadState(id, 'loading')
+
+    const voice = BUILDERS[id]()
+    if (!voice || !masterVolume) {
+      store.setLoadState(id, 'error')
+      return null
+    }
+
+    const channel = new Tone.Volume(0).connect(masterVolume)
+    voice.output.connect(channel)
+
+    if (voice.loaded) {
+      await voice.loaded
+    } else if (meta.category === 'sampled') {
+      await Tone.loaded()
+    }
+
+    const node: InstrumentNode = { voice, channelVolume: channel }
+    nodes.set(id, node)
+    store.ensureEffectsFor(id)
+    store.setLoadState(id, 'ready')
+    return node
+  })()
+
+  inflight.set(id, promise)
+  try {
+    return await promise
+  } finally {
+    // Drop the in-flight reference whether we succeeded or failed; on
+    // success the result lives in `nodes`, on failure the next caller
+    // gets to retry instead of being stuck on a rejected promise forever.
+    inflight.delete(id)
   }
-
-  ensureMaster()
-
-  const store = useAudioStore()
-  store.setLoadState(id, 'loading')
-
-  const voice = BUILDERS[id]()
-  if (!voice || !masterVolume) {
-    store.setLoadState(id, 'error')
-    return null
-  }
-
-  const channel = new Tone.Volume(0).connect(masterVolume)
-  voice.output.connect(channel)
-
-  if (voice.loaded) {
-    await voice.loaded
-  } else if (meta.category === 'sampled') {
-    await Tone.loaded()
-  }
-
-  const node: InstrumentNode = { voice, channelVolume: channel }
-  nodes.set(id, node)
-  store.ensureEffectsFor(id)
-  store.setLoadState(id, 'ready')
-  return node
 }
 
 let prefetchScheduled = false
@@ -698,30 +723,29 @@ function prefetchAvailableInstruments() {
 
     void ensureToneStarted()
 
-    const idle = (window as Window & {
-      requestIdleCallback?: (cb: () => void, opts?: { timeout?: number }) => number
-    }).requestIdleCallback
-    const schedule = (cb: () => void, delay: number) => {
-      if (idle) {
-        window.setTimeout(() => idle(() => cb(), { timeout: 4000 }), delay)
-      } else {
-        window.setTimeout(cb, delay)
+    // Strict SERIAL prefetch — load one instrument, wait for it to fully
+    // arrive, then start the next. The previous design (250 ms-staggered
+    // parallel) hammered the network with 9 concurrent sample-pack
+    // downloads on slow connections, all competing for bandwidth and
+    // none finishing in a reasonable time. The user would press a piano
+    // key, the click would start ANOTHER ensureInstrument(piano) which
+    // (now deduped) joins the already-running fetch — but the fetch was
+    // queued behind 8 other parallel ones and might take 30 s on 4G.
+    //
+    // Trim list too: only piano + drums get prefetched here. They cover
+    // most starting workflows; the rest load on first selection.
+    const order: InstrumentId[] = ['piano', 'drums']
+    void (async () => {
+      for (const id of order) {
+        if (!INSTRUMENTS[id].available) continue
+        if (nodes.has(id)) continue
+        try {
+          await ensureInstrument(id)
+        } catch {
+          /* one bad voice shouldn't block the next prefetch */
+        }
       }
-    }
-
-    // Stagger by ~250 ms so we don't slam the network with parallel requests.
-    // Skip 'meme' (unavailable) and instruments already loaded.
-    const order: InstrumentId[] = [
-      'piano', 'guitar', 'drums', 'bass', 'electricPiano',
-      'pad', 'lead', 'organ', 'glitch',
-    ]
-    order.forEach((id, i) => {
-      if (!INSTRUMENTS[id].available) return
-      schedule(() => {
-        if (nodes.has(id)) return
-        void ensureInstrument(id)
-      }, 600 + i * 250)
-    })
+    })()
   }
 
   document.addEventListener('pointerdown', start, { capture: true, once: true })

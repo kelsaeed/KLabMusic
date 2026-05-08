@@ -11,11 +11,26 @@ const { setInstrument, ensureInstrument } = useAudio()
 const { show, update } = useToast()
 const { t } = useI18n()
 
+// One in-flight loading toast per instrument. Without this, repeatedly
+// clicking an instrument card while it's still loading produces a stack
+// of identical "Loading Piano…" toasts that never dismiss because each
+// individual show() returns a new id and the user is shown all of them.
+const loadingToasts = new Map<InstrumentId, string>()
+
 async function pick(id: InstrumentId) {
   if (!INSTRUMENTS[id].available) return
   // Already loaded → instant select, no toast.
   if (store.getLoadState(id) === 'ready') {
     await setInstrument(id)
+    return
+  }
+  // Already loading from a previous click → just switch to the
+  // instrument visually and let the existing toast announce completion.
+  // Do NOT show another toast.
+  store.activeInstrument = id
+  store.ensureEffectsFor(id)
+  if (loadingToasts.has(id)) {
+    void ensureInstrument(id)
     return
   }
   const label = t(`audio.instrument.${id}`)
@@ -24,9 +39,9 @@ async function pick(id: InstrumentId) {
     title: t('audio.loading', { name: label }),
     subtitle: t('audio.loadingSubtitle'),
   })
-  store.activeInstrument = id
-  store.ensureEffectsFor(id)
+  loadingToasts.set(id, toastId)
   const node = await ensureInstrument(id)
+  loadingToasts.delete(id)
   if (node) {
     update(toastId, {
       type: 'success',
@@ -46,7 +61,12 @@ async function pick(id: InstrumentId) {
 
 function prefetch(id: InstrumentId) {
   if (!INSTRUMENTS[id].available) return
-  if (store.getLoadState(id) !== 'idle' && store.getLoadState(id) !== undefined) return
+  const state = store.getLoadState(id)
+  // Skip prefetch if the instrument is already loaded, errored, or
+  // currently loading. Hover-prefetch should ONLY start a brand-new
+  // download — it must never trigger a second concurrent load that
+  // queues behind the first on slow connections.
+  if (state === 'ready' || state === 'loading' || state === 'error') return
   // Fire-and-forget: start downloading samples on hover so they're ready by click.
   void ensureInstrument(id)
 }
