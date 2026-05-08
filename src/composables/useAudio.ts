@@ -55,9 +55,38 @@ let globalFx: FxChain | null = null
 let masterReady = false
 let toneStarted = false
 
+let firstGesturePromise: Promise<void> | null = null
+function waitForFirstGesture(): Promise<void> {
+  if (firstGesturePromise) return firstGesturePromise
+  firstGesturePromise = new Promise<void>((resolve) => {
+    const done = () => {
+      document.removeEventListener('pointerdown', done, true)
+      document.removeEventListener('keydown', done, true)
+      document.removeEventListener('touchstart', done, true)
+      resolve()
+    }
+    document.addEventListener('pointerdown', done, { capture: true, once: true })
+    document.addEventListener('keydown', done, { capture: true, once: true })
+    document.addEventListener('touchstart', done, { capture: true, once: true })
+  })
+  return firstGesturePromise
+}
+
 async function ensureToneStarted() {
+  if (toneStarted && Tone.getContext().state === 'running') return
+  // Try to resume the context. On Chrome this only works inside a user
+  // gesture's transient activation window; otherwise it's a no-op + warning.
+  try {
+    await Tone.start()
+  } catch {
+    /* swallow — we'll retry below if still suspended */
+  }
+  // If we couldn't resume yet (no user gesture), wait for the next one.
+  if (Tone.getContext().state !== 'running') {
+    await waitForFirstGesture()
+    await Tone.start()
+  }
   if (toneStarted) return
-  await Tone.start()
   toneStarted = true
   // Master starts at -100 dB (silent). Fade in over 0.4 s after the first
   // user gesture to avoid the AudioContext-resume "zzz" click.
@@ -380,10 +409,21 @@ function applyAllEffectsForActive() {
 }
 
 async function ensureInstrument(id: InstrumentId): Promise<InstrumentNode | null> {
-  ensureMaster()
   if (nodes.has(id)) return nodes.get(id)!
   const meta = INSTRUMENTS[id]
   if (!meta.available) return null
+
+  // Don't construct any Tone nodes (synths, effects, master chain) until the
+  // AudioContext is actually running. Tone's constructors create
+  // AudioBufferSourceNodes / ConstantSourceNodes that ping the context on
+  // creation, and a suspended context floods the console with autoplay
+  // warnings on every ping. Waiting here keeps page load and direct /app
+  // navigation completely silent.
+  if (Tone.getContext().state !== 'running') {
+    await ensureToneStarted()
+  }
+
+  ensureMaster()
 
   const store = useAudioStore()
   store.setLoadState(id, 'loading')
