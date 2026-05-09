@@ -66,7 +66,7 @@ export function useBeatMaker() {
         if (!step || !step.active) continue
         const offset = (step.microShift || 0) / 1000
         const velocity = Math.round(step.velocity * track.volume)
-        triggerTrack(track, time + offset, velocity)
+        triggerTrack(track, time + offset, velocity, step.cents ?? 0)
       }
 
       Tone.getDraw().schedule(() => {
@@ -86,7 +86,7 @@ export function useBeatMaker() {
     loop.start(0)
   }
 
-  function triggerTrack(track: BeatTrack, time: number, velocity: number) {
+  function triggerTrack(track: BeatTrack, time: number, velocity: number, cents: number) {
     if (track.clipId) {
       const clip = recorderStore.clips.find((c) => c.id === track.clipId)
       if (!clip) return
@@ -99,7 +99,10 @@ export function useBeatMaker() {
     // boundary. Without this, bass/lead/pad notes from the beat-maker latched
     // forever — pressing Stop only halted scheduling, leaving the held note
     // ringing until a full page refresh.
-    void playOnTimed(track.instrument, track.note, stepDurationSec(), velocity)
+    // `cents` is the per-step microtonal shift — voices that support
+    // per-attack cents bake it into the per-voice frequency, voices that
+    // don't (drums) ignore it.
+    void playOnTimed(track.instrument, track.note, stepDurationSec(), velocity, cents)
     void time
   }
 

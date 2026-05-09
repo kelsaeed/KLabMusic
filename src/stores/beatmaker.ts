@@ -91,12 +91,24 @@ export const useBeatMakerStore = defineStore('beatmaker', () => {
     step.velocity = Math.max(1, Math.min(127, velocity))
   }
 
+  // Per-step microtonal cents — clamped to ±100 because beyond that the
+  // user is really asking for a different note name, which is what the
+  // step's `note` field is for. Most maqam usage sits in [-50, +50].
+  function setStepCents(trackId: string, stepIndex: number, cents: number) {
+    const track = activePattern.value.tracks.find((t) => t.id === trackId)
+    if (!track) return
+    const step = track.steps[stepIndex]
+    if (!step) return
+    step.cents = Math.max(-100, Math.min(100, Math.round(cents)))
+  }
+
   function clearTrack(trackId: string) {
     const track = activePattern.value.tracks.find((t) => t.id === trackId)
     if (!track) return
     track.steps.forEach((s) => {
       s.active = false
       s.microShift = 0
+      s.cents = 0
     })
   }
 
@@ -158,6 +170,7 @@ export const useBeatMakerStore = defineStore('beatmaker', () => {
     toggleStep,
     setStepActive,
     setStepVelocity,
+    setStepCents,
     clearTrack,
     addTrack,
     removeTrack,

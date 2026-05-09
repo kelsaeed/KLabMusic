@@ -49,6 +49,22 @@ function onVelocity(stepIndex: number, value: number) {
   store.setStepVelocity(props.track.id, stepIndex, value)
 }
 
+function onCents(stepIndex: number, value: number) {
+  store.setStepCents(props.track.id, stepIndex, value)
+}
+
+// Quick-pick chips for the most musically-useful microtones — half-flat
+// (sika of Rast / 3rd of Bayati at -50 c) and half-sharp (4th-step of
+// Hijazkar at +50 c). 0 c snaps the step back to 12-TET. Avoids
+// requiring fine slider precision for the values users actually want.
+const CENTS_PRESETS = [
+  { label: '−50', value: -50 },
+  { label: '0', value: 0 },
+  { label: '+50', value: 50 },
+] as const
+
+const supportsCents = computed(() => meta.value.hasQuarterTones === true)
+
 function toggleMute() { store.updateTrack(props.track.id, { muted: !props.track.muted }) }
 function toggleSolo() { store.updateTrack(props.track.id, { soloed: !props.track.soloed }) }
 function setVol(v: number) { store.updateTrack(props.track.id, { volume: v }) }
@@ -116,13 +132,40 @@ function remove() { store.removeTrack(props.track.id) }
         @contextmenu="onContext(i, $event)"
       >
         <span v-if="step.active" class="dot" :style="{ opacity: 0.3 + (step.velocity / 127) * 0.7 }" />
+        <span
+          v-if="step.active && supportsCents && (step.cents ?? 0) !== 0"
+          class="cents-flag mono"
+          :title="(step.cents ?? 0) + ' cents'"
+        >{{ (step.cents ?? 0) > 0 ? '+' : '' }}{{ step.cents }}</span>
         <div v-if="velocityEditing === i" class="vel-popup" @pointerdown.stop>
-          <input
-            type="range" min="20" max="127"
-            :value="step.velocity"
-            @input="onVelocity(i, Number(($event.target as HTMLInputElement).value))"
-          />
-          <span class="mono">{{ step.velocity }}</span>
+          <div class="vel-row">
+            <span class="mini-label mono">{{ t('beat.velocity') }}</span>
+            <input
+              type="range" min="20" max="127"
+              :value="step.velocity"
+              @input="onVelocity(i, Number(($event.target as HTMLInputElement).value))"
+            />
+            <span class="mono">{{ step.velocity }}</span>
+          </div>
+          <div v-if="supportsCents" class="vel-row">
+            <span class="mini-label mono">{{ t('beat.cents') }}</span>
+            <input
+              type="range" min="-100" max="100" step="1"
+              :value="step.cents ?? 0"
+              @input="onCents(i, Number(($event.target as HTMLInputElement).value))"
+            />
+            <span class="mono">{{ (step.cents ?? 0) > 0 ? '+' : '' }}{{ step.cents ?? 0 }}</span>
+          </div>
+          <div v-if="supportsCents" class="cents-presets">
+            <button
+              v-for="p in CENTS_PRESETS"
+              :key="p.value"
+              type="button"
+              class="cents-chip mono"
+              :class="{ on: (step.cents ?? 0) === p.value }"
+              @click="onCents(i, p.value)"
+            >{{ p.label }}</button>
+          </div>
         </div>
       </div>
     </div>
@@ -280,14 +323,48 @@ function remove() { store.removeTrack(props.track.id) }
   border-radius: var(--radius);
   padding: 0.4rem 0.6rem;
   display: flex;
-  gap: 0.5rem;
-  align-items: center;
+  flex-direction: column;
+  gap: 0.35rem;
   z-index: 10;
-  width: 160px;
+  min-width: 200px;
   box-shadow: var(--shadow);
 }
+.vel-row { display: flex; align-items: center; gap: 0.45rem; }
 .vel-popup input[type='range'] { flex: 1; padding: 0; }
-.vel-popup .mono { font-size: 0.75rem; color: var(--accent-primary); min-width: 28px; text-align: end; }
+.vel-popup .mono { font-size: 0.75rem; color: var(--accent-primary); min-width: 36px; text-align: end; }
+.mini-label {
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  min-width: 44px;
+}
+.cents-presets { display: flex; gap: 0.25rem; justify-content: flex-end; }
+.cents-chip {
+  font-size: 0.62rem;
+  padding: 0.2rem 0.45rem;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  border-radius: 999px;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+}
+.cents-chip:hover { border-color: var(--accent-primary); }
+.cents-chip.on {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+  color: var(--text-inverse);
+}
+.cents-flag {
+  position: absolute;
+  bottom: 1px;
+  right: 2px;
+  font-size: 0.5rem;
+  color: var(--accent-secondary);
+  line-height: 1;
+  pointer-events: none;
+}
 
 @media (max-width: 720px) {
   .row { grid-template-columns: 1fr; }

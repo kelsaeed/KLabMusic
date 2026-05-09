@@ -7,7 +7,7 @@ function uid(): string {
 }
 
 export function makeStep(active = false, velocity = 100): Step {
-  return { active, velocity, microShift: 0 }
+  return { active, velocity, microShift: 0, cents: 0 }
 }
 
 export function makeSteps(count: StepCount, activeSteps: number[] = []): Step[] {

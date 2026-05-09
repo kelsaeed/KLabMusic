@@ -43,11 +43,43 @@ export interface SampleManifest {
 }
 
 /**
- * The current default manifest. Empty in the shipped build — packs are
- * downloaded later. Kept here so the type stays in scope and a future
- * pack-loader can `Object.assign(MANIFEST, packData)` to merge.
+ * Default sample manifest shipped with the build. Per-instrument entries
+ * point at properly-licensed free CDNs so the engine can play recorded
+ * audio out of the box; missing entries fall through to the synth
+ * approximation in useAudio's BUILDERS.
+ *
+ * Sources currently wired:
+ *  - realDrums → Boochi44/free-drum-samples (CC0 1.0). Vinyl-textured
+ *    kit chosen as the most acoustic-leaning of the three included
+ *    kits; `ride` and `crash` aren't in the pack so the synth fallback
+ *    keeps handling those pieces.
+ *
+ * Seams kept open (no entries shipped, synth/Soundfont fallback wins):
+ *  - oud → no free, CDN-hostable oud sample pack with consistent file
+ *    naming exists publicly. Current voice falls back to GM Soundfont
+ *    'sitar' (closest plucked-double-string Soundfont preset). Drop in
+ *    a real oud pack via loadSampleManifest({oud: {...}}) when one is
+ *    obtained.
+ *  - tambourine → synth approximation in BUILDERS.tambourine. Boochi44
+ *    has a maraca but no tambourine; no other free CDN-hostable
+ *    tambourine pack found.
+ *  - harmonica → synth/harmonium fallback already loads recorded
+ *    audio (nbrosowsky/tonejs-instruments harmonium is the closest
+ *    free reed neighbour). True harmonica samples need a paid pack.
  */
-export const MANIFEST: SampleManifest = {}
+const BOOCHI = 'https://cdn.jsdelivr.net/gh/Boochi44/free-drum-samples@main/drum-samples/03-soulful-vintage'
+export const MANIFEST: SampleManifest = {
+  realDrums: {
+    kick: { default: `${BOOCHI}/kicks/vintage-kick-01.wav` },
+    snare: { default: `${BOOCHI}/snares/vintage-snare-01.wav` },
+    hihatC: { default: `${BOOCHI}/hi-hats/hi-hat-closed-01.wav` },
+    hihatO: { default: `${BOOCHI}/open-hats/open-hat-01.wav` },
+    tom1: { default: `${BOOCHI}/percs/perc-high-tom.wav` },
+    tom2: { default: `${BOOCHI}/percs/perc-low-tom.wav` },
+    // ride / crash / floor intentionally omitted — kit doesn't include
+    // them; the synth fallback in buildRealDrums handles those pieces.
+  },
+}
 
 /**
  * Look up a sample for a given instrument / note / articulation. Returns

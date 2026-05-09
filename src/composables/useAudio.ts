@@ -4,7 +4,7 @@ import { Soundfont, DrumMachine } from 'smplr'
 import type { InstrumentId, EffectId } from '@/lib/types'
 import { useAudioStore } from '@/stores/audio'
 import { INSTRUMENTS, EFFECT_ORDER } from '@/lib/instruments'
-import { getSampleEntry, hasManifestEntries } from '@/lib/sampleManifest'
+import { MANIFEST, hasManifestEntries } from '@/lib/sampleManifest'
 
 interface VoiceAdapter {
   // `cents` is an OPTIONAL per-attack microtonal pitch shift baked into
@@ -2011,25 +2011,148 @@ function buildGlitch(): VoiceAdapter {
 }
 
 /**
+ * Pick the URL for a sample-manifest leaf, preferring the explicit
+ * 'default' articulation and falling back to whichever articulation
+ * happens to be present. Returns the url + optional gain trim, or
+ * null when the leaf is empty.
+ */
+function pickManifestLeaf(
+  articulationMap: Record<string, string | { url: string; gain?: number }>,
+): { url: string; gain: number } | null {
+  const leaf = articulationMap.default ?? Object.values(articulationMap)[0]
+  if (!leaf) return null
+  if (typeof leaf === 'string') return { url: leaf, gain: 0 }
+  return { url: leaf.url, gain: leaf.gain ?? 0 }
+}
+
+/**
+ * Build a sample-name-keyed percussion voice from the manifest. Each
+ * manifest entry becomes a Tone.Player that fires on attack(name).
+ * Sample names not present in the manifest fall through to the
+ * instrument's existing synth BUILDER, so a partial pack (e.g.
+ * Boochi44's vintage kit covering kick/snare/hats/toms but not
+ * ride/crash) seamlessly mixes recorded hits with synth-generated
+ * pieces. Velocity scales the per-trigger volume; cents is ignored
+ * because percussion isn't pitched.
+ */
+function buildPercussionFromManifest(id: InstrumentId): VoiceAdapter | null {
+  const entries = MANIFEST[id]
+  if (!entries) return null
+
+  const out = new Tone.Gain(1)
+  const players = new Map<string, Tone.Player>()
+  const loadPromises: Promise<void>[] = []
+
+  for (const [sampleName, articulationMap] of Object.entries(entries)) {
+    const leaf = pickManifestLeaf(articulationMap)
+    if (!leaf) continue
+    let resolveLoaded: () => void = () => {}
+    const loaded = new Promise<void>((r) => { resolveLoaded = r })
+    // onerror also resolves so a single dead URL never hangs the
+    // whole instrument's load — the slot will just be silent and the
+    // synth fallback won't trigger because the player still "exists".
+    // To avoid that, we drop the player from the map on error.
+    const player = new Tone.Player({
+      url: leaf.url,
+      autostart: false,
+      onload: () => resolveLoaded(),
+      onerror: () => {
+        players.delete(sampleName)
+        player.dispose()
+        resolveLoaded()
+      },
+    }).connect(out)
+    if (leaf.gain) player.volume.value = leaf.gain
+    players.set(sampleName, player)
+    loadPromises.push(loaded)
+  }
+
+  // Synth fallback for sample names that aren't in the manifest. Built
+  // lazily so the pure-manifest case doesn't pay for an unused synth.
+  let fallback: VoiceAdapter | null = null
+  const builder = BUILDERS[id]
+  const ensureFallback = (): VoiceAdapter | null => {
+    if (fallback) return fallback
+    if (!builder) return null
+    fallback = builder()
+    if (fallback) fallback.output.connect(out)
+    return fallback
+  }
+
+  const fire = (name: string, vel: number) => {
+    const player = players.get(name)
+    if (player) {
+      player.volume.value = Tone.gainToDb(Math.max(0.05, vel / 127))
+      try { player.start() } catch { /* not yet decoded — drop the hit silently */ }
+      return
+    }
+    ensureFallback()?.attack(name, vel)
+  }
+
+  return {
+    attack: fire,
+    attackRelease: (name, _dur, vel) => fire(name, vel),
+    release: () => { /* one-shots */ },
+    damp: () => {
+      for (const p of players.values()) {
+        try { p.stop() } catch { /* idem */ }
+      }
+      fallback?.damp()
+    },
+    output: out,
+    setVolumeDb: (db) => { out.gain.value = Tone.dbToGain(db) },
+    setBendCents: () => { /* unpitched */ },
+    loaded: Promise.all(loadPromises).then(() => undefined),
+    dispose: () => {
+      for (const p of players.values()) p.dispose()
+      fallback?.dispose()
+      out.dispose()
+    },
+  }
+}
+
+/**
+ * Build a polyphonic note-keyed voice from the manifest. Manifest keys
+ * are note names (e.g. "C4", "G3"); Tone.Sampler interpolates between
+ * supplied anchor notes for everything in between, so a sparse set
+ * still covers the playable range. Per-attack cents bake in via
+ * wrapPolyphonic, identical to the existing nbrosowsky-backed
+ * sampler voices.
+ */
+function buildPolySamplerFromManifest(id: InstrumentId): VoiceAdapter | null {
+  const entries = MANIFEST[id]
+  if (!entries) return null
+  const urls: Record<string, string> = {}
+  for (const [note, articulationMap] of Object.entries(entries)) {
+    const leaf = pickManifestLeaf(articulationMap)
+    if (!leaf) continue
+    urls[note] = leaf.url
+  }
+  if (Object.keys(urls).length === 0) return null
+  let resolveLoaded: () => void = () => {}
+  const loaded = new Promise<void>((r) => { resolveLoaded = r })
+  const sampler = new Tone.Sampler({ urls, onload: () => resolveLoaded() })
+  const wrapped = wrapPolyphonic(sampler)
+  // Surface the load promise to the engine's load-race timeout helper.
+  return { ...wrapped, loaded }
+}
+
+/**
  * Phase 10 — try to build a sampled voice from the manifest before
  * falling back to the synth BUILDER. Returns null when no sample
  * entries exist for this instrument; the caller (`ensureInstrument`)
  * then drops through to the synth voice.
  *
- * This intentionally returns null even when entries are present until
- * a downloadable sample pack lands. The seam exists, the call is
- * already wired, but we don't yet build a Tone.Sampler from the
- * manifest URLs — that comes when the first pack ships and we have
- * real artifacts to load. The synth fallback stays the safe default.
+ * Sample-mode instruments (drums, realDrums, tambourine) get a
+ * percussion voice keyed by sample name, with a synth fallback for
+ * pieces missing from the pack. Note-mode instruments get a
+ * Tone.Sampler keyed by note name with cents-aware playback.
  */
 function tryBuildFromManifest(id: InstrumentId): VoiceAdapter | null {
   if (!hasManifestEntries(id)) return null
-  // Reference the lookup so the symbol is preserved when packs arrive.
-  void getSampleEntry
-  // TODO(samples): wire a Tone.Sampler / multi-Player here, mapping
-  // manifest URLs to notes and selecting the right articulation per
-  // attack. Until then return null and let the synth voice play.
-  return null
+  const meta = INSTRUMENTS[id]
+  if (meta.playMode === 'sample') return buildPercussionFromManifest(id)
+  return buildPolySamplerFromManifest(id)
 }
 
 const BUILDERS: Record<InstrumentId, () => VoiceAdapter | null> = {

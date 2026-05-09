@@ -399,7 +399,9 @@
     "clearSong": "مسح",
     "appendPattern": "إلحاق",
     "imported": "تم استيراد الجلسة",
-    "importFailed": "فشل الاستيراد"
+    "importFailed": "فشل الاستيراد",
+    "velocity": "القوة",
+    "cents": "السنت"
   },
   "mastering": {
     "title": "الماسترينج",

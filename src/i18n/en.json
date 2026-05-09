@@ -399,7 +399,9 @@
     "clearSong": "Clear",
     "appendPattern": "Append",
     "imported": "Session imported",
-    "importFailed": "Import failed"
+    "importFailed": "Import failed",
+    "velocity": "Velocity",
+    "cents": "Cents"
   },
   "mastering": {
     "title": "Mastering",

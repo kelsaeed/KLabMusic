@@ -282,6 +282,16 @@ export interface Step {
   active: boolean
   velocity: number
   microShift: number
+  /** Microtonal pitch offset in cents applied per-step at trigger time.
+   *  Optional + defaults to 0. Lets a beat-maker step carry a true
+   *  quarter-tone shift (sika of Rast at +50, half-flat second of Bayati
+   *  at -50, etc.) instead of being forced onto the 12-TET grid the
+   *  step's note name resolves to. Voices that support per-attack cents
+   *  bake this into the per-voice frequency; voices that don't (drums,
+   *  noise) ignore it. Per-step rather than per-track because a single
+   *  maqam line typically uses different microtones at different scale
+   *  degrees. */
+  cents?: number
 }
 
 export interface BeatTrack {
