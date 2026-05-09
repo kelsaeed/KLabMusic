@@ -264,7 +264,7 @@ const chaosAmount = ref(0)
 const arpRunning = ref(false)
 const lastMelody = ref<string[]>([])
 // Parallel array — cents-shift to apply to each note in lastMelody when
-// playMelody fires it through setBend. Non-zero only when the melody was
+// playMelody fires it through playOnTimed. Non-zero only when the melody was
 // generated under a maqam preset (chaos's other paths are 12-TET so the
 // shift is uniformly 0). Module-scoped alongside lastMelody so a future
 // "save melody" feature can serialise both.
@@ -283,7 +283,6 @@ export function useChaos() {
   const audioStore = useAudioStore()
   const {
     setMasterBend,
-    setBend,
     glitchBurst,
     setChaosX,
     setChaosY,
@@ -392,10 +391,10 @@ export function useChaos() {
    *
    * Each quarter-tone step from the preset rounds to its nearest
    * semitone for the 12-TET scale shape; the residue (in cents) is
-   * preserved on a parallel `shifts` array so playMelody can call
-   * setBend before each note and the bowed / oud voices that support
-   * detune actually produce the half-flat sika of Rast, the bayati
-   * second, etc. instead of approximated semitone-grid stand-ins.
+   * preserved on a parallel `shifts` array so playMelody can pass it
+   * straight to playOnTimed and the bowed / oud voices that support
+   * per-attack cents actually produce the half-flat sika of Rast, the
+   * bayati second, etc. instead of approximated semitone-grid stand-ins.
    *
    * Multiple quarter-tones collapsing to the same semitone are deduped;
    * we keep the FIRST shift seen (the maqam preset arrays are already
@@ -478,7 +477,8 @@ export function useChaos() {
     let keyIdx: number
     // Per-degree cents shift — non-zero only under a maqam preset. Same
     // length as `intervals`, indexed identically. playMelody reads this
-    // alongside the rendered note names to call setBend.
+    // alongside the rendered note names to pass cents per-attack into
+    // playOnTimed.
     let degreeShifts: number[]
     if (maqam) {
       // Maqam wins over both the user's scale pick and the mood's
@@ -584,15 +584,13 @@ export function useChaos() {
         // glitch / fx voices and the percussion pads).
         const id = audioStore.activeInstrument
         const finalNote = clampNoteToRange(id, note)
-        // Apply the per-note maqam shift right before the attack. On
-        // bowed / oud voices that support setBendCents this produces
-        // true microtonal pitch (the half-flat sika of Rast, the
-        // bayati second, etc); on voices without per-note detune the
-        // call is a no-op. Reset to 0 between melodies so the next
-        // generate doesn't carry stale microtones into a non-maqam run.
+        // Pass the per-note maqam shift directly to playOnTimed so the
+        // voice bakes it into the per-voice frequency. Two consecutive
+        // chaos notes at different cents now hold their own pitch
+        // instead of clobbering each other through a shared detune
+        // param (the half-flat sika of Rast, the bayati second, etc.).
         const shift = cents[i] ?? 0
-        setBend(id, shift)
-        void playOnTimed(id, finalNote, noteDur, 100)
+        void playOnTimed(id, finalNote, noteDur, 100, shift)
       }, t)
     })
   }

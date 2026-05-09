@@ -7,11 +7,18 @@ import { INSTRUMENTS, EFFECT_ORDER } from '@/lib/instruments'
 import { getSampleEntry, hasManifestEntries } from '@/lib/sampleManifest'
 
 interface VoiceAdapter {
-  attack: (note: string, velocity: number) => void
+  // `cents` is an OPTIONAL per-attack microtonal pitch shift baked into
+  // *this attack only* — it does NOT pull older sustaining notes off
+  // pitch the way a shared `detune` AudioParam would. For voices that
+  // expose per-call detune (smplr Soundfont) or that accept a frequency
+  // input (Tone.Sampler / PolySynth / PluckSynth), the value is applied
+  // per-voice. Voices that can't support per-voice cents (drums, noise)
+  // ignore it. Continuous mid-note bend stays on `setBendCents`.
+  attack: (note: string, velocity: number, cents?: number) => void
   // Beat maker uses this to fire a note with a defined duration so it auto-releases.
   // Sample-based one-shots (drums, glitch noise) ignore the duration since they
   // already auto-decay; synth voices use it to schedule the release.
-  attackRelease: (note: string, durationSec: number, velocity: number) => void
+  attackRelease: (note: string, durationSec: number, velocity: number, cents?: number) => void
   release: (note?: string) => void
   damp: () => void
   output: Tone.ToneAudioNode
@@ -19,6 +26,86 @@ interface VoiceAdapter {
   setBendCents: (cents: number) => void
   loaded?: Promise<void>
   dispose: () => void
+}
+
+// Tone-style trigger surface shared by Tone.Sampler, Tone.PolySynth,
+// Tone.Synth, Tone.MonoSynth and Tone.PluckSynth. Each accepts a note
+// name OR a raw frequency (number); when given a frequency, fractional
+// MIDI offsets propagate into the playback rate / oscillator pitch, so
+// passing `Tone.Frequency(note).toFrequency() * 2^(cents/1200)` produces
+// real per-voice quarter-tone pitch without disturbing the shared
+// `detune` AudioParam — which is what made overlapping maqam notes
+// drag each other off-pitch on previous builds.
+type ToneTriggers = {
+  triggerAttack: (note: string | number, time?: number, velocity?: number) => unknown
+  triggerAttackRelease: (
+    note: string | number,
+    dur: number | string,
+    time?: number,
+    velocity?: number,
+  ) => unknown
+  triggerRelease: (note?: string | number) => unknown
+  releaseAll?: () => unknown
+}
+
+/**
+ * Wrap a Tone.* trigger surface so per-attack `cents` becomes per-voice
+ * frequency rather than a shared detune parameter. Returns the four
+ * methods every VoiceAdapter needs (attack / attackRelease / release /
+ * damp); callers fold these into the voice's own VoiceAdapter alongside
+ * output / setVolumeDb / setBendCents / dispose.
+ *
+ * Why an internal note→playbackValue Map: Tone.Sampler and Tone.PolySynth
+ * track active voices keyed by the exact value passed at attack. If we
+ * attack with Hz and then release with the original note name, the
+ * release misses the active voice and the note never stops. The Map
+ * lets `release(note)` look up the matching frequency.
+ */
+function withCentsTracking(
+  t: ToneTriggers,
+  opts: { minVel?: number } = {},
+): {
+  attack: VoiceAdapter['attack']
+  attackRelease: VoiceAdapter['attackRelease']
+  release: VoiceAdapter['release']
+  damp: VoiceAdapter['damp']
+} {
+  const minVel = opts.minVel ?? 0.01
+  const activeByNote = new Map<string, string | number>()
+  const valueFor = (note: string, cents?: number): string | number =>
+    cents ? Tone.Frequency(note).toFrequency() * Math.pow(2, cents / 1200) : note
+  const stopAll = () => {
+    if (t.releaseAll) t.releaseAll()
+    else t.triggerRelease()
+  }
+  return {
+    attack(note, vel, cents) {
+      const v = Math.max(minVel, vel / 127)
+      const value = valueFor(note, cents)
+      activeByNote.set(note, value)
+      t.triggerAttack(value, undefined, v)
+    },
+    attackRelease(note, dur, vel, cents) {
+      const v = Math.max(minVel, vel / 127)
+      // attackRelease auto-releases at the envelope, so no map entry is
+      // needed — there's nothing for a future release(note) to match.
+      t.triggerAttackRelease(valueFor(note, cents), dur, undefined, v)
+    },
+    release(note) {
+      if (!note) {
+        activeByNote.clear()
+        stopAll()
+        return
+      }
+      const value = activeByNote.get(note) ?? note
+      activeByNote.delete(note)
+      t.triggerRelease(value)
+    },
+    damp() {
+      activeByNote.clear()
+      stopAll()
+    },
+  }
 }
 
 interface FxChain {
@@ -582,17 +669,25 @@ function applyMasteringPreset(id: MasteringPresetId) {
 }
 
 function wrapPolyphonic(s: Tone.Sampler): VoiceAdapter {
+  // Per-attack cents bake into the playback frequency via withCentsTracking,
+  // so two overlapping maqam notes on the same sampler can hold different
+  // microtones simultaneously. The shared `setBendCents` path remains for
+  // continuous mid-note pitch wheel bend (live keyboard) — it still writes
+  // to the shared detune param so a sustained note can glide.
+  const c = withCentsTracking({
+    triggerAttack: (note, time, velocity) => s.triggerAttack(note, time, velocity),
+    triggerAttackRelease: (note, dur, time, velocity) =>
+      s.triggerAttackRelease(note, dur, time, velocity),
+    triggerRelease: (note) => (note !== undefined ? s.triggerRelease(note) : s.releaseAll()),
+    releaseAll: () => s.releaseAll(),
+  })
   return {
-    attack: (note, vel) => s.triggerAttack(note, undefined, Math.max(0.01, vel / 127)),
-    attackRelease: (note, dur, vel) =>
-      s.triggerAttackRelease(note, dur, undefined, Math.max(0.01, vel / 127)),
-    release: (note) => (note ? s.triggerRelease(note) : s.releaseAll()),
-    damp: () => s.releaseAll(),
+    ...c,
     output: s,
     setVolumeDb: (db) => { s.volume.value = db },
-    setBendCents: (c) => {
+    setBendCents: (cents) => {
       const detune = (s as unknown as { detune?: { value: number } }).detune
-      if (detune) detune.value = c
+      if (detune) detune.value = cents
     },
     dispose: () => s.dispose(),
   }
@@ -624,15 +719,18 @@ function buildElectricPiano(): VoiceAdapter {
     modulation: { type: 'square' },
     modulationEnvelope: { attack: 0.01, decay: 0.6, sustain: 0.2, release: 0.5 },
   })
+  const c = withCentsTracking({
+    triggerAttack: (note, time, velocity) => synth.triggerAttack(note, time, velocity),
+    triggerAttackRelease: (note, dur, time, velocity) =>
+      synth.triggerAttackRelease(note, dur, time, velocity),
+    triggerRelease: (note) => (note !== undefined ? synth.triggerRelease(note) : synth.releaseAll()),
+    releaseAll: () => synth.releaseAll(),
+  })
   return {
-    attack: (note, vel) => synth.triggerAttack(note, undefined, Math.max(0.01, vel / 127)),
-    attackRelease: (note, dur, vel) =>
-      synth.triggerAttackRelease(note, dur, undefined, Math.max(0.01, vel / 127)),
-    release: (note) => (note ? synth.triggerRelease(note) : synth.releaseAll()),
-    damp: () => synth.releaseAll(),
+    ...c,
     output: synth,
     setVolumeDb: (db) => { synth.volume.value = db },
-    setBendCents: (c) => synth.set({ detune: c }),
+    setBendCents: (cents) => synth.set({ detune: cents }),
     dispose: () => synth.dispose(),
   }
 }
@@ -657,12 +755,30 @@ function buildGuitar(): VoiceAdapter {
   // musical but stops them from haunting the mix after every click.
   const PLUCK_DURATION = 1.6
 
+  // smplr's start() is loosely typed in older releases — `detune` lands
+  // alongside note/velocity/duration but the bundled .d.ts may not list
+  // it, so cast through Record<string, unknown>. Same shape used by the
+  // shared buildSoundfontVoice — quarter-tone cents become a per-call
+  // detune param so overlapping plucks can hold different microtones
+  // without a shared param dragging older notes off pitch.
+  type StartParams = Record<string, unknown>
+  const fire = (params: StartParams) => {
+    void (guitar as unknown as { start: (p: StartParams) => unknown }).start(params)
+  }
+  let cachedCents = 0
+
   return {
-    attack: (note, vel) => {
-      void guitar.start({ note, velocity: Math.max(1, vel), duration: PLUCK_DURATION })
+    attack: (note, vel, cents) => {
+      const c = cents ?? cachedCents
+      const params: StartParams = { note, velocity: Math.max(1, vel), duration: PLUCK_DURATION }
+      if (c) params.detune = c
+      fire(params)
     },
-    attackRelease: (note, dur, vel) => {
-      void guitar.start({ note, velocity: Math.max(1, vel), duration: dur })
+    attackRelease: (note, dur, vel, cents) => {
+      const c = cents ?? cachedCents
+      const params: StartParams = { note, velocity: Math.max(1, vel), duration: dur }
+      if (c) params.detune = c
+      fire(params)
     },
     release: (note) => {
       if (note) guitar.stop({ stopId: note })
@@ -671,7 +787,7 @@ function buildGuitar(): VoiceAdapter {
     damp: () => guitar.stop(),
     output: out,
     setVolumeDb: (db) => { out.gain.value = 2.5 * Tone.dbToGain(db) },
-    setBendCents: () => { /* sample-based; pitch baked in */ },
+    setBendCents: (c) => { cachedCents = c },
     loaded: guitar.loaded().then(() => undefined),
     dispose: () => {
       guitar.disconnect()
@@ -720,15 +836,20 @@ function buildSoundfontVoice(opts: {
   }
 
   return {
-    attack: (note, vel) => {
+    attack: (note, vel, cents) => {
+      // Per-attack cents wins over the cached detuneCents — overlapping
+      // maqam notes need their own pitch each, not the last value the
+      // setBendCents path stashed.
+      const c = cents ?? detuneCents
       const params: StartParams = { note, velocity: Math.max(1, vel) }
-      if (detuneCents) params.detune = detuneCents
+      if (c) params.detune = c
       if (opts.attackDuration !== undefined) params.duration = opts.attackDuration
       fire(params)
     },
-    attackRelease: (note, dur, vel) => {
+    attackRelease: (note, dur, vel, cents) => {
+      const c = cents ?? detuneCents
       const params: StartParams = { note, velocity: Math.max(1, vel), duration: dur }
-      if (detuneCents) params.detune = detuneCents
+      if (c) params.detune = c
       fire(params)
     },
     release: (note) => {
@@ -807,27 +928,35 @@ function buildSamplerVoice(opts: {
   })
   sampler.connect(out)
 
+  // For voices like the harp where every plain attack auto-stops at
+  // attackDuration, we run attacks through attackRelease so the timing
+  // is consistent with how we want the sample to ring out — but we
+  // still need cents to bake per-voice. withCentsTracking handles the
+  // attackRelease + cents path; wrap attack to delegate when an
+  // attackDuration is configured.
+  const c = withCentsTracking({
+    triggerAttack: (note, time, velocity) => sampler.triggerAttack(note, time, velocity),
+    triggerAttackRelease: (note, dur, time, velocity) =>
+      sampler.triggerAttackRelease(note, dur, time, velocity),
+    triggerRelease: (note) =>
+      note !== undefined ? sampler.triggerRelease(note) : sampler.releaseAll(),
+    releaseAll: () => sampler.releaseAll(),
+  })
   return {
-    attack: (note, vel) => {
-      const v = Math.max(0.01, vel / 127)
-      if (opts.attackDuration !== undefined) {
-        sampler.triggerAttackRelease(note, opts.attackDuration, undefined, v)
-      } else {
-        sampler.triggerAttack(note, undefined, v)
-      }
-    },
-    attackRelease: (note, dur, vel) =>
-      sampler.triggerAttackRelease(note, dur, undefined, Math.max(0.01, vel / 127)),
-    release: (note) => (note ? sampler.triggerRelease(note) : sampler.releaseAll()),
-    damp: () => sampler.releaseAll(),
+    attack: opts.attackDuration !== undefined
+      ? (note, vel, cents) => c.attackRelease(note, opts.attackDuration!, vel, cents)
+      : c.attack,
+    attackRelease: c.attackRelease,
+    release: c.release,
+    damp: c.damp,
     output: out,
     setVolumeDb: (db) => { out.gain.value = gainScale * Tone.dbToGain(db) },
-    setBendCents: (c) => {
+    setBendCents: (cents) => {
       // Tone.Sampler's typings in v15 don't surface `detune` publicly,
       // but the runtime field exists (PolySynth-style detune param).
       // Same cast wrapPolyphonic uses for the piano sampler.
       const detune = (sampler as unknown as { detune?: { value: number } }).detune
-      if (detune) detune.value = c
+      if (detune) detune.value = cents
     },
     loaded,
     dispose: () => {
@@ -881,15 +1010,22 @@ function buildBass(): VoiceAdapter {
     envelope: { attack: 0.01, decay: 0.3, sustain: 0.1, release: 0.5 },
     filterEnvelope: { attack: 0.01, decay: 0.2, sustain: 0.5, release: 0.5, baseFrequency: 200, octaves: 4 },
   })
+  // MonoSynth is single-voice — overlapping cents bleeding isn't a
+  // physical possibility — but routing through withCentsTracking still
+  // bakes the per-attack cents into the playback frequency uniformly
+  // with the polyphonic voices, so the bass behaves the same way under
+  // a maqam beat-maker step or chaos melody.
+  const c = withCentsTracking({
+    triggerAttack: (note, time, velocity) => synth.triggerAttack(note, time, velocity),
+    triggerAttackRelease: (note, dur, time, velocity) =>
+      synth.triggerAttackRelease(note, dur, time, velocity),
+    triggerRelease: () => synth.triggerRelease(),
+  })
   return {
-    attack: (note, vel) => synth.triggerAttack(note, undefined, Math.max(0.01, vel / 127)),
-    attackRelease: (note, dur, vel) =>
-      synth.triggerAttackRelease(note, dur, undefined, Math.max(0.01, vel / 127)),
-    release: () => synth.triggerRelease(),
-    damp: () => synth.triggerRelease(),
+    ...c,
     output: synth,
     setVolumeDb: (db) => { synth.volume.value = db },
-    setBendCents: (c) => { synth.detune.value = c },
+    setBendCents: (cents) => { synth.detune.value = cents },
     dispose: () => synth.dispose(),
   }
 }
@@ -900,15 +1036,18 @@ function buildPad(): VoiceAdapter {
     modulationIndex: 10,
     envelope: { attack: 0.4, decay: 0.1, sustain: 0.8, release: 2 },
   })
+  const c = withCentsTracking({
+    triggerAttack: (note, time, velocity) => synth.triggerAttack(note, time, velocity),
+    triggerAttackRelease: (note, dur, time, velocity) =>
+      synth.triggerAttackRelease(note, dur, time, velocity),
+    triggerRelease: (note) => (note !== undefined ? synth.triggerRelease(note) : synth.releaseAll()),
+    releaseAll: () => synth.releaseAll(),
+  })
   return {
-    attack: (note, vel) => synth.triggerAttack(note, undefined, Math.max(0.01, vel / 127)),
-    attackRelease: (note, dur, vel) =>
-      synth.triggerAttackRelease(note, dur, undefined, Math.max(0.01, vel / 127)),
-    release: (note) => (note ? synth.triggerRelease(note) : synth.releaseAll()),
-    damp: () => synth.releaseAll(),
+    ...c,
     output: synth,
     setVolumeDb: (db) => { synth.volume.value = db },
-    setBendCents: (c) => synth.set({ detune: c }),
+    setBendCents: (cents) => synth.set({ detune: cents }),
     dispose: () => synth.dispose(),
   }
 }
@@ -924,15 +1063,17 @@ function buildLead(): VoiceAdapter {
     oscillator: { type: 'sawtooth' },
     envelope: { attack: 0.02, decay: 0.1, sustain: 0.6, release: 0.8 },
   }).connect(vibrato)
+  const c = withCentsTracking({
+    triggerAttack: (note, time, velocity) => synth.triggerAttack(note, time, velocity),
+    triggerAttackRelease: (note, dur, time, velocity) =>
+      synth.triggerAttackRelease(note, dur, time, velocity),
+    triggerRelease: () => synth.triggerRelease(),
+  })
   return {
-    attack: (note, vel) => synth.triggerAttack(note, undefined, Math.max(0.01, vel / 127)),
-    attackRelease: (note, dur, vel) =>
-      synth.triggerAttackRelease(note, dur, undefined, Math.max(0.01, vel / 127)),
-    release: () => synth.triggerRelease(),
-    damp: () => synth.triggerRelease(),
+    ...c,
     output: vibrato,
     setVolumeDb: (db) => { synth.volume.value = db },
-    setBendCents: (c) => { synth.detune.value = c },
+    setBendCents: (cents) => { synth.detune.value = cents },
     dispose: () => { synth.dispose(); vibrato.dispose() },
   }
 }
@@ -943,15 +1084,18 @@ function buildOrgan(): VoiceAdapter {
     modulationIndex: 1.5,
     envelope: { attack: 0.01, decay: 0, sustain: 1, release: 0.05 },
   })
+  const c = withCentsTracking({
+    triggerAttack: (note, time, velocity) => synth.triggerAttack(note, time, velocity),
+    triggerAttackRelease: (note, dur, time, velocity) =>
+      synth.triggerAttackRelease(note, dur, time, velocity),
+    triggerRelease: (note) => (note !== undefined ? synth.triggerRelease(note) : synth.releaseAll()),
+    releaseAll: () => synth.releaseAll(),
+  })
   return {
-    attack: (note, vel) => synth.triggerAttack(note, undefined, Math.max(0.01, vel / 127)),
-    attackRelease: (note, dur, vel) =>
-      synth.triggerAttackRelease(note, dur, undefined, Math.max(0.01, vel / 127)),
-    release: (note) => (note ? synth.triggerRelease(note) : synth.releaseAll()),
-    damp: () => synth.releaseAll(),
+    ...c,
     output: synth,
     setVolumeDb: (db) => { synth.volume.value = db },
-    setBendCents: (c) => synth.set({ detune: c }),
+    setBendCents: (cents) => synth.set({ detune: cents }),
     dispose: () => synth.dispose(),
   }
 }
@@ -1028,15 +1172,18 @@ function buildPianoSynthFallback(): VoiceAdapter {
     oscillator: { type: 'triangle' },
     envelope: { attack: 0.005, decay: 0.6, sustain: 0.35, release: 1.2 },
   })
+  const c = withCentsTracking({
+    triggerAttack: (note, time, velocity) => synth.triggerAttack(note, time, velocity),
+    triggerAttackRelease: (note, dur, time, velocity) =>
+      synth.triggerAttackRelease(note, dur, time, velocity),
+    triggerRelease: (note) => (note !== undefined ? synth.triggerRelease(note) : synth.releaseAll()),
+    releaseAll: () => synth.releaseAll(),
+  })
   return {
-    attack: (note, vel) => synth.triggerAttack(note, undefined, Math.max(0.01, vel / 127)),
-    attackRelease: (note, dur, vel) =>
-      synth.triggerAttackRelease(note, dur, undefined, Math.max(0.01, vel / 127)),
-    release: (note) => (note ? synth.triggerRelease(note) : synth.releaseAll()),
-    damp: () => synth.releaseAll(),
+    ...c,
     output: synth,
     setVolumeDb: (db) => { synth.volume.value = db },
-    setBendCents: (c) => synth.set({ detune: c }),
+    setBendCents: (cents) => synth.set({ detune: cents }),
     dispose: () => synth.dispose(),
   }
 }
@@ -1054,20 +1201,24 @@ function buildGuitarSynthFallback(): VoiceAdapter {
   // fallback — the real guitar comes back when the network works.
   // PluckSynth.triggerAttack only accepts (note, time) — no velocity arg —
   // so velocity feeds into the synth's volume right before firing.
+  // Quarter-tone cents bake into the playback frequency directly because
+  // PluckSynth has no detune AudioParam to write to.
+  const valueFor = (note: string, cents?: number): string | number =>
+    cents ? Tone.Frequency(note).toFrequency() * Math.pow(2, cents / 1200) : note
   return {
-    attack: (note, vel) => {
+    attack: (note, vel, cents) => {
       synth.volume.value = Math.max(-30, Tone.gainToDb(Math.max(0.01, vel / 127)))
-      synth.triggerAttack(note)
+      synth.triggerAttack(valueFor(note, cents))
     },
-    attackRelease: (note, dur, vel) => {
+    attackRelease: (note, dur, vel, cents) => {
       synth.volume.value = Math.max(-30, Tone.gainToDb(Math.max(0.01, vel / 127)))
-      synth.triggerAttackRelease(note, dur)
+      synth.triggerAttackRelease(valueFor(note, cents), dur)
     },
     release: () => { /* PluckSynth auto-decays */ },
     damp: () => { /* idem */ },
     output: synth,
     setVolumeDb: (db) => { synth.volume.value = db },
-    setBendCents: () => { /* sample-style; skip */ },
+    setBendCents: () => { /* PluckSynth has no detune AudioParam — per-attack cents handled via valueFor instead */ },
     dispose: () => synth.dispose(),
   }
 }
@@ -1207,15 +1358,24 @@ function buildViolinSynthFallback(): VoiceAdapter {
   // enough that it never reads as a pitch warble.
   const vibrato = new Tone.Vibrato({ frequency: 5, depth: 0.04 })
   synth.connect(vibrato)
+  // minVel 0.05 keeps the filter envelope from collapsing on quiet
+  // takes — at 0.01 the saw stays so closed under the lowpass that the
+  // bow doesn't actually sing.
+  const c = withCentsTracking(
+    {
+      triggerAttack: (note, time, velocity) => synth.triggerAttack(note, time, velocity),
+      triggerAttackRelease: (note, dur, time, velocity) =>
+        synth.triggerAttackRelease(note, dur, time, velocity),
+      triggerRelease: (note) => (note !== undefined ? synth.triggerRelease(note) : synth.releaseAll()),
+      releaseAll: () => synth.releaseAll(),
+    },
+    { minVel: 0.05 },
+  )
   return {
-    attack: (note, vel) => synth.triggerAttack(note, undefined, Math.max(0.05, vel / 127)),
-    attackRelease: (note, dur, vel) =>
-      synth.triggerAttackRelease(note, dur, undefined, Math.max(0.05, vel / 127)),
-    release: (note) => (note ? synth.triggerRelease(note) : synth.releaseAll()),
-    damp: () => synth.releaseAll(),
+    ...c,
     output: vibrato,
     setVolumeDb: (db) => { synth.volume.value = db },
-    setBendCents: (c) => synth.set({ detune: c }),
+    setBendCents: (cents) => synth.set({ detune: cents }),
     dispose: () => { synth.dispose(); vibrato.dispose() },
   }
 }
@@ -1254,24 +1414,29 @@ function buildHarpSynthFallback(): VoiceAdapter {
     synths.push(s)
   }
   let idx = 0
+  // PluckSynth has no detune AudioParam; bake cents into the playback
+  // frequency so two adjacent harp plucks at different microtones don't
+  // require a shared param swing between them.
+  const valueFor = (note: string, cents?: number): string | number =>
+    cents ? Tone.Frequency(note).toFrequency() * Math.pow(2, cents / 1200) : note
   return {
-    attack: (note, vel) => {
+    attack: (note, vel, cents) => {
       const s = synths[idx]
       idx = (idx + 1) % POOL_SIZE
       s.volume.value = Math.max(-30, Tone.gainToDb(Math.max(0.05, vel / 127)))
-      s.triggerAttack(note)
+      s.triggerAttack(valueFor(note, cents))
     },
-    attackRelease: (note, dur, vel) => {
+    attackRelease: (note, dur, vel, cents) => {
       const s = synths[idx]
       idx = (idx + 1) % POOL_SIZE
       s.volume.value = Math.max(-30, Tone.gainToDb(Math.max(0.05, vel / 127)))
-      s.triggerAttackRelease(note, dur)
+      s.triggerAttackRelease(valueFor(note, cents), dur)
     },
     release: () => { /* harp strings ring out naturally */ },
     damp: () => { for (const s of synths) s.triggerRelease() },
     output: out,
     setVolumeDb: (db) => { out.gain.value = Tone.dbToGain(db) },
-    setBendCents: () => { /* PluckSynth has no detune */ },
+    setBendCents: () => { /* PluckSynth has no detune AudioParam — per-attack cents handled via valueFor instead */ },
     dispose: () => {
       for (const s of synths) s.dispose()
       tone.dispose(); out.dispose()
@@ -1314,15 +1479,23 @@ function buildTrumpetSynthFallback(): VoiceAdapter {
   })
   const drive = new Tone.Distortion({ distortion: 0.15, wet: 0.35 })
   synth.connect(drive)
+  // minVel 0.05 — same reason as the violin fallback: keeps the brass
+  // filter envelope from closing all the way at low velocities.
+  const c = withCentsTracking(
+    {
+      triggerAttack: (note, time, velocity) => synth.triggerAttack(note, time, velocity),
+      triggerAttackRelease: (note, dur, time, velocity) =>
+        synth.triggerAttackRelease(note, dur, time, velocity),
+      triggerRelease: (note) => (note !== undefined ? synth.triggerRelease(note) : synth.releaseAll()),
+      releaseAll: () => synth.releaseAll(),
+    },
+    { minVel: 0.05 },
+  )
   return {
-    attack: (note, vel) => synth.triggerAttack(note, undefined, Math.max(0.05, vel / 127)),
-    attackRelease: (note, dur, vel) =>
-      synth.triggerAttackRelease(note, dur, undefined, Math.max(0.05, vel / 127)),
-    release: (note) => (note ? synth.triggerRelease(note) : synth.releaseAll()),
-    damp: () => synth.releaseAll(),
+    ...c,
     output: drive,
     setVolumeDb: (db) => { synth.volume.value = db },
-    setBendCents: (c) => synth.set({ detune: c }),
+    setBendCents: (cents) => synth.set({ detune: cents }),
     dispose: () => { synth.dispose(); drive.dispose() },
   }
 }
@@ -1406,15 +1579,21 @@ function buildClarinetSynthFallback(): VoiceAdapter {
   const vibrato = new Tone.Vibrato({ frequency: 4.5, depth: 0.025 })
   synth.connect(filter)
   filter.connect(vibrato)
+  const c = withCentsTracking(
+    {
+      triggerAttack: (note, time, velocity) => synth.triggerAttack(note, time, velocity),
+      triggerAttackRelease: (note, dur, time, velocity) =>
+        synth.triggerAttackRelease(note, dur, time, velocity),
+      triggerRelease: (note) => (note !== undefined ? synth.triggerRelease(note) : synth.releaseAll()),
+      releaseAll: () => synth.releaseAll(),
+    },
+    { minVel: 0.05 },
+  )
   return {
-    attack: (note, vel) => synth.triggerAttack(note, undefined, Math.max(0.05, vel / 127)),
-    attackRelease: (note, dur, vel) =>
-      synth.triggerAttackRelease(note, dur, undefined, Math.max(0.05, vel / 127)),
-    release: (note) => (note ? synth.triggerRelease(note) : synth.releaseAll()),
-    damp: () => synth.releaseAll(),
+    ...c,
     output: vibrato,
     setVolumeDb: (db) => { synth.volume.value = db },
-    setBendCents: (c) => synth.set({ detune: c }),
+    setBendCents: (cents) => synth.set({ detune: cents }),
     dispose: () => { synth.dispose(); filter.dispose(); vibrato.dispose() },
   }
 }
@@ -1452,23 +1631,41 @@ function buildFluteSynthFallback(): VoiceAdapter {
   const vibrato = new Tone.Vibrato({ frequency: 5.5, depth: 0.03 })
   synth.connect(vibrato)
   breathFilter.connect(vibrato)
+  // Bake cents into the pitched layer's playback frequency; the breath
+  // layer is unpitched noise and gets no cents — it's just shaped by
+  // the same envelope so the attack still has its air-on-mouthpiece
+  // character regardless of microtone. activeByNote remembers the
+  // attack value so a later release(note) finds the actual voice
+  // (Tone.PolySynth keys active voices by the value passed at attack —
+  // a 50-cent shift means release-by-note-name would miss).
+  const valueFor = (note: string, cents?: number): string | number =>
+    cents ? Tone.Frequency(note).toFrequency() * Math.pow(2, cents / 1200) : note
+  const activeByNote = new Map<string, string | number>()
   return {
-    attack: (note, vel) => {
+    attack: (note, vel, cents) => {
       const v = Math.max(0.05, vel / 127)
-      synth.triggerAttack(note, undefined, v)
+      const value = valueFor(note, cents)
+      activeByNote.set(note, value)
+      synth.triggerAttack(value, undefined, v)
       breath.triggerAttack(undefined, v * 0.4)
     },
-    attackRelease: (note, dur, vel) => {
+    attackRelease: (note, dur, vel, cents) => {
       const v = Math.max(0.05, vel / 127)
-      synth.triggerAttackRelease(note, dur, undefined, v)
+      synth.triggerAttackRelease(valueFor(note, cents), dur, undefined, v)
       breath.triggerAttackRelease(dur, undefined, v * 0.4)
     },
     release: (note) => {
-      if (note) synth.triggerRelease(note)
-      else synth.releaseAll()
+      if (note) {
+        const value = activeByNote.get(note) ?? note
+        activeByNote.delete(note)
+        synth.triggerRelease(value)
+      } else {
+        activeByNote.clear()
+        synth.releaseAll()
+      }
       breath.triggerRelease()
     },
-    damp: () => { synth.releaseAll(); breath.triggerRelease() },
+    damp: () => { activeByNote.clear(); synth.releaseAll(); breath.triggerRelease() },
     output: vibrato,
     setVolumeDb: (db) => { synth.volume.value = db },
     setBendCents: (c) => synth.set({ detune: c }),
@@ -1622,22 +1819,45 @@ function buildHarmonicaSynthFallback(): VoiceAdapter {
   synth.connect(filter)
   detune.connect(filter)
   filter.connect(out)
+  // Two-layer dual-detuned saws — cents shift both frequencies in
+  // lockstep so the +8 cent stack stays the +8 cent stack relative to
+  // the maqam-shifted root, not relative to 12-TET.
+  const valueFor = (note: string, cents?: number, extraCents = 0): string | number => {
+    const total = (cents ?? 0) + extraCents
+    if (!total) return note
+    return Tone.Frequency(note).toFrequency() * Math.pow(2, total / 1200)
+  }
+  // activeByNote stores the values used for both layers so release-by-
+  // note can drop the right voices.
+  const activeByNote = new Map<string, { a: string | number; b: string | number }>()
   return {
-    attack: (note, vel) => {
+    attack: (note, vel, cents) => {
       const v = Math.max(0.05, vel / 127)
-      synth.triggerAttack(note, undefined, v)
-      detune.triggerAttack(note, undefined, v)
+      const a = valueFor(note, cents, 0)
+      const b = valueFor(note, cents, 8)
+      activeByNote.set(note, { a, b })
+      synth.triggerAttack(a, undefined, v)
+      detune.triggerAttack(b, undefined, v)
     },
-    attackRelease: (note, dur, vel) => {
+    attackRelease: (note, dur, vel, cents) => {
       const v = Math.max(0.05, vel / 127)
-      synth.triggerAttackRelease(note, dur, undefined, v)
-      detune.triggerAttackRelease(note, dur, undefined, v)
+      const a = valueFor(note, cents, 0)
+      const b = valueFor(note, cents, 8)
+      synth.triggerAttackRelease(a, dur, undefined, v)
+      detune.triggerAttackRelease(b, dur, undefined, v)
     },
     release: (note) => {
-      if (note) { synth.triggerRelease(note); detune.triggerRelease(note) }
-      else { synth.releaseAll(); detune.releaseAll() }
+      if (note) {
+        const entry = activeByNote.get(note)
+        activeByNote.delete(note)
+        if (entry) { synth.triggerRelease(entry.a); detune.triggerRelease(entry.b) }
+        else { synth.triggerRelease(note); detune.triggerRelease(note) }
+      } else {
+        activeByNote.clear()
+        synth.releaseAll(); detune.releaseAll()
+      }
     },
-    damp: () => { synth.releaseAll(); detune.releaseAll() },
+    damp: () => { activeByNote.clear(); synth.releaseAll(); detune.releaseAll() },
     output: out,
     setVolumeDb: (db) => { out.gain.value = Tone.dbToGain(db) },
     setBendCents: (c) => { synth.set({ detune: c }); detune.set({ detune: c + 8 }) },
@@ -1680,15 +1900,17 @@ function buildOudSynthFallback(): VoiceAdapter {
   // velocity arg and no detune param — so velocity is applied as a
   // pre-attack volume change on the chosen pool voice, and quarter-
   // tone shifts are applied by transposing the frequency directly
-  // before triggering.
+  // before triggering. detuneCents is the cached fallback used when
+  // the caller hasn't supplied per-attack cents (live keyboard pitch
+  // wheel etc.).
   let detuneCents = 0
 
-  const triggerOne = (note: string | number, vel: number, durationSec?: number) => {
+  const triggerOne = (note: string | number, vel: number, cents: number, durationSec?: number) => {
     const s = synths[idx]
     idx = (idx + 1) % POOL_SIZE
     s.volume.value = Math.max(-30, Tone.gainToDb(Math.max(0.05, vel / 127)))
     const baseHz = Tone.Frequency(note).toFrequency()
-    const finalHz = baseHz * Math.pow(2, detuneCents / 1200)
+    const finalHz = baseHz * Math.pow(2, cents / 1200)
     if (durationSec !== undefined) {
       s.triggerAttackRelease(finalHz, durationSec)
     } else {
@@ -1697,8 +1919,8 @@ function buildOudSynthFallback(): VoiceAdapter {
   }
 
   return {
-    attack: (note, vel) => triggerOne(note, vel),
-    attackRelease: (note, dur, vel) => triggerOne(note, vel, dur),
+    attack: (note, vel, cents) => triggerOne(note, vel, cents ?? detuneCents),
+    attackRelease: (note, dur, vel, cents) => triggerOne(note, vel, cents ?? detuneCents, dur),
     release: () => { /* PluckSynth auto-decays — strings keep ringing */ },
     damp: () => { for (const s of synths) s.triggerRelease() },
     output: out,
@@ -1746,15 +1968,21 @@ function buildCelloSynthFallback(): VoiceAdapter {
   })
   const vibrato = new Tone.Vibrato({ frequency: 4.5, depth: 0.05 })
   synth.connect(vibrato)
+  const c = withCentsTracking(
+    {
+      triggerAttack: (note, time, velocity) => synth.triggerAttack(note, time, velocity),
+      triggerAttackRelease: (note, dur, time, velocity) =>
+        synth.triggerAttackRelease(note, dur, time, velocity),
+      triggerRelease: (note) => (note !== undefined ? synth.triggerRelease(note) : synth.releaseAll()),
+      releaseAll: () => synth.releaseAll(),
+    },
+    { minVel: 0.05 },
+  )
   return {
-    attack: (note, vel) => synth.triggerAttack(note, undefined, Math.max(0.05, vel / 127)),
-    attackRelease: (note, dur, vel) =>
-      synth.triggerAttackRelease(note, dur, undefined, Math.max(0.05, vel / 127)),
-    release: (note) => (note ? synth.triggerRelease(note) : synth.releaseAll()),
-    damp: () => synth.releaseAll(),
+    ...c,
     output: vibrato,
     setVolumeDb: (db) => { synth.volume.value = db },
-    setBendCents: (c) => synth.set({ detune: c }),
+    setBendCents: (cents) => synth.set({ detune: cents }),
     dispose: () => { synth.dispose(); vibrato.dispose() },
   }
 }
@@ -2091,12 +2319,18 @@ export function useAudio() {
     }
   }
 
-  async function playOn(id: InstrumentId, note: string, velocity = 100, silent = false) {
+  async function playOn(
+    id: InstrumentId,
+    note: string,
+    velocity = 100,
+    silent = false,
+    cents?: number,
+  ) {
     await ensureToneStarted()
     const node = await ensureInstrument(id)
     if (!node) return
     if (!trackNoteOn(id, note, node.voice)) return
-    node.voice.attack(note, velocity)
+    node.voice.attack(note, velocity, cents)
     if (!silent && INSTRUMENTS[id].playMode === 'note') store.noteOn(note)
   }
 
@@ -2105,12 +2339,21 @@ export function useAudio() {
   // electricPiano) don't latch on indefinitely when their step isn't followed
   // by an explicit release. Sample-based voices (drums, glitch noise) ignore
   // the duration arg — they're already one-shots.
-  async function playOnTimed(id: InstrumentId, note: string, durationSec: number, velocity = 100) {
+  // `cents` is the optional per-attack microtonal shift; the voice bakes
+  // it into the per-voice frequency so overlapping maqam steps don't
+  // share a detune param and pull each other off pitch.
+  async function playOnTimed(
+    id: InstrumentId,
+    note: string,
+    durationSec: number,
+    velocity = 100,
+    cents?: number,
+  ) {
     await ensureToneStarted()
     const node = await ensureInstrument(id)
     if (!node) return
     if (!trackNoteOn(id, note, node.voice, durationSec)) return
-    node.voice.attackRelease(note, durationSec, velocity)
+    node.voice.attackRelease(note, durationSec, velocity, cents)
   }
 
   function stopOn(id?: InstrumentId, note?: string) {

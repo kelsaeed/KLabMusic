@@ -21,7 +21,7 @@ import * as Tone from 'tone'
 
 const { t } = useI18n()
 const audioStore = useAudioStore()
-const { dampInstrument, playOnTimed, setBend } = useAudio()
+const { dampInstrument, playOnTimed } = useAudio()
 const { recordLivePlay } = useLivePlay()
 const { broadcastNote } = useMultiplayer()
 
@@ -118,11 +118,13 @@ function readCell(el: Element | null): Cell | null {
 }
 
 function pluckCell(cell: Cell, velocity: number) {
-  // Set quarter-tone detune before the pluck — once the PluckSynth's
-  // attack noise fires, the frequency is baked into the Karplus-Strong
-  // delay line, so the order matters.
-  setBend('oud', cell.cents)
-  void playOnTimed('oud', cell.noteName, 1.4, velocity)
+  // Quarter-tone cents bake into the per-attack frequency now — two
+  // adjacent cells fired in quick succession at different microtones
+  // no longer collide through a shared detune param. PluckSynth has
+  // no detune AudioParam anyway, so the prior setBend path was already
+  // partly inert; per-attack cents fixes it for the Karplus-Strong
+  // delay line by transposing the seed frequency directly.
+  void playOnTimed('oud', cell.noteName, 1.4, velocity, cell.cents)
   broadcastNote('oud', cell.noteName, velocity, cell.cents)
   recordLivePlay('oud', cell.noteName, velocity, 1.4, cell.cents)
   flash(`${cell.courseIndex}:${cell.step}`)

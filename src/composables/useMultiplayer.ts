@@ -113,7 +113,7 @@ export function useMultiplayer() {
   const beatStore = useBeatMakerStore()
   const arrangeStore = useArrangeStore()
   const recorderStore = useRecorderStore()
-  const { playOn, stopOn, setBend } = useAudio()
+  const { playOn, stopOn } = useAudio()
   const { show, update } = useToast()
 
   // — Shared-state snapshot / apply helpers —
@@ -291,11 +291,12 @@ export function useMultiplayer() {
         }
         if (p.player === store.localId) return
         isReceiving.value = true
-        // Apply the bend BEFORE the attack — Tone.Sampler-based voices
-        // bake detune into the next sample, so a wrong order produces
-        // a 50-cent slide on every quarter-tone note received.
-        if (p.cents) setBend(p.instrument, p.cents)
-        void playOn(p.instrument, p.note, p.velocity)
+        // Pass cents straight to playOn so a remote bent note bakes its
+        // microtone into its own voice. The previous `setBend → attack`
+        // sequence wrote to a shared detune param, which dragged every
+        // already-sustaining note on the same instrument off pitch each
+        // time another peer fired a different cents value.
+        void playOn(p.instrument, p.note, p.velocity, false, p.cents)
         isReceiving.value = false
       })
       .on('broadcast', { event: 'note:stop' }, ({ payload }) => {
