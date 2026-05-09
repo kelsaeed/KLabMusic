@@ -364,6 +364,13 @@
     "generate": "توليد",
     "playMelody": "تشغيل",
     "stopMelody": "إيقاف",
+    "customNotes": "اكتب لحنًا بنفسك",
+    "customPlaceholder": "اكتب النوتات (مثل C4 D4 E4 G4 أو do4 re4 mi4 sol4) — افصل بمسافة أو فاصلة",
+    "playCustom": "شغّل النوتات المكتوبة",
+    "useGenerated": "استخدم المولّد",
+    "notePreviewHint": "اضغط للاستماع",
+    "notesParsed": "{ok}/{total} نوتة صحيحة",
+    "notesInvalid": "{n} غير معروفة",
     "scaleName": {
       "major": "ماجور",
       "minor": "مينور",

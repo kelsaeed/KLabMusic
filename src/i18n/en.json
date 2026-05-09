@@ -364,6 +364,13 @@
     "generate": "Generate",
     "playMelody": "Play",
     "stopMelody": "Stop",
+    "customNotes": "Type your own melody",
+    "customPlaceholder": "Type notes (e.g. C4 D4 E4 G4 or do4 re4 mi4 sol4) — separate by spaces or commas",
+    "playCustom": "Play typed notes",
+    "useGenerated": "Use generated",
+    "notePreviewHint": "Tap to preview",
+    "notesParsed": "{ok}/{total} notes valid",
+    "notesInvalid": "{n} unrecognised",
     "scaleName": {
       "major": "Major",
       "minor": "Minor",
