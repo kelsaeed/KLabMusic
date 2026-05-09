@@ -375,7 +375,10 @@ export const DEFAULT_NOTE_FOR: Record<InstrumentId, string> = {
   harmonica: 'C4',
   realDrums: 'kick',
   harp: 'C4',
-  trumpet: 'Bb3',
+  // Sharps, not flats — the chromatic in noteRange uses sharps (A#3 ≡ Bb3),
+  // so the BeatNotePicker recognises the note as in-range. The trumpet
+  // pad's enharmonic is the same pitch.
+  trumpet: 'A#3',
   tambourine: 'hit',
   clarinet: 'C4',
   flute: 'C5',
