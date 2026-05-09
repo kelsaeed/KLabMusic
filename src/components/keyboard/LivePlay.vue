@@ -11,6 +11,7 @@ import GuitarPad from './GuitarPad.vue'
 import ViolinPad from './ViolinPad.vue'
 import CelloPad from './CelloPad.vue'
 import OudPad from './OudPad.vue'
+import HarmonicaPad from './HarmonicaPad.vue'
 import PitchBend from './PitchBend.vue'
 import ModWheel from './ModWheel.vue'
 
@@ -81,13 +82,16 @@ function discardTake() {
   clearLiveTake()
 }
 
-const layout = computed<'piano' | 'drums' | 'guitar' | 'violin' | 'cello' | 'oud'>(() => {
+const layout = computed<
+  'piano' | 'drums' | 'guitar' | 'violin' | 'cello' | 'oud' | 'harmonica'
+>(() => {
   const id = audioStore.activeInstrument
   if (id === 'drums') return 'drums'
   if (id === 'guitar') return 'guitar'
   if (id === 'violin') return 'violin'
   if (id === 'cello') return 'cello'
   if (id === 'oud') return 'oud'
+  if (id === 'harmonica') return 'harmonica'
   return 'piano'
 })
 
@@ -185,6 +189,7 @@ function onPianoRelease(note: string) {
     <ViolinPad v-else-if="layout === 'violin'" />
     <CelloPad v-else-if="layout === 'cello'" />
     <OudPad v-else-if="layout === 'oud'" />
+    <HarmonicaPad v-else-if="layout === 'harmonica'" />
     <Piano
       v-else
       :start-octave="startOctave"

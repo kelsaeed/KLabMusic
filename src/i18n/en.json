@@ -112,6 +112,7 @@
       "violin": "Violin",
       "cello": "Cello",
       "oud": "Oud",
+      "harmonica": "Harmonica",
       "glitch": "Glitch",
       "meme": "Meme"
     },
@@ -518,7 +519,8 @@
       "guitar": "Classical guitar",
       "violin": "Violin",
       "cello": "Cello",
-      "oud": "Oud"
+      "oud": "Oud",
+      "harmonica": "Harmonica"
     },
     "octaveUp": "Octave up",
     "octaveDown": "Octave down",
@@ -546,6 +548,12 @@
   },
   "oud": {
     "bowHint": "Tap a course to pluck. Swipe across courses to risha-strum. Drag rapidly back and forth on one course for tremolo."
+  },
+  "harmonica": {
+    "key": "Key",
+    "blow": "Blow",
+    "draw": "Draw",
+    "hint": "Tap a hole to play it. Drag downward across the holes to blow, drag upward to draw."
   },
   "guitar": {
     "strings": "Open strings",

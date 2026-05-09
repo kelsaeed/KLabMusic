@@ -776,6 +776,57 @@ function buildViolin(): VoiceAdapter {
   }
 }
 
+function buildHarmonica(): VoiceAdapter {
+  // Phase 6 — diatonic harmonica. The reed sound is approximated by a
+  // dual-detuned saw through a bandpass filter, with a fast soft attack
+  // and a brief release that mimics the pulse of a breath. Key
+  // selection lives in the pad (HarmonicaPad maps the same hole index
+  // to different MIDI notes per key) — the synth itself doesn't care
+  // about key.
+  // TODO(samples): manifest will want blow / draw takes per hole and
+  // per key — the timbre is subtly different on draw notes (the reed
+  // resists the airflow) and that's hard to fake with a synth alone.
+  const synth = new Tone.PolySynth(Tone.Synth, {
+    oscillator: { type: 'sawtooth' },
+    envelope: { attack: 0.05, decay: 0.06, sustain: 0.8, release: 0.2 },
+    volume: -12,
+  })
+  const detune = new Tone.PolySynth(Tone.Synth, {
+    oscillator: { type: 'sawtooth' },
+    envelope: { attack: 0.05, decay: 0.06, sustain: 0.8, release: 0.2 },
+    detune: 8,
+    volume: -16,
+  })
+  const filter = new Tone.Filter({ frequency: 1500, type: 'bandpass', Q: 1.6 })
+  const out = new Tone.Gain(1)
+  synth.connect(filter)
+  detune.connect(filter)
+  filter.connect(out)
+  return {
+    attack: (note, vel) => {
+      const v = Math.max(0.05, vel / 127)
+      synth.triggerAttack(note, undefined, v)
+      detune.triggerAttack(note, undefined, v)
+    },
+    attackRelease: (note, dur, vel) => {
+      const v = Math.max(0.05, vel / 127)
+      synth.triggerAttackRelease(note, dur, undefined, v)
+      detune.triggerAttackRelease(note, dur, undefined, v)
+    },
+    release: (note) => {
+      if (note) { synth.triggerRelease(note); detune.triggerRelease(note) }
+      else { synth.releaseAll(); detune.releaseAll() }
+    },
+    damp: () => { synth.releaseAll(); detune.releaseAll() },
+    output: out,
+    setVolumeDb: (db) => { out.gain.value = Tone.dbToGain(db) },
+    setBendCents: (c) => { synth.set({ detune: c }); detune.set({ detune: c + 8 }) },
+    dispose: () => {
+      synth.dispose(); detune.dispose(); filter.dispose(); out.dispose()
+    },
+  }
+}
+
 function buildOud(): VoiceAdapter {
   // Phase 5 — Arabic oud. Karplus-Strong (Tone.PluckSynth) is the
   // closest synth approximation of a plucked string family — woody
@@ -909,6 +960,7 @@ const BUILDERS: Record<InstrumentId, () => VoiceAdapter | null> = {
   violin: buildViolin,
   cello: buildCello,
   oud: buildOud,
+  harmonica: buildHarmonica,
   glitch: buildGlitch,
   meme: () => null,
 }
