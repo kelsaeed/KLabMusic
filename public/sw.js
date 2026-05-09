@@ -7,11 +7,18 @@
 // Bump on any change to the cached host set or sample sources — bumping
 // triggers the cleanup branch in `activate` to drop the old cache so
 // the user picks up the new content on next visit.
-// v5 — Salamander piano moved from tonejs.github.io to jsDelivr.
-// Old clients have v4 caches keyed against the github.io URL; the
-// version bump flushes those so the new jsDelivr URLs fetch fresh
-// rather than racing both hosts.
-const CACHE_VERSION = 'v5'
+// v6 — drops the destructive activate-time cache flush that v5
+// shipped with. Real-device feedback after v5 deployed: 'every
+// instrument again loading forever.' Root cause was the activate
+// handler deleting every klabmusic-audio-* cache that wasn't the
+// current version, which on every code change forced the user to
+// re-download every sample they had previously cached. Sample
+// bytes are immutable (jsDelivr serves frozen per-version files),
+// so old caches are always valid; flushing them was punishing
+// users for SW updates instead of helping. v6 keeps every old
+// cache around AND searches every klabmusic-audio-* cache on
+// fetch, so a leftover v4 / v5 entry is a hit rather than a miss.
+const CACHE_VERSION = 'v6'
 const CACHE_NAME = `klabmusic-audio-${CACHE_VERSION}`
 
 const CACHED_HOSTS = new Set([
@@ -27,18 +34,13 @@ self.addEventListener('install', (event) => {
 })
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    Promise.all([
-      self.clients.claim(),
-      caches.keys().then((keys) =>
-        Promise.all(
-          keys
-            .filter((k) => k.startsWith('klabmusic-audio-') && k !== CACHE_NAME)
-            .map((k) => caches.delete(k)),
-        ),
-      ),
-    ]),
-  )
+  // Claim active clients so the new SW takes over without a reload,
+  // but DO NOT flush old caches. Browser quota management evicts
+  // them eventually under storage pressure — well after the user
+  // has actually used the app — and keeping them around means the
+  // cross-version fetch handler below can still serve hits from
+  // older versions when a sample URL hasn't changed between bumps.
+  event.waitUntil(self.clients.claim())
 })
 
 self.addEventListener('fetch', (event) => {
@@ -54,23 +56,48 @@ self.addEventListener('fetch', (event) => {
   if (!CACHED_HOSTS.has(url.host)) return
 
   event.respondWith(
-    caches.open(CACHE_NAME).then(async (cache) => {
-      const cached = await cache.match(req)
-      if (cached) return cached
+    (async () => {
+      // Cross-version cache lookup. A 'klabmusic-audio-v4' hit is
+      // just as valid as 'klabmusic-audio-v6' for serving the same
+      // URL — the bytes don't change between SW versions, only the
+      // SW handler logic does. This lets users keep the speed of a
+      // populated cache across version bumps. Search current first
+      // (fastest path on the common case where the cache is already
+      // populated for this version), then any older klabmusic-audio
+      // caches the user still has.
+      const current = await caches.open(CACHE_NAME)
+      const currentHit = await current.match(req)
+      if (currentHit) return currentHit
+      const allKeys = await caches.keys()
+      for (const key of allKeys) {
+        if (key === CACHE_NAME) continue
+        if (!key.startsWith('klabmusic-audio-')) continue
+        const c = await caches.open(key)
+        const old = await c.match(req)
+        if (old) {
+          // Promote to current cache for faster lookup next time —
+          // best-effort; failures don't matter, the older cache
+          // will still serve on the next request.
+          current.put(req, old.clone()).catch(() => {})
+          return old
+        }
+      }
       try {
         const response = await fetch(req)
         if (response && response.ok && response.status === 200) {
           // Clone before consuming — response bodies are single-use streams.
-          cache.put(req, response.clone()).catch(() => {})
+          current.put(req, response.clone()).catch(() => {})
         }
         return response
-      } catch (err) {
-        // Offline and not in cache — let the upstream code handle the failure.
+      } catch {
+        // Offline and not in any cache — let the upstream code handle
+        // the failure (Tone.Sampler will surface the load error and
+        // the engine's 12 s timeout fall through to the synth).
         return new Response('Audio fetch failed', {
           status: 504,
           statusText: 'Gateway timeout',
         })
       }
-    }),
+    })(),
   )
 })
