@@ -10,6 +10,7 @@ import ShortcutsHelp from './ShortcutsHelp.vue'
 import AuthModal from './auth/AuthModal.vue'
 import UserMenu from './auth/UserMenu.vue'
 import MasteringDialog from './mastering/MasteringDialog.vue'
+import ProjectPanel from './session/ProjectPanel.vue'
 import { useUserStore } from '@/stores/user'
 
 const { t } = useI18n()
@@ -69,6 +70,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         <span class="kbd-icon">🎚</span>
         <span class="hide-sm">{{ t('mastering.short') }}</span>
       </button>
+      <ProjectPanel v-if="!isHome" />
       <button
         class="icon-btn"
         :title="t('help.title') + ' (?)'"

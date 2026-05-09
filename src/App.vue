@@ -48,6 +48,40 @@ onMounted(() => {
   void import('@/composables/useAudio').then(({ useAudio }) => {
     useAudio().prefetchAvailableInstruments()
   })
+  // Session auto-save / auto-restore. init() reads the previous
+  // session from localStorage and re-applies it to the Pinia stores
+  // before wiring the auto-save watchers, so a fresh page load lands
+  // the user back exactly where they left off — no 'every refresh I
+  // lose my work.' Loaded after the heavy composables so first paint
+  // isn't delayed by a synchronous JSON parse of the saved payload.
+  void import('@/composables/useSession').then(({ useSession }) => {
+    useSession().init()
+  })
+  // Undo / redo init. Order matters — useSession restores the saved
+  // session BEFORE undo/redo seeds its history, so the first undo
+  // doesn't unwind back through a stale snapshot of the empty state.
+  void import('@/composables/useUndoRedo').then(({ useUndoRedo }) => {
+    const { init: initUndo, undo, redo } = useUndoRedo()
+    initUndo()
+    // Cmd/Ctrl+Z and Cmd/Ctrl+Shift+Z — every DAW + every text
+    // editor on the planet uses these. Skip when the user is typing
+    // in an input / textarea (those have native undo of their own
+    // that we don't want to fight).
+    window.addEventListener('keydown', (e) => {
+      const tag = (e.target as HTMLElement | null)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return
+      if (!(e.ctrlKey || e.metaKey)) return
+      if (e.key.toLowerCase() === 'z') {
+        e.preventDefault()
+        if (e.shiftKey) redo()
+        else undo()
+      } else if (e.key.toLowerCase() === 'y' && !e.shiftKey) {
+        // Windows convention — Ctrl+Y as redo alongside Ctrl+Shift+Z.
+        e.preventDefault()
+        redo()
+      }
+    })
+  })
 })
 </script>
 

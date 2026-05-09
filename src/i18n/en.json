@@ -404,6 +404,25 @@
     "velocity": "Velocity",
     "cents": "Cents"
   },
+  "project": {
+    "title": "Projects",
+    "button": "Projects",
+    "openTitle": "Open project library",
+    "save": "Save",
+    "load": "Load",
+    "delete": "Delete",
+    "new": "New project",
+    "namePlaceholder": "Name this snapshot…",
+    "nameRequired": "Give your project a name first.",
+    "saved": "Saved \"{name}\"",
+    "loaded": "Loaded \"{name}\"",
+    "loadFailed": "Could not load that project — file may be corrupted.",
+    "confirmDelete": "Delete \"{name}\"? This can't be undone.",
+    "confirmNew": "Start a new project? Any unsaved changes will be lost.",
+    "newCreated": "New project started",
+    "empty": "No saved projects yet. Save one above to checkpoint your work.",
+    "autoSaveHint": "Your work auto-saves on every edit. These named slots are for milestones you want to come back to later."
+  },
   "mastering": {
     "title": "Mastering",
     "short": "Master",
