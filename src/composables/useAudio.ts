@@ -5,6 +5,7 @@ import type { InstrumentId, EffectId } from '@/lib/types'
 import { useAudioStore } from '@/stores/audio'
 import { INSTRUMENTS, EFFECT_ORDER } from '@/lib/instruments'
 import { MANIFEST, hasManifestEntries } from '@/lib/sampleManifest'
+import { loadCachedOrDecode } from '@/lib/audioCache'
 
 interface VoiceAdapter {
   // `cents` is an OPTIONAL per-attack microtonal pitch shift baked into
@@ -1005,19 +1006,47 @@ function buildSamplerVoice(opts: {
 }): VoiceAdapter {
   const gainScale = opts.gainScale ?? 1.0
   const out = new Tone.Gain(gainScale)
-  // The onload promise hands control back to the engine's load-race
-  // helper, which in turn falls through to the synth fallback if the
-  // sample fetch stalls past the 12 s timeout.
+  // Pre-decode every URL through the IDB AudioBuffer cache, then
+  // construct Tone.Sampler with AudioBuffers in place of URL strings.
+  // On first visit this is identical work to letting Tone.Sampler
+  // fetch + decode internally; on subsequent visits the IDB cache
+  // skips both fetch AND decode, so the sampler is ready in tens of
+  // milliseconds instead of hundreds. Tone.Sampler accepts an
+  // AudioBuffer wherever it accepts a URL string in the urls map.
+  const ctx = Tone.getContext().rawContext as AudioContext
+  const baseUrl = `${NBROSOWSKY_BASE}${opts.folder}/`
+  const decodedUrls: Record<string, AudioBuffer> = {}
   let resolveLoaded: () => void = () => {}
   const loaded = new Promise<void>((r) => { resolveLoaded = r })
-  const sampler = new Tone.Sampler({
-    urls: opts.urls,
-    baseUrl: `${NBROSOWSKY_BASE}${opts.folder}/`,
-    attack: opts.attack ?? 0.01,
-    release: opts.release ?? 0.4,
-    onload: () => resolveLoaded(),
+  // Sampler is built lazily once decode finishes — we hold a forward
+  // reference here so the wrapped trigger surface below can reach it.
+  let sampler: Tone.Sampler | null = null
+  void Promise.all(
+    Object.entries(opts.urls).map(async ([note, file]) => {
+      try {
+        decodedUrls[note] = await loadCachedOrDecode(baseUrl + file, ctx)
+      } catch {
+        // One bad URL doesn't fail the whole sampler — Tone.Sampler
+        // interpolates between supplied notes, so missing one leaves
+        // the others functional.
+      }
+    }),
+  ).then(() => {
+    if (Object.keys(decodedUrls).length === 0) {
+      // Every URL failed — resolve loaded so the engine's 12 s
+      // timeout doesn't compound on a broken sampler. The fallback
+      // path will swap the voice out.
+      resolveLoaded()
+      return
+    }
+    sampler = new Tone.Sampler({
+      urls: decodedUrls,
+      attack: opts.attack ?? 0.01,
+      release: opts.release ?? 0.4,
+      onload: () => resolveLoaded(),
+    })
+    sampler.connect(out)
   })
-  sampler.connect(out)
 
   // For voices like the harp where every plain attack auto-stops at
   // attackDuration, we run attacks through attackRelease so the timing
@@ -1025,13 +1054,18 @@ function buildSamplerVoice(opts: {
   // still need cents to bake per-voice. withCentsTracking handles the
   // attackRelease + cents path; wrap attack to delegate when an
   // attackDuration is configured.
+  // The sampler is constructed asynchronously after IDB decode, so
+  // every trigger guards on `sampler` being non-null. A user pressing
+  // a key during the (typically <100ms) decode window simply gets a
+  // no-op — Tone.Sampler with no buffers loaded would just refuse the
+  // attack anyway, so this is the same observable behaviour.
   const c = withCentsTracking({
-    triggerAttack: (note, time, velocity) => sampler.triggerAttack(note, time, velocity),
+    triggerAttack: (note, time, velocity) => sampler?.triggerAttack(note, time, velocity),
     triggerAttackRelease: (note, dur, time, velocity) =>
-      sampler.triggerAttackRelease(note, dur, time, velocity),
+      sampler?.triggerAttackRelease(note, dur, time, velocity),
     triggerRelease: (note) =>
-      note !== undefined ? sampler.triggerRelease(note) : sampler.releaseAll(),
-    releaseAll: () => sampler.releaseAll(),
+      note !== undefined ? sampler?.triggerRelease(note) : sampler?.releaseAll(),
+    releaseAll: () => sampler?.releaseAll(),
   })
   return {
     attack: opts.attackDuration !== undefined
@@ -1045,7 +1079,11 @@ function buildSamplerVoice(opts: {
     setBendCents: (cents) => {
       // Tone.Sampler's typings in v15 don't surface `detune` publicly,
       // but the runtime field exists (PolySynth-style detune param).
-      // Same cast wrapPolyphonic uses for the piano sampler.
+      // Same cast wrapPolyphonic uses for the piano sampler. Guarded
+      // because the sampler is constructed asynchronously and a
+      // pitch-bend wheel turn during the brief decode window would
+      // otherwise null-deref.
+      if (!sampler) return
       const detune = (sampler as unknown as { detune?: { value: number } }).detune
       if (detune) detune.value = cents
     },
@@ -1054,7 +1092,7 @@ function buildSamplerVoice(opts: {
       ? opts.attackDuration + (opts.release ?? 0.4) + 0.2
       : undefined,
     dispose: () => {
-      sampler.dispose()
+      sampler?.dispose()
       out.dispose()
     },
   }
@@ -2166,28 +2204,40 @@ function buildPercussionFromManifest(id: InstrumentId): VoiceAdapter | null {
   const players = new Map<string, Tone.Player>()
   const loadPromises: Promise<void>[] = []
 
+  // IDB-backed AudioBuffer cache: on second visits, the decoded
+  // channel data already lives in IndexedDB and we skip both fetch
+  // AND decode. On first visits, fetch + decode runs once and the
+  // result is persisted for next time. Tone.Player accepts an
+  // AudioBuffer directly (via .buffer = ...), so the integration is
+  // straightforward — no Tone.Sampler.add() dance needed.
+  const ctx = Tone.getContext().rawContext as AudioContext
+
   for (const [sampleName, articulationMap] of Object.entries(entries)) {
     const leaf = pickManifestLeaf(articulationMap)
     if (!leaf) continue
-    let resolveLoaded: () => void = () => {}
-    const loaded = new Promise<void>((r) => { resolveLoaded = r })
-    // onerror also resolves so a single dead URL never hangs the
-    // whole instrument's load — the slot will just be silent and the
-    // synth fallback won't trigger because the player still "exists".
-    // To avoid that, we drop the player from the map on error.
-    const player = new Tone.Player({
-      url: leaf.url,
-      autostart: false,
-      onload: () => resolveLoaded(),
-      onerror: () => {
-        players.delete(sampleName)
-        player.dispose()
-        resolveLoaded()
-      },
-    }).connect(out)
+    const player = new Tone.Player().connect(out)
     if (leaf.gain) player.volume.value = leaf.gain
     players.set(sampleName, player)
-    loadPromises.push(loaded)
+    const url = leaf.url
+    loadPromises.push(
+      loadCachedOrDecode(url, ctx)
+        .then((buffer) => {
+          // Tone.Player.buffer = AudioBuffer triggers the player's
+          // own loaded state internally. Wrap in ToneAudioBuffer for
+          // type-correct assignment (Tone v15 expects ToneAudioBuffer
+          // semantically but accepts AudioBuffer at runtime via the
+          // Tone.Player.buffer setter coercion).
+          player.buffer = new Tone.ToneAudioBuffer(buffer)
+        })
+        .catch(() => {
+          // One bad URL shouldn't hang the rest of the instrument.
+          // Drop the player so the synth fallback handles this slot
+          // on the next attack (the buildPercussionFromManifest
+          // fallback path looks for missing keys in the players map).
+          players.delete(sampleName)
+          try { player.dispose() } catch { /* idem */ }
+        }),
+    )
   }
 
   // Synth fallback for sample names that aren't in the manifest. Built
