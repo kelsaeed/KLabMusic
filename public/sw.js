@@ -4,13 +4,18 @@
 //
 // To bust the cache after pointing at new sample sources, bump CACHE_VERSION.
 
-const CACHE_VERSION = 'v1'
+// Bump on any change to the cached host set or sample sources — bumping
+// triggers the cleanup branch in `activate` to drop the old cache so
+// the user picks up the new content on next visit.
+const CACHE_VERSION = 'v2'
 const CACHE_NAME = `klabmusic-audio-${CACHE_VERSION}`
 
 const CACHED_HOSTS = new Set([
   'tonejs.github.io',          // Salamander piano
   'gleitz.github.io',          // midi-js-soundfonts (smplr Soundfont)
   'smpldsnds.github.io',       // smplr drum machines + sfz instruments
+  'cdn.jsdelivr.net',          // nbrosowsky tonejs-instruments via jsDelivr
+  'nbrosowsky.github.io',      // direct GitHub Pages fallback for the same lib
 ])
 
 self.addEventListener('install', (event) => {
