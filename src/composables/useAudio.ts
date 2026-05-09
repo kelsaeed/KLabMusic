@@ -457,6 +457,73 @@ function buildGuitar(): VoiceAdapter {
   }
 }
 
+/**
+ * Shared Soundfont voice builder. Wraps smplr's GM Soundfont in the same
+ * VoiceAdapter shape every other voice uses, so the audio engine treats
+ * a real-sample violin or trumpet identically to a synth one. Quarter-
+ * tone detune flows through Soundfont's `detune` start() param so the
+ * bow / plucked engines keep their microtonal capability with recorded
+ * tone instead of synth tone.
+ *
+ * @param attackDuration when present, every plain attack auto-stops
+ *   after this many seconds — used for plucked / decay-style voices
+ *   (oud, harp) so a tap-and-forget pluck doesn't ring forever. Omit
+ *   for sustained voices (violin, cello, clarinet, flute, trumpet,
+ *   harmonica) so the note rings until release.
+ */
+function buildSoundfontVoice(opts: {
+  instrument: string
+  gainScale?: number
+  attackDuration?: number
+}): VoiceAdapter {
+  const gainScale = opts.gainScale ?? 1.0
+  const ctx = Tone.getContext().rawContext as unknown as AudioContext
+  const out = new Tone.Gain(gainScale)
+  const sound = new Soundfont(ctx, {
+    instrument: opts.instrument,
+    destination: out.input as unknown as AudioNode,
+  })
+  // Cached cents so the next attack picks them up. setBendCents stores;
+  // start() applies. Mirrors how the synth voices stash detune.
+  let detuneCents = 0
+
+  // smplr's start() is loosely typed in older releases — `detune` lands
+  // alongside note/velocity/duration but the bundled .d.ts may not list
+  // it yet. Cast through Record<string, unknown> for now so TS doesn't
+  // refuse to forward the param.
+  type StartParams = Record<string, unknown>
+  const fire = (params: StartParams) => {
+    void (sound as unknown as { start: (p: StartParams) => unknown }).start(params)
+  }
+
+  return {
+    attack: (note, vel) => {
+      const params: StartParams = { note, velocity: Math.max(1, vel) }
+      if (detuneCents) params.detune = detuneCents
+      if (opts.attackDuration !== undefined) params.duration = opts.attackDuration
+      fire(params)
+    },
+    attackRelease: (note, dur, vel) => {
+      const params: StartParams = { note, velocity: Math.max(1, vel), duration: dur }
+      if (detuneCents) params.detune = detuneCents
+      fire(params)
+    },
+    release: (note) => {
+      if (note) sound.stop({ stopId: note })
+      else sound.stop()
+    },
+    damp: () => sound.stop(),
+    output: out,
+    setVolumeDb: (db) => { out.gain.value = gainScale * Tone.dbToGain(db) },
+    setBendCents: (c) => { detuneCents = c },
+    loaded: sound.loaded().then(() => undefined),
+    dispose: () => {
+      sound.disconnect()
+      out.dispose()
+    },
+  }
+}
+
 function buildBass(): VoiceAdapter {
   const synth = new Tone.MonoSynth({
     oscillator: { type: 'sawtooth' },
@@ -733,18 +800,36 @@ const FALLBACK_BUILDERS: Partial<Record<InstrumentId, () => VoiceAdapter>> = {
   piano: buildPianoSynthFallback,
   guitar: buildGuitarSynthFallback,
   drums: buildDrumsSynthFallback,
+  // GM-Soundfont melodic instruments fall back to their synth
+  // approximations if the sample CDN is unreachable. Quarter-tone
+  // capability stays on for the bowed/plucked fallbacks because their
+  // setBendCents goes to a real synth detune param.
+  violin: buildViolinSynthFallback,
+  cello: buildCelloSynthFallback,
+  oud: buildOudSynthFallback,
+  harp: buildHarpSynthFallback,
+  trumpet: buildTrumpetSynthFallback,
+  clarinet: buildClarinetSynthFallback,
+  flute: buildFluteSynthFallback,
+  harmonica: buildHarmonicaSynthFallback,
 }
 
 function buildViolin(): VoiceAdapter {
-  // Tone.js synth approximation of a bowed violin — Phase 3. Real samples
-  // (down-bow / up-bow / staccato) plug in via the Phase 10 manifest.
+  // Real GM violin samples via smplr's Soundfont. The bow engine's
+  // setBend → start sequence flows through Soundfont's `detune` param
+  // so quarter-tone maqam playback keeps working with recorded violin
+  // tone instead of the previous saw-through-filter approximation.
+  // TODO(samples): when an articulation-aware pack lands in the
+  // manifest, swap to it for down-bow / up-bow / spiccato / tremolo /
+  // sul ponticello variations.
+  return buildSoundfontVoice({ instrument: 'violin', gainScale: 1.6 })
+}
+
+function buildViolinSynthFallback(): VoiceAdapter {
+  // Synth approximation kept as the offline / network-down fallback.
   // Tone.PolySynth(Tone.MonoSynth) gives every voice its own filter
-  // envelope, which is what makes the bow "sing": as the note rises the
-  // filter envelope opens and the saw harmonics come through, so faster
-  // / louder bowing audibly brightens the timbre.
-  // TODO(samples): the manifest will want down-bow + up-bow + spiccato +
-  // tremolo + sul ponticello takes per string; pick them by the
-  // articulation that the bow engine reports.
+  // envelope, which is what makes the bow "sing": as velocity rises
+  // the envelope opens and the saw harmonics come through.
   const synth = new Tone.PolySynth(Tone.MonoSynth, {
     oscillator: { type: 'sawtooth' },
     filter: { Q: 2, type: 'lowpass', rolloff: -24 },
@@ -778,11 +863,16 @@ function buildViolin(): VoiceAdapter {
 }
 
 function buildHarp(): VoiceAdapter {
-  // Phase 8 — concert harp. Same Karplus-Strong family as the oud, but
-  // tuned brighter and with a longer dampening envelope so the strings
-  // ring rather than dampen quickly.
-  // TODO(samples): manifest will want recorded harp glissandos and
-  // single plucks per string.
+  // Real GM orchestral harp samples. Each pluck auto-stops at 2.2 s so
+  // a glissando across many strings doesn't pile up an unbounded
+  // chorus of decaying samples.
+  return buildSoundfontVoice({ instrument: 'orchestral_harp', gainScale: 1.3, attackDuration: 2.2 })
+}
+
+function buildHarpSynthFallback(): VoiceAdapter {
+  // Karplus-Strong fallback when the GM samples can't load. Same
+  // family as the oud's, tuned brighter and with longer dampening
+  // so the strings ring rather than damp quickly.
   const POOL_SIZE = 6
   const out = new Tone.Gain(1.2)
   const tone = new Tone.Filter({ frequency: 5000, type: 'lowpass', Q: 0.6 })
@@ -824,10 +914,19 @@ function buildHarp(): VoiceAdapter {
 }
 
 function buildTrumpet(): VoiceAdapter {
-  // Phase 8 — B♭ trumpet. Brass tone needs a bright sawtooth + filter
-  // envelope that opens fast (the brass "blare") plus a touch of
-  // distortion for the buzz of the lips on the mouthpiece.
-  // TODO(samples): manifest will want stopped / open valve takes.
+  // Real GM trumpet samples. Each press auto-stops at 1.0 s so a
+  // tap-and-let-go feels like a clean brass note rather than a held
+  // sustain — TrumpetPad's UI treats every cell click as a single
+  // articulated blow.
+  // TODO(samples): manifest will want stopped / muted / open valve
+  // takes for variation.
+  return buildSoundfontVoice({ instrument: 'trumpet', gainScale: 1.3, attackDuration: 1.0 })
+}
+
+function buildTrumpetSynthFallback(): VoiceAdapter {
+  // Brass synth fallback — bright sawtooth + filter envelope that
+  // opens fast (the brass "blare") plus a touch of distortion for the
+  // lip-buzz character.
   const synth = new Tone.PolySynth(Tone.MonoSynth, {
     oscillator: { type: 'sawtooth' },
     filter: { Q: 1.5, type: 'lowpass', rolloff: -12 },
@@ -909,13 +1008,18 @@ function buildTambourine(): VoiceAdapter {
 }
 
 function buildClarinet(): VoiceAdapter {
-  // Phase 8 — clarinet. Cylindrical bore = strong odd harmonics. Square
-  // wave + a low-pass filter envelope sits closer to that profile than
-  // a saw. Soft attack and a slight vibrato make sustained notes
-  // breathe instead of sounding like a synth pad.
-  // TODO(samples): manifest will want chalumeau (low) and clarion
-  // (upper) register takes — the timbre changes noticeably across the
-  // register break.
+  // Real GM clarinet samples. Tap-fired notes auto-stop at 0.8 s so
+  // each ClarinetPad hole click reads as a brief articulated note.
+  // TODO(samples): chalumeau / clarion register-specific takes would
+  // catch the timbre shift across the register break that the GM
+  // single-bank sample can't reproduce on its own.
+  return buildSoundfontVoice({ instrument: 'clarinet', gainScale: 1.3, attackDuration: 0.8 })
+}
+
+function buildClarinetSynthFallback(): VoiceAdapter {
+  // Synth fallback. Cylindrical bore = strong odd harmonics → square
+  // wave + low-pass filter envelope sits closer to that profile than
+  // a saw. Soft attack + slight vibrato make sustained notes breathe.
   const synth = new Tone.PolySynth(Tone.Synth, {
     oscillator: { type: 'square' },
     envelope: { attack: 0.07, decay: 0.06, sustain: 0.85, release: 0.3 },
@@ -939,12 +1043,16 @@ function buildClarinet(): VoiceAdapter {
 }
 
 function buildFlute(): VoiceAdapter {
-  // Phase 8 — concert flute. Triangle wave is the cleanest single-osc
-  // approximation of the flute's near-pure tone. Layer a soft filtered
-  // pink-noise breath, gated by the same envelope, so attacks have
-  // that air-on-mouthpiece character a bare triangle synth lacks.
-  // TODO(samples): manifest will want recorded flute notes — the
-  // breath synthesis here is workable but unmistakably synth.
+  // Real GM flute samples. Tap-fired notes auto-stop at 1.0 s so
+  // each FlutePad hole click reads as a brief articulated note.
+  return buildSoundfontVoice({ instrument: 'flute', gainScale: 1.3, attackDuration: 1.0 })
+}
+
+function buildFluteSynthFallback(): VoiceAdapter {
+  // Synth fallback. Triangle wave is the cleanest single-osc
+  // approximation of the flute's near-pure tone, layered with a soft
+  // filtered pink-noise breath gated by the same envelope so attacks
+  // have that air-on-mouthpiece character.
   const synth = new Tone.PolySynth(Tone.Synth, {
     oscillator: { type: 'triangle' },
     envelope: { attack: 0.08, decay: 0.05, sustain: 0.9, release: 0.35 },
@@ -1096,15 +1204,20 @@ function buildRealDrums(): VoiceAdapter {
 }
 
 function buildHarmonica(): VoiceAdapter {
-  // Phase 6 — diatonic harmonica. The reed sound is approximated by a
-  // dual-detuned saw through a bandpass filter, with a fast soft attack
-  // and a brief release that mimics the pulse of a breath. Key
-  // selection lives in the pad (HarmonicaPad maps the same hole index
-  // to different MIDI notes per key) — the synth itself doesn't care
-  // about key.
+  // Real GM harmonica samples. Each pad-fired note auto-stops after
+  // 0.8 s — a tap on a hole should be a brief breath, not a sustained
+  // note that needs explicit release.
   // TODO(samples): manifest will want blow / draw takes per hole and
-  // per key — the timbre is subtly different on draw notes (the reed
-  // resists the airflow) and that's hard to fake with a synth alone.
+  // per key — the GM harmonica doesn't distinguish between blow and
+  // draw, but a real harmonica's draw notes have a subtly different
+  // timbre because the reed resists the airflow.
+  return buildSoundfontVoice({ instrument: 'harmonica', gainScale: 1.3, attackDuration: 0.8 })
+}
+
+function buildHarmonicaSynthFallback(): VoiceAdapter {
+  // Synth fallback — dual-detuned saw through a bandpass filter, fast
+  // soft attack, brief release. Mimics the pulse of a breath when the
+  // GM Soundfont can't load.
   const synth = new Tone.PolySynth(Tone.Synth, {
     oscillator: { type: 'sawtooth' },
     envelope: { attack: 0.05, decay: 0.06, sustain: 0.8, release: 0.2 },
@@ -1147,15 +1260,23 @@ function buildHarmonica(): VoiceAdapter {
 }
 
 function buildOud(): VoiceAdapter {
-  // Phase 5 — Arabic oud. Karplus-Strong (Tone.PluckSynth) is the
-  // closest synth approximation of a plucked string family — woody
-  // attack noise, exponential decay shaped by the string-dampening
-  // parameter, harmonic content from the resonance setting. Single
-  // PluckSynth is monophonic, so we round-robin a small pool to allow
-  // overlapping notes during a fast risha-strum or chord roll.
-  // TODO(samples): manifest will want individual oud course samples
-  // (low to high) for both finger pluck and risha attacks; this synth
-  // path is the offline fallback.
+  // GM has no actual oud preset — sitar is the closest neighbour
+  // (both Eastern double-course plucked strings with bright, woody
+  // attack and sustaining body resonance). Quarter-tone detune flows
+  // through Soundfont so maqam fingerings stay accurate. Plucks
+  // auto-stop after 1.6 s so a tap-and-forget pluck doesn't ring
+  // forever.
+  // TODO(samples): replace the `sitar` GM mapping with a real oud
+  // pack as soon as one lands in the manifest — the timbre's similar
+  // enough that this is a real upgrade over the synth, but not the
+  // genuine article.
+  return buildSoundfontVoice({ instrument: 'sitar', gainScale: 1.3, attackDuration: 1.6 })
+}
+
+function buildOudSynthFallback(): VoiceAdapter {
+  // Karplus-Strong fallback. Single PluckSynth is monophonic, so we
+  // round-robin a small pool to allow overlapping notes during a fast
+  // risha-strum or chord roll.
   const POOL_SIZE = 4
   const out = new Tone.Gain(1.4)
   const body = new Tone.Filter({ frequency: 1800, type: 'lowpass', Q: 0.9 })
@@ -1208,13 +1329,16 @@ function buildOud(): VoiceAdapter {
 }
 
 function buildCello(): VoiceAdapter {
-  // Phase 4 — bowed cello. Same shape as buildViolin but with a slower
-  // attack, longer release, deeper filter base, and a slightly slower
-  // vibrato — all the things that make a cello feel "bigger" than a
-  // violin without changing the actual range of pitches we play.
-  // TODO(samples): manifest will want C / G / D / A string takes for
-  // both bow directions plus pizzicato; until then, this synth is the
-  // fallback path so the cello is always playable offline.
+  // Real GM cello samples via smplr's Soundfont. Same engine flow as
+  // the violin — quarter-tone detune passes through start().
+  return buildSoundfontVoice({ instrument: 'cello', gainScale: 1.5 })
+}
+
+function buildCelloSynthFallback(): VoiceAdapter {
+  // Synth approximation. Same shape as buildViolinSynthFallback but
+  // with a slower attack, longer release, deeper filter base, and a
+  // slightly slower vibrato — all the things that make a cello feel
+  // "bigger" than a violin.
   const synth = new Tone.PolySynth(Tone.MonoSynth, {
     oscillator: { type: 'sawtooth' },
     filter: { Q: 1.5, type: 'lowpass', rolloff: -24 },
