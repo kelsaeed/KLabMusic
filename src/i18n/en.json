@@ -318,6 +318,12 @@
     "glitch": "Glitch",
     "autoArp": "Auto-arp",
     "chordNotes": "Chord notes (space-separated)",
+    "chord": {
+      "root": "Root",
+      "quality": "Quality",
+      "octave": "Octave",
+      "preview": "Chord"
+    },
     "arpSpeed": "Step",
     "arpGate": "Gate",
     "arpMode": {

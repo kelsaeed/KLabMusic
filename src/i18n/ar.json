@@ -318,6 +318,12 @@
     "glitch": "غليتش",
     "autoArp": "أربيجو تلقائي",
     "chordNotes": "نوتات الأوتار (مفصولة بمسافة)",
+    "chord": {
+      "root": "الأساس",
+      "quality": "النوع",
+      "octave": "الأوكتاف",
+      "preview": "الكوردة"
+    },
     "arpSpeed": "الخطوة",
     "arpGate": "البوابة",
     "arpMode": {

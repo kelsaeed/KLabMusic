@@ -1,25 +1,117 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useChaos, type ArpMode } from '@/composables/useChaos'
+import { useChaos, type ArpMode, type MaqamId } from '@/composables/useChaos'
+import { MAQAM_PRESETS } from '@/lib/microtonal'
+
+// AutoArp — dropdown chord builder (no typing) feeds the arpeggiator.
+//
+// Earlier iteration used a free-text input ("C4 E4 G4 B4") which broke
+// the project's "no typing in UI" rule. The builder now composes the
+// chord from three scoped dropdowns:
+//   - Root note (12 chromatic, locked to a single octave)
+//   - Quality (Western triads, sevenths, sixths, sus chords)
+//   - Maqam override — when set, ignores root + quality and builds
+//     the chord from the maqam's 1 / 3 / 5 / 7 scale degrees
+//     (semitone-rounded, since the arp engine plays through the
+//     12-TET instrument path).
+//
+// Octave stays at 4 — moves outside that range happen via the
+// existing octave drift in useChaos rather than UI.
 
 const { startArp, stopArp, arpRunning } = useChaos()
 const { t } = useI18n()
 
-const chordText = ref('C4 E4 G4 B4')
+const KEYS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const
+type RootKey = typeof KEYS[number]
+
+const QUALITIES = [
+  'maj', 'min', 'dim', 'aug',
+  'sus2', 'sus4',
+  'maj7', 'min7', '7', 'min7b5',
+  '6', 'min6',
+] as const
+type Quality = typeof QUALITIES[number]
+
+// Semitone offsets per quality. Indexed from the root.
+const QUALITY_INTERVALS: Record<Quality, readonly number[]> = {
+  maj:    [0, 4, 7],
+  min:    [0, 3, 7],
+  dim:    [0, 3, 6],
+  aug:    [0, 4, 8],
+  sus2:   [0, 2, 7],
+  sus4:   [0, 5, 7],
+  maj7:   [0, 4, 7, 11],
+  min7:   [0, 3, 7, 10],
+  '7':    [0, 4, 7, 10],
+  min7b5: [0, 3, 6, 10],
+  '6':    [0, 4, 7, 9],
+  min6:   [0, 3, 7, 9],
+}
+
+const MAQAM_IDS: MaqamId[] = [
+  'rast', 'bayati', 'hijaz', 'saba', 'sika', 'nahawand', 'kurd', 'ajam',
+]
+
+const root = ref<RootKey>('C')
+const quality = ref<Quality>('maj')
+const maqam = ref<MaqamId | null>(null)
+const octave = ref(4)
 const mode = ref<ArpMode>('up')
 const speed = ref(0.18)
 const gate = ref(0.7)
 
 const modes: ArpMode[] = ['up', 'down', 'random', 'chord']
 
+/**
+ * Convert a maqam preset's quarter-tone steps into semitone offsets
+ * from the maqam's tonic. Same rounding rule the chaos melody and
+ * recorder tune use — multiple quarter-tones collapsing to the same
+ * semitone are deduped, result sorted ascending.
+ */
+function maqamSemitones(id: MaqamId): { offsets: number[]; tonic: string } {
+  const m = MAQAM_PRESETS[id]
+  const semis = new Set<number>()
+  for (const step of m.steps) semis.add(Math.round(step / 2) % 12)
+  return {
+    offsets: [...semis].sort((a, b) => a - b),
+    tonic: m.tonic,
+  }
+}
+
+const chord = computed<string[]>(() => {
+  if (maqam.value) {
+    const { offsets, tonic } = maqamSemitones(maqam.value)
+    const tonicIdx = KEYS.indexOf(tonic as RootKey)
+    if (tonicIdx < 0) return []
+    // Pick scale degrees 1, 3, 5, 7 — the same chord shape every
+    // maqam-aware composer picks first when stacking thirds. Drops
+    // out the 7th if the maqam only has 6 distinct semitones.
+    const degrees = [0, 2, 4, 6].filter((d) => d < offsets.length)
+    return degrees.map((d) => {
+      const semi = offsets[d]
+      const noteIdx = (tonicIdx + semi) % 12
+      const oct = octave.value + Math.floor((tonicIdx + semi) / 12)
+      return `${KEYS[noteIdx]}${oct}`
+    })
+  }
+  const rootIdx = KEYS.indexOf(root.value)
+  if (rootIdx < 0) return []
+  const intervals = QUALITY_INTERVALS[quality.value]
+  return intervals.map((semi) => {
+    const noteIdx = (rootIdx + semi) % 12
+    const oct = octave.value + Math.floor((rootIdx + semi) / 12)
+    return `${KEYS[noteIdx]}${oct}`
+  })
+})
+
 async function toggle() {
   if (arpRunning.value) {
     stopArp()
     return
   }
-  const chord = chordText.value.split(/\s+/).filter(Boolean)
-  await startArp(chord, mode.value, speed.value, gate.value)
+  if (chord.value.length === 0) return
+  await startArp(chord.value, mode.value, speed.value, gate.value)
 }
 </script>
 
@@ -32,10 +124,46 @@ async function toggle() {
       </button>
     </header>
 
-    <label class="field">
-      <span class="lbl mono">{{ t('chaos.chordNotes') }}</span>
-      <input v-model="chordText" placeholder="C4 E4 G4 B4" />
+    <!-- Chord builder. Layout: root + quality on one row, octave + maqam
+         override on the next. Maqam override greys out the root + quality
+         pickers because it derives both from the preset's tonic and
+         scale degrees. -->
+    <div class="builder">
+      <label class="field">
+        <span class="lbl mono">{{ t('chaos.chord.root') }}</span>
+        <select v-model="root" :disabled="maqam !== null">
+          <option v-for="k in KEYS" :key="k" :value="k">{{ k }}</option>
+        </select>
+      </label>
+      <label class="field">
+        <span class="lbl mono">{{ t('chaos.chord.quality') }}</span>
+        <select v-model="quality" :disabled="maqam !== null">
+          <option v-for="q in QUALITIES" :key="q" :value="q">{{ q }}</option>
+        </select>
+      </label>
+      <label class="field">
+        <span class="lbl mono">{{ t('chaos.chord.octave') }}</span>
+        <select v-model.number="octave">
+          <option :value="3">3</option>
+          <option :value="4">4</option>
+          <option :value="5">5</option>
+        </select>
+      </label>
+    </div>
+    <label class="field full">
+      <span class="lbl mono">{{ t('chaos.maqam') }}</span>
+      <select v-model="maqam">
+        <option :value="null">{{ t('chaos.maqamNone') }}</option>
+        <option v-for="m in MAQAM_IDS" :key="m" :value="m">
+          {{ MAQAM_PRESETS[m].name }} ({{ MAQAM_PRESETS[m].tonic }})
+        </option>
+      </select>
     </label>
+
+    <p class="preview mono">
+      <span class="preview-lbl">{{ t('chaos.chord.preview') }}</span>
+      <span class="preview-notes">{{ chord.join(' · ') || '—' }}</span>
+    </p>
 
     <div class="modes">
       <button
@@ -81,8 +209,32 @@ async function toggle() {
   font-size: 0.95rem;
 }
 .play.on { background: var(--accent-secondary); }
+
+.builder {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr 0.7fr;
+  gap: 0.4rem;
+}
 .field { display: flex; flex-direction: column; gap: 0.25rem; }
+.field.full { grid-column: 1 / -1; }
 .lbl { font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+select:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.preview {
+  margin: 0;
+  padding: 0.45rem 0.6rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.7rem;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+.preview-lbl { color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.preview-notes { color: var(--accent-primary); word-break: break-word; }
+
 .modes { display: flex; gap: 0.3rem; flex-wrap: wrap; }
 .mode {
   font-size: 0.7rem;
