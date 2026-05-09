@@ -1,7 +1,9 @@
-import { watch } from 'vue'
+import { ref, watch } from 'vue'
 import { useBeatMakerStore } from '@/stores/beatmaker'
 import { useArrangeStore } from '@/stores/arrange'
 import { useAudioStore } from '@/stores/audio'
+import { useUserStore } from '@/stores/user'
+import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import type {
   Pattern, ArrangeTrack, InstrumentId, StepCount,
 } from '@/lib/types'
@@ -291,6 +293,117 @@ export function useSession() {
     flushNow()
   }
 
+  // — Cloud sync layer —
+  // localStorage is always the source for the UI. When the user is
+  // logged in, we additionally push named saves to Supabase so the
+  // library follows them across devices. Logged-out users keep using
+  // localStorage exclusively — the entire sync layer is opt-in via
+  // sign-in. Cloud failures (network, RLS, schema mismatch) silently
+  // degrade to local-only; the user's local save always succeeds.
+
+  const cloudBusy = ref(false)
+
+  async function saveNamedCloud(entry: NamedSave): Promise<{ ok: boolean; message?: string }> {
+    if (!isSupabaseConfigured) return { ok: false, message: 'Supabase not configured' }
+    const userStore = useUserStore()
+    if (!userStore.isLoggedIn || !userStore.profile) {
+      return { ok: false, message: 'Sign in to sync' }
+    }
+    try {
+      cloudBusy.value = true
+      // The 'projects' table already exists (used by useBeatMaker's
+      // saveToCloud for the legacy beat-maker-only save). Schema we
+      // rely on: id (text PK), user_id (text), name (text),
+      // data (jsonb). Each named project is one row keyed by the
+      // local uid + user prefix so RLS policies can scope per-user.
+      const rowId = `proj-${userStore.profile.id}-${entry.id}`
+      const { error } = await supabase.from('projects').upsert({
+        id: rowId,
+        user_id: userStore.profile.id,
+        name: entry.name,
+        data: { kind: 'named-project', savedAt: entry.savedAt, payload: entry.payload },
+      })
+      if (error) return { ok: false, message: error.message }
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : 'Cloud save failed' }
+    } finally {
+      cloudBusy.value = false
+    }
+  }
+
+  async function listNamedCloud(): Promise<NamedSave[]> {
+    if (!isSupabaseConfigured) return []
+    const userStore = useUserStore()
+    if (!userStore.isLoggedIn || !userStore.profile) return []
+    try {
+      cloudBusy.value = true
+      const { data, error } = await supabase
+        .from('projects')
+        .select('id, name, data')
+        .eq('user_id', userStore.profile.id)
+      if (error || !data) return []
+      const out: NamedSave[] = []
+      for (const row of data as Array<{ id: string; name: string; data: unknown }>) {
+        const d = row.data as { kind?: string; savedAt?: number; payload?: SessionPayload }
+        if (d?.kind !== 'named-project' || !d.payload) continue
+        // Reconstruct the local-shaped NamedSave; the local id is
+        // the suffix after the user prefix so the same project
+        // round-trips with consistent identity.
+        const localId = row.id.replace(/^proj-[^-]+-/, '')
+        out.push({
+          id: localId,
+          name: row.name,
+          savedAt: d.savedAt ?? Date.now(),
+          payload: d.payload,
+        })
+      }
+      return out
+    } catch {
+      return []
+    } finally {
+      cloudBusy.value = false
+    }
+  }
+
+  async function deleteNamedCloud(id: string): Promise<boolean> {
+    if (!isSupabaseConfigured) return false
+    const userStore = useUserStore()
+    if (!userStore.isLoggedIn || !userStore.profile) return false
+    try {
+      const rowId = `proj-${userStore.profile.id}-${id}`
+      const { error } = await supabase.from('projects').delete().eq('id', rowId)
+      return !error
+    } catch {
+      return false
+    }
+  }
+
+  /**
+   * Pull every cloud-saved project into local storage, merging by id.
+   * Called from the project panel on open when the user is logged in
+   * so devices that signed in fresh see the library their other
+   * devices have built up. Newer savedAt wins on collision so a
+   * cloud entry that was edited elsewhere doesn't get clobbered by
+   * a local entry that hasn't been touched in weeks.
+   */
+  async function syncFromCloud(): Promise<{ ok: boolean; merged: number }> {
+    const cloud = await listNamedCloud()
+    if (cloud.length === 0) return { ok: true, merged: 0 }
+    const localMap = new Map<string, NamedSave>()
+    for (const s of readNamedSaves()) localMap.set(s.id, s)
+    let merged = 0
+    for (const c of cloud) {
+      const existing = localMap.get(c.id)
+      if (!existing || c.savedAt > existing.savedAt) {
+        localMap.set(c.id, c)
+        merged++
+      }
+    }
+    writeNamedSaves(Array.from(localMap.values()))
+    return { ok: true, merged }
+  }
+
   return {
     init,
     flushNow,
@@ -300,6 +413,10 @@ export function useSession() {
     listNamed,
     snapshot,
     newProject,
+    saveNamedCloud,
+    deleteNamedCloud,
+    syncFromCloud,
+    cloudBusy,
   }
 }
 

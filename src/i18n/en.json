@@ -421,7 +421,9 @@
     "confirmNew": "Start a new project? Any unsaved changes will be lost.",
     "newCreated": "New project started",
     "empty": "No saved projects yet. Save one above to checkpoint your work.",
-    "autoSaveHint": "Your work auto-saves on every edit. These named slots are for milestones you want to come back to later."
+    "autoSaveHint": "Your work auto-saves on every edit. These named slots are for milestones you want to come back to later.",
+    "cloudSyncedDown": "Pulled {count} project(s) from cloud",
+    "cloudSaveFailed": "Cloud sync failed (project saved locally)"
   },
   "mastering": {
     "title": "Mastering",

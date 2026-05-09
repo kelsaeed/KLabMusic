@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { useAudioStore } from '@/stores/audio'
+import MasterMeter from './MasterMeter.vue'
 
 const store = useAudioStore()
 const { t } = useI18n()
@@ -20,6 +21,7 @@ const { t } = useI18n()
           step="0.5"
         />
       </label>
+      <MasterMeter />
       <button
         class="mute mono"
         :class="{ on: store.masterMuted }"

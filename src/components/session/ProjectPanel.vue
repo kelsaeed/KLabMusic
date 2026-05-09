@@ -3,21 +3,36 @@ import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useSession, type NamedSave } from '@/composables/useSession'
 import { useToast } from '@/composables/useToast'
+import { useUserStore } from '@/stores/user'
 
-// Project library — local-only save / load slots backed by the
-// useSession composable's localStorage layer. Auto-save already runs
-// continuously (every edit persists to klm:session:auto), so this
-// panel is for *named milestones* — the user wants to checkpoint a
-// session so they can come back to it after working on something
-// else, or hand a starting-point to themselves on another machine.
+// Project library — local + optional cloud-backed named save slots.
+// Auto-save already runs continuously (every edit persists to
+// klm:session:auto), so this panel is for *named milestones* — the
+// user wants to checkpoint a session so they can come back to it
+// after working on something else, or hand a starting-point to
+// themselves on another machine.
+//
+// When the user is logged in, named saves additionally push to
+// Supabase ('projects' table) so the library follows them across
+// devices. Cloud failures degrade gracefully — the local save
+// always succeeds first; the cloud push is opportunistic.
 //
 // The cap is MAX_NAMED_SLOTS (10) inside useSession; when the cap is
-// reached, the save call evicts the oldest slot. We surface that
-// behaviour with a confirm dialog before overwriting.
+// reached, saveNamed evicts the oldest slot.
 
 const { t } = useI18n()
 const { show } = useToast()
-const { saveNamed, loadNamed, deleteNamed, listNamed, newProject } = useSession()
+const userStore = useUserStore()
+const {
+  saveNamed,
+  loadNamed,
+  deleteNamed,
+  listNamed,
+  newProject,
+  saveNamedCloud,
+  deleteNamedCloud,
+  syncFromCloud,
+} = useSession()
 
 const open = ref(false)
 const newName = ref('')
@@ -27,21 +42,40 @@ function refresh() {
   saves.value = listNamed()
 }
 
-function onOpen() {
+async function onOpen() {
   open.value = true
   refresh()
+  // If the user is logged in, pull any cloud-saved projects that
+  // newer-than the local copies, then re-render. Local-only users
+  // skip this entirely — no network round-trip, no auth flow.
+  if (userStore.isLoggedIn) {
+    const r = await syncFromCloud()
+    if (r.merged > 0) {
+      refresh()
+      show({ type: 'info', title: t('project.cloudSyncedDown', { count: r.merged }), duration: 1800 })
+    }
+  }
 }
 
-function onSave() {
+async function onSave() {
   const name = newName.value.trim()
   if (!name) {
     show({ type: 'error', title: t('project.nameRequired'), duration: 2000 })
     return
   }
-  saveNamed(name)
+  // Local first — guaranteed success path. Cloud is opportunistic.
+  const entry = saveNamed(name)
   newName.value = ''
   refresh()
   show({ type: 'success', title: t('project.saved', { name }), duration: 1800 })
+  if (userStore.isLoggedIn) {
+    const r = await saveNamedCloud(entry)
+    if (!r.ok && r.message) {
+      // Don't surface "Sign in to sync" — that's the normal path
+      // for logged-out flows; we already gated on isLoggedIn anyway.
+      show({ type: 'error', title: t('project.cloudSaveFailed'), subtitle: r.message, duration: 2500 })
+    }
+  }
 }
 
 function onLoad(entry: NamedSave) {
@@ -54,10 +88,18 @@ function onLoad(entry: NamedSave) {
   open.value = false
 }
 
-function onDelete(entry: NamedSave) {
+async function onDelete(entry: NamedSave) {
   if (!confirm(t('project.confirmDelete', { name: entry.name }))) return
   deleteNamed(entry.id)
   refresh()
+  // Best-effort cloud delete — local already succeeded so the user
+  // sees the entry disappear immediately; if the cloud delete
+  // fails, the next syncFromCloud will reintroduce it. Acceptable
+  // for a 'milestone library' UX where stale cloud entries are
+  // recoverable rather than dangerous.
+  if (userStore.isLoggedIn) {
+    void deleteNamedCloud(entry.id)
+  }
 }
 
 function onNew() {
