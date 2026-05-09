@@ -263,6 +263,12 @@ const KEYS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] a
 const chaosAmount = ref(0)
 const arpRunning = ref(false)
 const lastMelody = ref<string[]>([])
+// Parallel array — cents-shift to apply to each note in lastMelody when
+// playMelody fires it through setBend. Non-zero only when the melody was
+// generated under a maqam preset (chaos's other paths are 12-TET so the
+// shift is uniformly 0). Module-scoped alongside lastMelody so a future
+// "save melody" feature can serialise both.
+const lastMelodyCents = ref<number[]>([])
 let chaosTimer: ReturnType<typeof setInterval> | null = null
 let arpLoop: Tone.Loop | null = null
 // Wall-clock guard on auto-arp. Without this, a user who clicks Play and
@@ -277,6 +283,7 @@ export function useChaos() {
   const audioStore = useAudioStore()
   const {
     setMasterBend,
+    setBend,
     glitchBurst,
     setChaosX,
     setChaosY,
@@ -380,30 +387,47 @@ export function useChaos() {
 
   /**
    * Convert a maqam preset's quarter-tone steps into a 12-TET interval
-   * set + the canonical tonic. Each quarter-tone step rounds to its
-   * nearest semitone; multiple quarter-tones that collapse to the
-   * same semitone are deduped and the result is sorted ascending.
+   * set + the canonical tonic + the per-degree cents shift that the
+   * instrument engine should apply for true microtonal pitch.
    *
-   * Loses the microtonal flavour of the maqam (the half-flat sika of
-   * Rast, the bayati second, etc.) — chaos plays through the
-   * instrument engine in 12-TET so this is the honest transcription.
-   * The distinctive scale SHAPE survives the rounding (Hijaz keeps
-   * its augmented-second leap, Saba its tetrachord, etc.) so the
-   * melody still reads as that maqam to a listener.
+   * Each quarter-tone step from the preset rounds to its nearest
+   * semitone for the 12-TET scale shape; the residue (in cents) is
+   * preserved on a parallel `shifts` array so playMelody can call
+   * setBend before each note and the bowed / oud voices that support
+   * detune actually produce the half-flat sika of Rast, the bayati
+   * second, etc. instead of approximated semitone-grid stand-ins.
    *
-   * TODO(microtones): wire setBend per-rendered-note in playMelody so
-   * the actual quarter-tone shifts come through on instruments that
-   * support it (violin / cello / oud) — currently we discard them
-   * here.
+   * Multiple quarter-tones collapsing to the same semitone are deduped;
+   * we keep the FIRST shift seen (the maqam preset arrays are already
+   * authored in ascending step order, so this matches what a player
+   * would expect — the LOWER quarter-tone wins when two fall in the
+   * same semitone slot).
    */
-  function maqamIntervalsAndTonic(id: MaqamId): { intervals: number[]; tonic: string } {
+  function maqamIntervalsAndTonic(id: MaqamId): {
+    intervals: number[]
+    tonic: string
+    shifts: number[]
+  } {
     const m = MAQAM_PRESETS[id]
-    const semis = new Set<number>()
-    for (const step of m.steps) {
-      semis.add(Math.round(step / 2) % 12)
+    const sortedByQuarter = [...m.steps].sort((a, b) => a - b)
+    const intervals: number[] = []
+    const shifts: number[] = []
+    const seen = new Set<number>()
+    for (const step of sortedByQuarter) {
+      const semi = Math.round(step / 2) % 12
+      if (seen.has(semi)) continue
+      seen.add(semi)
+      intervals.push(semi)
+      // shift = original_quarter_tone_value - rounded_semitone_in_quarter_tones
+      // a step of 3 (= 150 cents) rounds to semitone 2 (= 200 cents),
+      // so shift = (3 - 4) * 50 = -50 cents — which is the bayati
+      // second, "half-flat E" relative to the rounded F.
+      const shiftCents = (step - semi * 2) * 50
+      shifts.push(shiftCents)
     }
     return {
-      intervals: [...semis].sort((a, b) => a - b),
+      intervals,
+      shifts,
       tonic: m.tonic,
     }
   }
@@ -420,7 +444,8 @@ export function useChaos() {
     keyIdx: number,
     baseOctave: number,
     extraOctaveDrift: number,
-  ): string {
+    degreeShifts?: number[],
+  ): { note: string; cents: number } {
     let [deg, oct] = note
     let degOctaveCarry = 0
     while (deg < 0) { deg += intervals.length; degOctaveCarry -= 1 }
@@ -429,7 +454,8 @@ export function useChaos() {
     const noteIdx = (keyIdx + semitones) % 12
     const carryFromKey = Math.floor((keyIdx + semitones) / 12)
     const finalOct = Math.max(1, Math.min(7, baseOctave + oct + degOctaveCarry + carryFromKey + extraOctaveDrift))
-    return `${KEYS[noteIdx]}${finalOct}`
+    const cents = degreeShifts ? degreeShifts[deg] ?? 0 : 0
+    return { note: `${KEYS[noteIdx]}${finalOct}`, cents }
   }
 
   /**
@@ -450,6 +476,10 @@ export function useChaos() {
     const recipe = MOOD_RECIPES[mood] ?? MOOD_RECIPES.calm
     let intervals: number[]
     let keyIdx: number
+    // Per-degree cents shift — non-zero only under a maqam preset. Same
+    // length as `intervals`, indexed identically. playMelody reads this
+    // alongside the rendered note names to call setBend.
+    let degreeShifts: number[]
     if (maqam) {
       // Maqam wins over both the user's scale pick and the mood's
       // scaleOverride — picking a maqam is an explicit "play in this
@@ -458,6 +488,7 @@ export function useChaos() {
       // so the named maqam (Hijaz on D, Rast on C) sounds canonical.
       const r = maqamIntervalsAndTonic(maqam)
       intervals = r.intervals
+      degreeShifts = r.shifts
       const idx = KEYS.indexOf(r.tonic as typeof KEYS[number])
       keyIdx = idx >= 0 ? idx : KEYS.indexOf(key as typeof KEYS[number])
       if (keyIdx < 0) return []
@@ -465,6 +496,7 @@ export function useChaos() {
       keyIdx = KEYS.indexOf(key as typeof KEYS[number])
       if (keyIdx < 0) return []
       intervals = recipe.scaleOverride ?? SCALES[scale]
+      degreeShifts = intervals.map(() => 0)
     }
     const motifs = recipe.motifs
     const cadence = recipe.cadence
@@ -521,18 +553,27 @@ export function useChaos() {
     // the final resolution sits where the listener expects it).
     composed.push(...cadence)
 
-    // Render every motif note into an absolute note name.
+    // Render every motif note into an absolute note name + its
+    // microtonal cents shift (zero outside maqam mode).
     const notes: string[] = []
+    const cents: number[] = []
     for (const motifNote of composed.slice(0, length)) {
-      notes.push(renderMotifNote(motifNote, intervals, keyIdx, recipe.baseOctave, 0))
+      const r = renderMotifNote(motifNote, intervals, keyIdx, recipe.baseOctave, 0, degreeShifts)
+      notes.push(r.note)
+      cents.push(r.cents)
     }
     lastMelody.value = notes
+    lastMelodyCents.value = cents
     return notes
   }
 
   async function playMelody(notes: string[], stepSec = 0.25) {
     await ensureToneStarted()
     const noteDur = Math.min(0.5, stepSec * 0.85)
+    // Snapshot the cents array at schedule time. lastMelodyCents is
+    // module-scoped state and could be overwritten by a fresh generate
+    // call mid-playback otherwise.
+    const cents = lastMelodyCents.value.slice()
     notes.forEach((note, i) => {
       const t = Tone.now() + i * stepSec
       void Tone.getDraw().schedule(() => {
@@ -543,6 +584,14 @@ export function useChaos() {
         // glitch / fx voices and the percussion pads).
         const id = audioStore.activeInstrument
         const finalNote = clampNoteToRange(id, note)
+        // Apply the per-note maqam shift right before the attack. On
+        // bowed / oud voices that support setBendCents this produces
+        // true microtonal pitch (the half-flat sika of Rast, the
+        // bayati second, etc); on voices without per-note detune the
+        // call is a no-op. Reset to 0 between melodies so the next
+        // generate doesn't carry stale microtones into a non-maqam run.
+        const shift = cents[i] ?? 0
+        setBend(id, shift)
         void playOnTimed(id, finalNote, noteDur, 100)
       }, t)
     })
