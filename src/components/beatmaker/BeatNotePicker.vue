@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import * as Tone from 'tone'
 import { useI18n } from 'vue-i18n'
 import { INSTRUMENTS, noteOptionsFor } from '@/lib/instruments'
+import { MAQAM_PRESETS } from '@/lib/microtonal'
 import { useAudio } from '@/composables/useAudio'
 import { useAudioStore } from '@/stores/audio'
 import { formatNote } from '@/lib/notation'
@@ -38,6 +39,72 @@ const audioStore = useAudioStore()
 const meta = computed(() => INSTRUMENTS[props.instrument])
 const isSample = computed(() => meta.value.playMode === 'sample')
 const isGuitar = computed(() => props.instrument === 'guitar')
+
+// — Maqam presets (Phase 9 follow-up) —
+// Microtonal-capable instruments (violin / cello / oud) get a chip row
+// above the keyboard so a beat-maker user can scope the picker to a
+// maqam. The chip highlights every key whose pitch class is in the
+// maqam (semitone-rounded — the beat maker stores 12-TET notes only,
+// quarter-tone playback happens on the live pads). Clicking a chip
+// also seeds the picked note with the maqam's tonic so a fresh track
+// starts from a sensible anchor.
+const showsMaqam = computed(
+  () => meta.value.hasQuarterTones === true && !isSample.value && !isGuitar.value,
+)
+const MAQAM_KEYS = Object.keys(MAQAM_PRESETS) as Array<keyof typeof MAQAM_PRESETS>
+const selectedMaqam = ref<keyof typeof MAQAM_PRESETS | null>(null)
+// Reset the maqam when the user picks a different instrument — a
+// rast preset selected for a violin shouldn't carry over to a piano
+// track that doesn't surface chips at all.
+watch(
+  () => props.instrument,
+  () => { selectedMaqam.value = null },
+)
+
+const TONIC_SEMITONE: Record<string, number> = {
+  C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11,
+}
+
+/** Pitch-class offsets (mod 12) of the chosen maqam, computed from its
+ *  quarter-tone steps rounded to the nearest semitone. */
+const maqamOffsets = computed<Set<number>>(() => {
+  if (!selectedMaqam.value) return new Set()
+  const m = MAQAM_PRESETS[selectedMaqam.value]
+  return new Set(m.steps.map((s) => Math.round(s / 2) % 12))
+})
+
+/** Notes that should glow as "in the chosen maqam" on the keyboard. */
+const maqamHighlightedNotes = computed<Set<string>>(() => {
+  if (!selectedMaqam.value) return new Set()
+  const m = MAQAM_PRESETS[selectedMaqam.value]
+  const tonicSemi = TONIC_SEMITONE[m.tonic] ?? 0
+  const offsets = maqamOffsets.value
+  const out = new Set<string>()
+  for (const note of allowed.value) {
+    try {
+      const midi = Tone.Frequency(note).toMidi()
+      const off = ((midi - tonicSemi) % 12 + 12) % 12
+      if (offsets.has(off)) out.add(note)
+    } catch {
+      /* skip un-parseable note */
+    }
+  }
+  return out
+})
+
+function pickMaqam(k: keyof typeof MAQAM_PRESETS) {
+  // Toggle off when the same chip is tapped twice — the user just
+  // wants to clear the highlight without hopping to another maqam.
+  if (selectedMaqam.value === k) {
+    selectedMaqam.value = null
+    return
+  }
+  selectedMaqam.value = k
+  const tonicNote = `${MAQAM_PRESETS[k].tonic}4`
+  if (allowed.value.includes(tonicNote)) {
+    pick(tonicNote)
+  }
+}
 
 const samples = computed(() =>
   isSample.value ? (meta.value.samples ?? []) : [],
@@ -194,6 +261,22 @@ function noteLabel(note: string): string {
     </div>
 
     <div v-else class="kbd-wrap">
+      <!-- Phase 9 follow-up: maqam chips for hasQuarterTones instruments
+           (violin / cello / oud). Highlights the in-scale keys and seeds
+           the picked note with the maqam's tonic. -->
+      <div v-if="showsMaqam" class="maqam-chips">
+        <span class="maqam-label mono">{{ t('violin.maqam') }}</span>
+        <button
+          v-for="k in MAQAM_KEYS"
+          :key="k"
+          type="button"
+          class="maqam-chip mono"
+          :class="{ on: selectedMaqam === k }"
+          @click="pickMaqam(k)"
+        >
+          {{ MAQAM_PRESETS[k].name }}
+        </button>
+      </div>
       <div class="kbd" :style="{ '--whites': totalWhites }">
         <button
           v-for="k in keys"
@@ -204,6 +287,7 @@ function noteLabel(note: string): string {
             black: k.isBlack,
             white: !k.isBlack,
             on: modelValue === k.note,
+            maqam: maqamHighlightedNotes.has(k.note),
             disabled: !isAllowed(k.note),
           }"
           :disabled="!isAllowed(k.note)"
@@ -324,6 +408,55 @@ function noteLabel(note: string): string {
 .key.disabled {
   opacity: 0.18;
   cursor: not-allowed;
+}
+/* Maqam-highlighted keys — subtle accent so the tonic + scale degrees
+   read at a glance without overpowering the picker's existing on/off
+   states. White and black keys get separate treatments because their
+   base colors are inverted. */
+.key.maqam.white:not(.on):not(.disabled) {
+  border-color: var(--accent-primary);
+  background: color-mix(in srgb, var(--accent-primary) 12%, var(--bg-elevated));
+}
+.key.maqam.black:not(.on):not(.disabled) {
+  border-color: var(--accent-primary);
+  background: color-mix(in srgb, var(--accent-primary) 24%, #060614);
+}
+
+.maqam-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.4rem 0.5rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.maqam-label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-inline-end: 0.3rem;
+}
+.maqam-chip {
+  font-size: 0.65rem;
+  padding: 0.3rem 0.6rem;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  border-radius: 999px;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+  transition: border-color var(--transition-fast), color var(--transition-fast),
+    background var(--transition-fast);
+}
+.maqam-chip:hover { border-color: var(--accent-primary); }
+.maqam-chip.on {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+  color: var(--text-inverse);
+  box-shadow: 0 0 8px var(--accent-glow);
 }
 .hint {
   font-size: 0.72rem;
