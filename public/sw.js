@@ -7,9 +7,12 @@
 // Bump on any change to the cached host set or sample sources — bumping
 // triggers the cleanup branch in `activate` to drop the old cache so
 // the user picks up the new content on next visit.
-// v3 — added Tone.js acoustic-kit drum samples (cdn.jsdelivr.net /gh/Tonejs/audio).
-// The host was already in CACHED_HOSTS so this version bump is just a cache flush.
-const CACHE_VERSION = 'v3'
+// v4 — bumped after the buildSamplerVoice IDB-cache regression on
+// real-device mobile (commit 5944b80, reverted in this version's
+// shipping commit). Older clients that loaded the broken build may
+// have a stale SW intercepting fetches incorrectly; bumping forces
+// every active client to register the fixed worker on next visit.
+const CACHE_VERSION = 'v4'
 const CACHE_NAME = `klabmusic-audio-${CACHE_VERSION}`
 
 const CACHED_HOSTS = new Set([

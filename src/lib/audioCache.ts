@@ -29,6 +29,27 @@ interface CachedBuffer {
 
 let dbPromise: Promise<IDBDatabase | null> | null = null
 
+// iOS Safari's IndexedDB can hang indefinitely in private mode and
+// occasionally under quota pressure — neither onsuccess nor onerror
+// nor onblocked fires. Real-device QA caught this as 'instruments
+// load forever' on phones because every instrument's load awaited
+// an openDb call that never resolved. A 1-second budget is plenty
+// for IDB to actually open (typical opens are <10 ms); past that we
+// give up and treat the cache as unavailable, which makes
+// loadCachedOrDecode fall straight through to fetch + decode.
+const OPEN_DB_TIMEOUT_MS = 1000
+// Per-URL fetch budget. The Service Worker's cache-first strategy
+// turns a CDN miss into a network round-trip on first visit, and
+// some regions (Egypt mobile, the user's environment) have CDN
+// reachability problems where the round-trip can hang for tens of
+// seconds. Without this timeout, buildSamplerVoice / build-from-
+// manifest paths waited for Promise.all() of N URL fetches, any
+// one of which could deadlock the whole instrument load. 8s is
+// a comfortable upper bound for a successful fetch; past that the
+// caller treats the URL as unreachable and falls back to the
+// synth path.
+const FETCH_TIMEOUT_MS = 8000
+
 function openDb(): Promise<IDBDatabase | null> {
   if (dbPromise) return dbPromise
   if (typeof indexedDB === 'undefined') {
@@ -36,11 +57,19 @@ function openDb(): Promise<IDBDatabase | null> {
     return dbPromise
   }
   dbPromise = new Promise((resolve) => {
+    let settled = false
+    const settle = (db: IDBDatabase | null) => {
+      if (settled) return
+      settled = true
+      resolve(db)
+    }
+    const timer = setTimeout(() => settle(null), OPEN_DB_TIMEOUT_MS)
     let req: IDBOpenDBRequest
     try {
       req = indexedDB.open(DB_NAME, DB_VERSION)
     } catch {
-      resolve(null)
+      clearTimeout(timer)
+      settle(null)
       return
     }
     req.onupgradeneeded = () => {
@@ -49,11 +78,24 @@ function openDb(): Promise<IDBDatabase | null> {
         db.createObjectStore(STORE_NAME, { keyPath: 'url' })
       }
     }
-    req.onsuccess = () => resolve(req.result)
-    req.onerror = () => resolve(null)
-    req.onblocked = () => resolve(null)
+    req.onsuccess = () => { clearTimeout(timer); settle(req.result) }
+    req.onerror = () => { clearTimeout(timer); settle(null) }
+    req.onblocked = () => { clearTimeout(timer); settle(null) }
   })
   return dbPromise
+}
+
+// fetch() with an AbortController-driven timeout. Native fetch has no
+// per-request timeout option in the standard API, and a hung mobile
+// connection waits forever otherwise.
+async function fetchWithTimeout(url: string, ms: number): Promise<Response> {
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), ms)
+  try {
+    return await fetch(url, { signal: ctrl.signal })
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 async function readFromCache(url: string): Promise<CachedBuffer | null> {
@@ -140,7 +182,7 @@ export async function loadCachedOrDecode(
   } catch {
     /* IDB read failed — fall through to network */
   }
-  const res = await fetch(url)
+  const res = await fetchWithTimeout(url, FETCH_TIMEOUT_MS)
   if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`)
   const arrayBuffer = await res.arrayBuffer()
   // decodeAudioData detaches its input ArrayBuffer; we slice() to
