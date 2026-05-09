@@ -5,6 +5,7 @@ import { useAudio } from '@/composables/useAudio'
 import { useLivePlay } from '@/composables/useLivePlay'
 import { useAudioStore } from '@/stores/audio'
 import { formatNote } from '@/lib/notation'
+import InstrumentSurface from './placeholders/InstrumentSurface.vue'
 import * as Tone from 'tone'
 
 // Phase 6 — 10-hole diatonic harmonica in Richter tuning. Each hole
@@ -198,9 +199,10 @@ onBeforeUnmount(() => {
 
     <p class="hint mono">{{ t('harmonica.hint') }}</p>
 
-    <!-- TODO(visual-asset): replace this CSS placeholder with a layered
-         SVG of a real harmonica comb in Phase 11. -->
-    <div
+    <!-- TODO(visual-asset): InstrumentSurface placeholder; real
+         harmonica comb illustration plugs in later. -->
+    <InstrumentSurface
+      variant="harmonica"
       class="comb"
       @pointerdown="onDown"
       @pointermove="onMove"
@@ -230,7 +232,7 @@ onBeforeUnmount(() => {
           ↓ {{ notationOf(hole.blowNote) }}
         </span>
       </button>
-    </div>
+    </InstrumentSurface>
   </div>
 </template>
 
@@ -317,11 +319,6 @@ onBeforeUnmount(() => {
   grid-template-columns: repeat(10, minmax(0, 1fr));
   gap: 6px;
   padding: 0.85rem;
-  background:
-    linear-gradient(180deg, rgba(120, 120, 140, 0.25) 0%, rgba(40, 40, 60, 0.45) 100%),
-    var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
   touch-action: none;
 }
 .hole {

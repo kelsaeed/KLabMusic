@@ -6,6 +6,7 @@ import { useLivePlay } from '@/composables/useLivePlay'
 import { useAudioStore } from '@/stores/audio'
 import { MAQAM_PRESETS, noteToArabicLabel } from '@/lib/microtonal'
 import { maqamHighlightMap } from '@/composables/useBowedString'
+import InstrumentSurface from './placeholders/InstrumentSurface.vue'
 import { formatNote } from '@/lib/notation'
 import * as Tone from 'tone'
 
@@ -206,9 +207,10 @@ onBeforeUnmount(() => {
 
     <p class="hint mono">{{ t('oud.bowHint') }}</p>
 
-    <!-- TODO(visual-asset): replace this CSS placeholder with a layered
-         SVG of an oud body + soundhole + pegbox in Phase 11. -->
-    <div class="body-wrap">
+    <!-- TODO(visual-asset): InstrumentSurface is the placeholder for the
+         oud body — soundhole + fingerboard chrome lives here in CSS for
+         now. Swap for a real SVG / canvas asset in Phase 11+. -->
+    <InstrumentSurface variant="oud" class="body-wrap">
       <div class="soundhole" aria-hidden="true">
         <span class="rosette" />
       </div>
@@ -251,7 +253,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
       </div>
-    </div>
+    </InstrumentSurface>
   </div>
 </template>
 
@@ -322,11 +324,6 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 0.4rem;
   padding: 0.85rem;
-  background:
-    linear-gradient(180deg, rgba(120, 70, 30, 0.32) 0%, rgba(50, 25, 10, 0.5) 100%),
-    var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
 }
 .soundhole {
   position: relative;

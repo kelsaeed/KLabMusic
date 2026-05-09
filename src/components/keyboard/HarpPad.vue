@@ -5,6 +5,7 @@ import { useAudio } from '@/composables/useAudio'
 import { useLivePlay } from '@/composables/useLivePlay'
 import { useAudioStore } from '@/stores/audio'
 import { formatNote } from '@/lib/notation'
+import InstrumentSurface from './placeholders/InstrumentSurface.vue'
 import * as Tone from 'tone'
 
 // Phase 8 — concert harp. Vertical strings; tap one to pluck, swipe
@@ -107,9 +108,10 @@ onBeforeUnmount(() => {
       </button>
     </header>
 
-    <!-- TODO(visual-asset): replace with a layered SVG of a harp frame
-         + soundbox in Phase 11. -->
-    <div
+    <!-- TODO(visual-asset): InstrumentSurface placeholder; real harp
+         frame + soundbox SVG plugs in here later. -->
+    <InstrumentSurface
+      variant="harp"
       class="strings"
       @pointerdown="onDown"
       @pointermove="onMove"
@@ -124,7 +126,7 @@ onBeforeUnmount(() => {
         <span class="line" />
         <span class="note mono">{{ notationOf(s.note) }}</span>
       </button>
-    </div>
+    </InstrumentSurface>
   </div>
 </template>
 
@@ -154,11 +156,6 @@ onBeforeUnmount(() => {
   gap: 3px;
   padding: 0.85rem;
   height: clamp(220px, 30vh, 320px);
-  background:
-    linear-gradient(180deg, rgba(180, 140, 80, 0.18) 0%, rgba(60, 40, 20, 0.4) 100%),
-    var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
   touch-action: none;
 }
 .string {

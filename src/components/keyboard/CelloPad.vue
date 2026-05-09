@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useAudio } from '@/composables/useAudio'
 import { useAudioStore } from '@/stores/audio'
 import { useBowedString, type BowDirection, maqamHighlightMap } from '@/composables/useBowedString'
+import InstrumentSurface from './placeholders/InstrumentSurface.vue'
 import { MAQAM_PRESETS, noteToArabicLabel } from '@/lib/microtonal'
 import { formatNote } from '@/lib/notation'
 import * as Tone from 'tone'
@@ -213,10 +214,11 @@ onBeforeUnmount(() => {
 
     <p class="hint mono">{{ t('cello.bowHint') }}</p>
 
-    <!-- TODO(visual-asset): replace this CSS-only board with a layered
-         SVG / canvas of a cello neck + body in Phase 11. The data
-         attributes the gesture reads stay stable. -->
-    <div
+    <!-- TODO(visual-asset): InstrumentSurface is a CSS placeholder; swap
+         for a real layered cello SVG / canvas asset in Phase 11. The
+         data attributes the gesture reads stay stable. -->
+    <InstrumentSurface
+      variant="cello"
       class="fingerboard"
       @pointerdown="onDown"
       @pointermove="onMove"
@@ -251,7 +253,7 @@ onBeforeUnmount(() => {
           </button>
         </div>
       </div>
-    </div>
+    </InstrumentSurface>
   </div>
 </template>
 
@@ -318,13 +320,8 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 0.5rem;
   padding: 0.85rem;
-  /* Cello placeholder uses a darker / warmer wood gradient than the
-     violin to read at a glance. */
-  background:
-    linear-gradient(180deg, rgba(80, 40, 20, 0.32) 0%, rgba(40, 18, 6, 0.45) 100%),
-    var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  /* Visual chrome (background, border) lives in the InstrumentSurface
+     placeholder; this layer is just the gesture surface. */
   touch-action: none;
 }
 .string-row {

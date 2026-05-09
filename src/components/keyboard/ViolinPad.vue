@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useAudio } from '@/composables/useAudio'
 import { useAudioStore } from '@/stores/audio'
 import { useBowedString, type BowDirection, maqamHighlightMap } from '@/composables/useBowedString'
+import InstrumentSurface from './placeholders/InstrumentSurface.vue'
 import { MAQAM_PRESETS, noteToArabicLabel } from '@/lib/microtonal'
 import { formatNote } from '@/lib/notation'
 import * as Tone from 'tone'
@@ -237,10 +238,12 @@ onBeforeUnmount(() => {
 
     <p class="hint mono">{{ t('violin.bowHint') }}</p>
 
-    <!-- TODO(visual-asset): replace this CSS-only fingerboard with a
-         layered SVG / canvas of a real violin neck in Phase 11 — the
-         per-cell data attributes the gesture reads stay the same. -->
-    <div
+    <!-- TODO(visual-asset): the InstrumentSurface placeholder below is
+         CSS-only today. Swap it for a real layered violin SVG / canvas
+         when the asset pack lands — the cell data attributes stay
+         stable so the gesture handlers don't change. -->
+    <InstrumentSurface
+      variant="violin"
       class="fingerboard"
       @pointerdown="onDown"
       @pointermove="onMove"
@@ -275,7 +278,7 @@ onBeforeUnmount(() => {
           </button>
         </div>
       </div>
-    </div>
+    </InstrumentSurface>
   </div>
 </template>
 
@@ -345,13 +348,9 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 0.4rem;
   padding: 0.7rem;
-  background:
-    linear-gradient(180deg, rgba(120, 80, 40, 0.18) 0%, rgba(60, 30, 10, 0.32) 100%),
-    var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
   /* Gestures: every pointermove must reach our handler, not be eaten by
-     scroll or zoom. */
+     scroll or zoom. The visual chrome (background) lives inside
+     InstrumentSurface. */
   touch-action: none;
 }
 .string-row {
