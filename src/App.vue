@@ -19,6 +19,22 @@ const { initLocale } = useLocale()
 onMounted(() => {
   initTheme()
   initLocale()
+  // Register the audio-sample service worker. The SW caches every fetch
+  // to the third-party sample CDNs (jsDelivr, gleitz/midi-js-soundfonts,
+  // tonejs.github.io, etc.) on first load, so subsequent reloads serve
+  // instruments instantly from disk instead of re-downloading. Without
+  // this the browser HTTP cache holds the bytes but Tone.Sampler /
+  // smplr.Soundfont still go through their full validation and decode
+  // path each reload, which is what the user perceived as 'every
+  // refresh I have to load again sounds for each instrument.'
+  if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+    void navigator.serviceWorker.register('/sw.js').catch(() => {
+      // SW registration failures are best-effort — the app still works
+      // without caching, just with slower reloads. We don't surface
+      // this to the user because most failure modes (insecure origin
+      // during local dev, browser quota exceeded) are not user-fixable.
+    })
+  }
   // Defer the heavy composables off the entry chunk. useKeyBindings transitively
   // imports tone + smplr + supabase, and useAuth pulls supabase — keeping them
   // in the entry chunk pushes ~120 KB onto the LCP critical path of every page.

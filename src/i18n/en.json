@@ -531,7 +531,33 @@
       "rock": "Rock",
       "rnb": "R&B",
       "pop": "Pop",
-      "ambient": "Ambient"
+      "ambient": "Ambient",
+      "arabic": "Arabic",
+      "latin": "Latin",
+      "blues": "Blues",
+      "funk": "Funk",
+      "reggae": "Reggae",
+      "country": "Country",
+      "soul": "Soul",
+      "metal": "Metal",
+      "world": "World",
+      "classical": "Classical",
+      "cinematic": "Cinematic",
+      "famous": "Famous"
+    },
+    "moodLabel": "Mood",
+    "moodName": {
+      "all": "All",
+      "happy": "Happy",
+      "sad": "Sad",
+      "love": "Love",
+      "romantic": "Romantic",
+      "funny": "Funny",
+      "epic": "Epic",
+      "chill": "Chill",
+      "energetic": "Energetic",
+      "mysterious": "Mysterious",
+      "tense": "Tense"
     }
   },
   "fxlib": {

@@ -7,7 +7,9 @@
 // Bump on any change to the cached host set or sample sources — bumping
 // triggers the cleanup branch in `activate` to drop the old cache so
 // the user picks up the new content on next visit.
-const CACHE_VERSION = 'v2'
+// v3 — added Tone.js acoustic-kit drum samples (cdn.jsdelivr.net /gh/Tonejs/audio).
+// The host was already in CACHED_HOSTS so this version bump is just a cache flush.
+const CACHE_VERSION = 'v3'
 const CACHE_NAME = `klabmusic-audio-${CACHE_VERSION}`
 
 const CACHED_HOSTS = new Set([

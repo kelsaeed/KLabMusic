@@ -7,8 +7,10 @@ import {
   LOOP_LIBRARY,
   LOOP_GENRES,
   LOOP_CATEGORIES,
+  LOOP_MOODS,
   type LoopCategory,
   type LoopGenre,
+  type LoopMood,
   type LoopDef,
 } from '@/lib/loops'
 
@@ -27,17 +29,20 @@ const { show } = useToast()
 const search = ref('')
 const activeCategory = ref<LoopCategory | 'all'>('all')
 const activeGenre = ref<LoopGenre | 'all'>('all')
+const activeMood = ref<LoopMood | 'all'>('all')
 
 const filtered = computed<LoopDef[]>(() => {
   const q = search.value.trim().toLowerCase()
   return LOOP_LIBRARY.filter((loop) => {
     if (activeCategory.value !== 'all' && loop.category !== activeCategory.value) return false
     if (activeGenre.value !== 'all' && loop.genre !== activeGenre.value) return false
+    if (activeMood.value !== 'all' && loop.mood !== activeMood.value) return false
     if (!q) return true
     if (loop.name.toLowerCase().includes(q)) return true
     if (loop.key.toLowerCase().includes(q)) return true
     if (String(loop.bpm).includes(q)) return true
     if (loop.genre.includes(q)) return true
+    if (loop.mood && loop.mood.includes(q)) return true
     return false
   })
 })
@@ -73,6 +78,7 @@ const categoryHues: Record<LoopCategory, string> = {
   chords: 'hue-violet',
   melody: 'hue-cyan',
   fx: 'hue-amber',
+  full: 'hue-emerald',
 }
 </script>
 
@@ -133,6 +139,26 @@ const categoryHues: Record<LoopCategory, string> = {
             :class="{ on: activeGenre === g }"
             @click="activeGenre = g"
           >{{ t(`loops.genreName.${g}`) }}</button>
+        </div>
+      </div>
+
+      <div class="filter-group">
+        <span class="filter-label mono">{{ t('loops.moodLabel') }}</span>
+        <div class="chips">
+          <button
+            type="button"
+            class="chip mono"
+            :class="{ on: activeMood === 'all' }"
+            @click="activeMood = 'all'"
+          >{{ t('loops.moodName.all') }}</button>
+          <button
+            v-for="m in LOOP_MOODS"
+            :key="m"
+            type="button"
+            class="chip mono"
+            :class="{ on: activeMood === m }"
+            @click="activeMood = m"
+          >{{ t(`loops.moodName.${m}`) }}</button>
         </div>
       </div>
 

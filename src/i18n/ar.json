@@ -531,7 +531,33 @@
       "rock": "روك",
       "rnb": "R&B",
       "pop": "بوب",
-      "ambient": "محيط"
+      "ambient": "محيط",
+      "arabic": "عربي",
+      "latin": "لاتيني",
+      "blues": "بلوز",
+      "funk": "فانك",
+      "reggae": "ريغي",
+      "country": "كانتري",
+      "soul": "سول",
+      "metal": "ميتال",
+      "world": "عالمي",
+      "classical": "كلاسيكي",
+      "cinematic": "سينمائي",
+      "famous": "مشهور"
+    },
+    "moodLabel": "المزاج",
+    "moodName": {
+      "all": "الكل",
+      "happy": "سعيد",
+      "sad": "حزين",
+      "love": "حب",
+      "romantic": "رومانسي",
+      "funny": "مرح",
+      "epic": "ملحمي",
+      "chill": "هادئ",
+      "energetic": "نشيط",
+      "mysterious": "غامض",
+      "tense": "متوتر"
     }
   },
   "fxlib": {
