@@ -11,6 +11,7 @@ import * as Tone from 'tone'
 import { ref, type Ref } from 'vue'
 import { useAudio } from '@/composables/useAudio'
 import { useLivePlay } from '@/composables/useLivePlay'
+import { useMultiplayer } from '@/composables/useMultiplayer'
 import type { InstrumentId } from '@/lib/types'
 
 export interface BowedStringSpec {
@@ -88,6 +89,14 @@ export interface UseBowedStringReturn {
 export function useBowedString(config: BowConfig): UseBowedStringReturn {
   const audio = useAudio()
   const live = useLivePlay()
+  // Multiplayer broadcast for the bow plays. Without this, a remote
+  // listener in the same room hears nothing when their roommate bows
+  // a violin / cello — bow plays go through audio.playOn directly,
+  // bypassing the useLivePlay.press path that wires broadcasting for
+  // the piano. Each bow-segment attack fires a note:play event with
+  // the cents shift so maqam fingerings replay accurately on the
+  // receiving end.
+  const { broadcastNote, broadcastNoteStop } = useMultiplayer()
   const state = ref<BowState>({
     stringIndex: -1,
     quarterSteps: 0,
@@ -141,6 +150,7 @@ export function useBowedString(config: BowConfig): UseBowedStringReturn {
     audio.setBend(config.instrumentId, cents)
     const shaped = shapeVelocity(velocity, direction)
     void audio.playOn(config.instrumentId, note, shaped, true)
+    broadcastNote(config.instrumentId, note, shaped, cents)
     segmentStartedAt = performance.now()
     segmentNote = note
     segmentVelocity = shaped
@@ -190,14 +200,18 @@ export function useBowedString(config: BowConfig): UseBowedStringReturn {
     // Anything else — different string, different finger, or a direction
     // flip — re-articulates the note. Release the prior pitch first so
     // the polyphonic synth doesn't accumulate stale voices.
-    audio.stopOn(config.instrumentId, midiToNote(state.value.noteMidi))
+    const prevNote = midiToNote(state.value.noteMidi)
+    audio.stopOn(config.instrumentId, prevNote)
+    broadcastNoteStop(config.instrumentId, prevNote)
     flushSegment()
     bowAttack(stringIndex, quarterSteps, velocity, direction)
   }
 
   function bowRelease() {
     if (state.value.stringIndex === -1) return
-    audio.stopOn(config.instrumentId, midiToNote(state.value.noteMidi))
+    const prevNote = midiToNote(state.value.noteMidi)
+    audio.stopOn(config.instrumentId, prevNote)
+    broadcastNoteStop(config.instrumentId, prevNote)
     flushSegment()
     // Reset detune so a future plain-tone attack on this instrument from
     // some other UI doesn't inherit a 50 cent shift.
@@ -218,6 +232,7 @@ export function useBowedString(config: BowConfig): UseBowedStringReturn {
     audio.setBend(config.instrumentId, cents)
     const v = Math.max(40, Math.min(127, velocity))
     void audio.playOnTimed(config.instrumentId, note, 0.4, v)
+    broadcastNote(config.instrumentId, note, v, cents)
     live.recordLivePlay(config.instrumentId, note, v, 0.4, cents)
   }
 

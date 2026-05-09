@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAudio } from '@/composables/useAudio'
 import { useLivePlay } from '@/composables/useLivePlay'
+import { useMultiplayer } from '@/composables/useMultiplayer'
 import { useAudioStore } from '@/stores/audio'
 import { MAQAM_PRESETS, noteToArabicLabel } from '@/lib/microtonal'
 import { maqamHighlightMap } from '@/composables/useBowedString'
@@ -22,6 +23,7 @@ const { t } = useI18n()
 const audioStore = useAudioStore()
 const { dampInstrument, playOnTimed, setBend } = useAudio()
 const { recordLivePlay } = useLivePlay()
+const { broadcastNote } = useMultiplayer()
 
 interface OudCourse {
   /** Display name for the course. */
@@ -121,6 +123,7 @@ function pluckCell(cell: Cell, velocity: number) {
   // delay line, so the order matters.
   setBend('oud', cell.cents)
   void playOnTimed('oud', cell.noteName, 1.4, velocity)
+  broadcastNote('oud', cell.noteName, velocity, cell.cents)
   recordLivePlay('oud', cell.noteName, velocity, 1.4, cell.cents)
   flash(`${cell.courseIndex}:${cell.step}`)
 }

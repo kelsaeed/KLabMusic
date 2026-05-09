@@ -113,7 +113,7 @@ export function useMultiplayer() {
   const beatStore = useBeatMakerStore()
   const arrangeStore = useArrangeStore()
   const recorderStore = useRecorderStore()
-  const { playOn, stopOn } = useAudio()
+  const { playOn, stopOn, setBend } = useAudio()
   const { show, update } = useToast()
 
   // — Shared-state snapshot / apply helpers —
@@ -278,9 +278,23 @@ export function useMultiplayer() {
         }
       })
       .on('broadcast', { event: 'note:play' }, ({ payload }) => {
-        const p = payload as { instrument: InstrumentId; note: string; velocity: number; player: string }
+        const p = payload as {
+          instrument: InstrumentId
+          note: string
+          velocity: number
+          player: string
+          // Optional microtonal pitch shift in cents — only the maqam-
+          // capable pads (violin / cello / oud bow + pluck) populate
+          // it. Older clients won't send this field, in which case it
+          // reads as undefined and we treat it as 0.
+          cents?: number
+        }
         if (p.player === store.localId) return
         isReceiving.value = true
+        // Apply the bend BEFORE the attack — Tone.Sampler-based voices
+        // bake detune into the next sample, so a wrong order produces
+        // a 50-cent slide on every quarter-tone note received.
+        if (p.cents) setBend(p.instrument, p.cents)
         void playOn(p.instrument, p.note, p.velocity)
         isReceiving.value = false
       })
@@ -549,9 +563,14 @@ export function useMultiplayer() {
     void channel.send({ type: 'broadcast', event, payload })
   }
 
-  function broadcastNote(instrument: InstrumentId, note: string, velocity: number) {
+  function broadcastNote(instrument: InstrumentId, note: string, velocity: number, cents = 0) {
     if (!store.isConnected || isReceiving.value) return
-    broadcast('note:play', { instrument, note, velocity, player: store.localId })
+    const payload: Record<string, unknown> = { instrument, note, velocity, player: store.localId }
+    // Only send cents when actually shifted — keeps non-microtonal
+    // payloads compact and lets the receiver branch off `payload.cents`
+    // truthiness without comparing to 0.
+    if (cents !== 0) payload.cents = cents
+    broadcast('note:play', payload)
   }
   function broadcastNoteStop(instrument: InstrumentId, note: string) {
     if (!store.isConnected || isReceiving.value) return
