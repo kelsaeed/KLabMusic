@@ -269,7 +269,16 @@ interface InstrumentNode {
   channelVolume: Tone.Volume
 }
 
-const PIANO_BASE = 'https://tonejs.github.io/audio/salamander/'
+// jsDelivr-mirrored Salamander piano samples. The original
+// `tonejs.github.io/audio/salamander/` host is slow / blocked in
+// several regions (Egypt mobile is the one that surfaced this in
+// real-device QA: 'do is not do, re is not re'). The user wasn't
+// hearing the wrong notes — they were hearing the synth fallback
+// (triangle wave + envelope) because the Salamander mp3s never
+// arrived past the 12s engine timeout. jsDelivr serves the SAME
+// files (Tonejs/audio repo) from a worldwide edge network so the
+// real piano samples actually load.
+const PIANO_BASE = 'https://cdn.jsdelivr.net/gh/Tonejs/audio@master/salamander/'
 
 const PIANO_URLS: Record<string, string> = {
   A0: 'A0.mp3', C1: 'C1.mp3', 'D#1': 'Ds1.mp3', 'F#1': 'Fs1.mp3',
@@ -830,9 +839,13 @@ function buildGuitar(): VoiceAdapter {
   // Cap each pluck at this many seconds. The nylon SF2 samples have ~4 s of
   // natural decay/room ambience baked in, which listeners frequently misread
   // as global reverb they can't switch off (because it isn't reverb — it's
-  // the recorded sample tail). A bounded duration keeps single plucks
-  // musical but stops them from haunting the mix after every click.
-  const PLUCK_DURATION = 1.6
+  // the recorded sample tail). Real-device feedback flagged the previous
+  // 1.6 s cap as 'default high reverb, can't play melody' — even with the
+  // GuitarPad now releasing the previous note before plucking a new one,
+  // 1.6 s of natural decay between plucks blurred melodies. 0.8 s lands
+  // long enough for a strummed chord to ring musically and short enough
+  // that successive melodic notes read as discrete attacks.
+  const PLUCK_DURATION = 0.8
 
   // smplr's start() is loosely typed in older releases — `detune` lands
   // alongside note/velocity/duration but the bundled .d.ts may not list
@@ -1558,6 +1571,13 @@ function buildTrumpet(): VoiceAdapter {
   // Real trumpet samples from nbrosowsky/tonejs-instruments. Recorded
   // brass — no synth buzz, no filter envelope — what a B♭ trumpet
   // actually sounds like.
+  // gainScale 1.2 → 0.95 because real-device QA on mobile reported
+  // trumpet specifically wshhh-ing where the other sampled
+  // instruments were fine. Brass has a lot of high-frequency
+  // overtones, and the +1.6 dB pre-master pre-trim was pushing the
+  // limiter into audible pumping that read as harsh / electrical
+  // 'wshhh' through phone speakers. Sub-unity gain leaves headroom
+  // and lets the natural brass timbre come through cleanly.
   // TODO(samples): manifest will want stopped / muted / open valve
   // takes for variation.
   return buildSamplerVoice({
@@ -1565,32 +1585,26 @@ function buildTrumpet(): VoiceAdapter {
     urls: TRUMPET_URLS,
     attack: 0.04,
     release: 0.4,
-    gainScale: 1.2,
+    gainScale: 0.95,
   })
 }
 
 function buildTrumpetSynthFallback(): VoiceAdapter {
-  // Brass synth fallback — bright sawtooth + filter envelope that
-  // opens fast (the brass "blare") plus a touch of distortion for the
-  // lip-buzz character.
-  const synth = new Tone.PolySynth(Tone.MonoSynth, {
+  // Mobile-friendly brass synth fallback. The previous version layered
+  // PolySynth(MonoSynth) — which gives every voice its own filter
+  // envelope, expensive on phone CPUs — through a Tone.Distortion
+  // wave-shaper. Real-device QA flagged trumpet specifically as still
+  // wshhh-prone after the other instruments were fine; the per-frame
+  // distortion + 8 MonoSynth voices was tipping the audio worker over
+  // budget. This version uses a plain PolySynth(Synth) sawtooth and
+  // skips the distortion entirely. The brass character lands through
+  // the sawtooth's natural odd-harmonic content rather than through
+  // wave-shaping, and CPU drops dramatically.
+  const synth = new Tone.PolySynth(Tone.Synth, {
     oscillator: { type: 'sawtooth' },
-    filter: { Q: 1.5, type: 'lowpass', rolloff: -12 },
-    envelope: { attack: 0.06, decay: 0.08, sustain: 0.85, release: 0.25 },
-    filterEnvelope: {
-      attack: 0.04,
-      decay: 0.15,
-      sustain: 0.7,
-      release: 0.25,
-      baseFrequency: 800,
-      octaves: 2.5,
-    },
-    volume: -10,
+    envelope: { attack: 0.04, decay: 0.08, sustain: 0.85, release: 0.2 },
+    volume: -12,
   })
-  const drive = new Tone.Distortion({ distortion: 0.15, wet: 0.35 })
-  synth.connect(drive)
-  // minVel 0.05 — same reason as the violin fallback: keeps the brass
-  // filter envelope from closing all the way at low velocities.
   const c = withCentsTracking(
     {
       triggerAttack: (note, time, velocity) => synth.triggerAttack(note, time, velocity),
@@ -1603,10 +1617,10 @@ function buildTrumpetSynthFallback(): VoiceAdapter {
   )
   return {
     ...c,
-    output: drive,
+    output: synth,
     setVolumeDb: (db) => { synth.volume.value = db },
     setBendCents: (cents) => synth.set({ detune: cents }),
-    dispose: () => { synth.dispose(); drive.dispose() },
+    dispose: () => synth.dispose(),
   }
 }
 

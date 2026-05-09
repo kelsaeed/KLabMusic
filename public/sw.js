@@ -7,12 +7,11 @@
 // Bump on any change to the cached host set or sample sources — bumping
 // triggers the cleanup branch in `activate` to drop the old cache so
 // the user picks up the new content on next visit.
-// v4 — bumped after the buildSamplerVoice IDB-cache regression on
-// real-device mobile (commit 5944b80, reverted in this version's
-// shipping commit). Older clients that loaded the broken build may
-// have a stale SW intercepting fetches incorrectly; bumping forces
-// every active client to register the fixed worker on next visit.
-const CACHE_VERSION = 'v4'
+// v5 — Salamander piano moved from tonejs.github.io to jsDelivr.
+// Old clients have v4 caches keyed against the github.io URL; the
+// version bump flushes those so the new jsDelivr URLs fetch fresh
+// rather than racing both hosts.
+const CACHE_VERSION = 'v5'
 const CACHE_NAME = `klabmusic-audio-${CACHE_VERSION}`
 
 const CACHED_HOSTS = new Set([

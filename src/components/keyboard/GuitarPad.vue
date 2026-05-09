@@ -8,7 +8,7 @@ import { formatNote, formatChord } from '@/lib/notation'
 
 type Mode = 'fretboard' | 'strings' | 'chords'
 
-const { playOn, dampInstrument } = useAudio()
+const { playOn, stopOn, dampInstrument } = useAudio()
 const audioStore = useAudioStore()
 const { t } = useI18n()
 
@@ -78,6 +78,14 @@ const DOUBLE_MARKER = 12
 
 const STRUM_GAP_MS = 28
 const flashed = ref<string>('')
+// Last melodic-pluck note so a new single pluck releases its
+// predecessor — without this every melodic note rings out for the
+// full natural sample tail (~0.7-1.6 s) and a fast melodic line
+// piles into mud, which the user described as 'default high reverb,
+// can't play melody on guitar.' Strum mode (chord plucks fired
+// together inside `strum`) deliberately bypasses this so chords
+// still ring as a unit.
+const lastMelodyNote = ref<string>('')
 
 function flash(note: string, ms = 200) {
   flashed.value = note
@@ -87,11 +95,21 @@ function flash(note: string, ms = 200) {
 }
 
 function pluck(note: string, vel = 105) {
+  // Release the previous melodic note before playing the new one
+  // so successive plucks don't overlap into the next note's attack.
+  if (lastMelodyNote.value && lastMelodyNote.value !== note) {
+    stopOn('guitar', lastMelodyNote.value)
+  }
+  lastMelodyNote.value = note
   void playOn('guitar', note, vel)
   flash(note)
 }
 
 function strum(notes: string[], reverse = false) {
+  // Strum mode: every chord tone rings together by design. Reset
+  // the melodic-tracking pointer so the next single pluck doesn't
+  // spuriously release a chord tone the strum is still holding.
+  lastMelodyNote.value = ''
   const seq = reverse ? [...notes].reverse() : notes
   flashed.value = seq[0]
   seq.forEach((note, i) => {
