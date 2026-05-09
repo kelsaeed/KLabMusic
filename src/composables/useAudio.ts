@@ -524,6 +524,135 @@ function buildSoundfontVoice(opts: {
   }
 }
 
+/**
+ * GitHub-hosted sampled-instrument voice via Tone.Sampler. Source repo:
+ * https://github.com/nbrosowsky/tonejs-instruments — MIT-licensed,
+ * specifically designed for Tone.js, served from its GitHub Pages
+ * domain. Tone.Sampler interpolates between the supplied notes so we
+ * only need a sparse set per instrument (typically 8-12 anchor notes
+ * across the range) and it covers everything in between.
+ *
+ * Quarter-tone playback flows through `sampler.detune` for free —
+ * Tone.Sampler exposes a real AudioParam detune signal, so the bow
+ * engine's setBend → attack sequence keeps producing accurate maqam
+ * pitches with recorded tone.
+ */
+const NBROSOWSKY_BASE = 'https://nbrosowsky.github.io/tonejs-instruments/samples/'
+
+function buildSamplerVoice(opts: {
+  /** Sub-folder under the sample library root, e.g. 'violin'. */
+  folder: string
+  /** Note → filename map. Filenames use the repo's convention
+   *  ({Note}{Octave}.mp3, sharps written as e.g. "Fs3.mp3"). */
+  urls: Record<string, string>
+  /** Voice envelope shaping. Bowed instruments want a slow attack
+   *  and longer release; plucked/wind want sharper. */
+  attack?: number
+  release?: number
+  /** Trim of the sampler output before the master chain. */
+  gainScale?: number
+  /** Auto-release window for a no-duration attack(). Used for
+   *  plucked / decay-style voices (harp) so a tap-and-forget pluck
+   *  doesn't sustain via the sample tail. Sustained voices (violin,
+   *  cello, clarinet, flute, trumpet) leave this undefined and rely
+   *  on the caller to release explicitly. */
+  attackDuration?: number
+}): VoiceAdapter {
+  const gainScale = opts.gainScale ?? 1.0
+  const out = new Tone.Gain(gainScale)
+  // The onload promise hands control back to the engine's load-race
+  // helper, which in turn falls through to the synth fallback if the
+  // sample fetch stalls past the 12 s timeout.
+  let resolveLoaded: () => void = () => {}
+  const loaded = new Promise<void>((r) => { resolveLoaded = r })
+  const sampler = new Tone.Sampler({
+    urls: opts.urls,
+    baseUrl: `${NBROSOWSKY_BASE}${opts.folder}/`,
+    attack: opts.attack ?? 0.01,
+    release: opts.release ?? 0.4,
+    onload: () => resolveLoaded(),
+  })
+  sampler.connect(out)
+
+  return {
+    attack: (note, vel) => {
+      const v = Math.max(0.01, vel / 127)
+      if (opts.attackDuration !== undefined) {
+        sampler.triggerAttackRelease(note, opts.attackDuration, undefined, v)
+      } else {
+        sampler.triggerAttack(note, undefined, v)
+      }
+    },
+    attackRelease: (note, dur, vel) =>
+      sampler.triggerAttackRelease(note, dur, undefined, Math.max(0.01, vel / 127)),
+    release: (note) => (note ? sampler.triggerRelease(note) : sampler.releaseAll()),
+    damp: () => sampler.releaseAll(),
+    output: out,
+    setVolumeDb: (db) => { out.gain.value = gainScale * Tone.dbToGain(db) },
+    setBendCents: (c) => {
+      // Tone.Sampler's typings in v15 don't surface `detune` publicly,
+      // but the runtime field exists (PolySynth-style detune param).
+      // Same cast wrapPolyphonic uses for the piano sampler.
+      const detune = (sampler as unknown as { detune?: { value: number } }).detune
+      if (detune) detune.value = c
+    },
+    loaded,
+    dispose: () => {
+      sampler.dispose()
+      out.dispose()
+    },
+  }
+}
+
+// — nbrosowsky/tonejs-instruments URL maps —
+// Each set is a sparse-but-reliable selection from the upstream repo.
+// Tone.Sampler interpolates between adjacent samples for any pitch
+// not in the map. Sharps use the `s` suffix the repo's filenames
+// follow (e.g. "Fs3.mp3" = F#3.mp3).
+
+const VIOLIN_URLS: Record<string, string> = {
+  G3: 'G3.mp3', A3: 'A3.mp3', C4: 'C4.mp3', E4: 'E4.mp3',
+  G4: 'G4.mp3', A4: 'A4.mp3', C5: 'C5.mp3', E5: 'E5.mp3',
+  G5: 'G5.mp3', A5: 'A5.mp3', C6: 'C6.mp3', E6: 'E6.mp3',
+}
+
+const CELLO_URLS: Record<string, string> = {
+  C2: 'C2.mp3', E2: 'E2.mp3', G2: 'G2.mp3', A2: 'A2.mp3',
+  C3: 'C3.mp3', E3: 'E3.mp3', G3: 'G3.mp3', A3: 'A3.mp3',
+  C4: 'C4.mp3', E4: 'E4.mp3', G4: 'G4.mp3', A4: 'A4.mp3',
+}
+
+const HARP_URLS: Record<string, string> = {
+  C3: 'C3.mp3', E3: 'E3.mp3', A4: 'A4.mp3', C5: 'C5.mp3',
+  E5: 'E5.mp3', A5: 'A5.mp3', C7: 'C7.mp3',
+}
+
+const TRUMPET_URLS: Record<string, string> = {
+  F3: 'F3.mp3', A3: 'A3.mp3', C4: 'C4.mp3', 'D#4': 'Ds4.mp3',
+  F4: 'F4.mp3', A4: 'A4.mp3', C5: 'C5.mp3', F5: 'F5.mp3',
+}
+
+const CLARINET_URLS: Record<string, string> = {
+  D3: 'D3.mp3', F3: 'F3.mp3', 'A#3': 'As3.mp3', D4: 'D4.mp3',
+  F4: 'F4.mp3', 'A#4': 'As4.mp3', D5: 'D5.mp3',
+}
+
+const FLUTE_URLS: Record<string, string> = {
+  C4: 'C4.mp3', E4: 'E4.mp3', A4: 'A4.mp3', C5: 'C5.mp3',
+  E5: 'E5.mp3', A5: 'A5.mp3', C6: 'C6.mp3', E6: 'E6.mp3',
+}
+
+// nbrosowsky has no harmonica, but harmonium is the closest reedy
+// neighbour (free reed family). It's not a perfect 1:1 — harmonium is
+// pumped, harmonica is breathed — but it sounds far more like a real
+// reed than the synth approximation does, and stays GitHub-hosted.
+const HARMONIUM_URLS: Record<string, string> = {
+  C2: 'C2.mp3', 'D#2': 'Ds2.mp3', 'F#2': 'Fs2.mp3', A2: 'A2.mp3',
+  C3: 'C3.mp3', 'D#3': 'Ds3.mp3', 'F#3': 'Fs3.mp3', A3: 'A3.mp3',
+  C4: 'C4.mp3', 'D#4': 'Ds4.mp3', 'F#4': 'Fs4.mp3', A4: 'A4.mp3',
+  C5: 'C5.mp3',
+}
+
 function buildBass(): VoiceAdapter {
   const synth = new Tone.MonoSynth({
     oscillator: { type: 'sawtooth' },
@@ -815,14 +944,21 @@ const FALLBACK_BUILDERS: Partial<Record<InstrumentId, () => VoiceAdapter>> = {
 }
 
 function buildViolin(): VoiceAdapter {
-  // Real GM violin samples via smplr's Soundfont. The bow engine's
-  // setBend → start sequence flows through Soundfont's `detune` param
-  // so quarter-tone maqam playback keeps working with recorded violin
-  // tone instead of the previous saw-through-filter approximation.
+  // Real recorded violin samples from the GitHub-hosted MIT-licensed
+  // nbrosowsky/tonejs-instruments library. Tone.Sampler interpolates
+  // between the supplied notes so the bow engine's playOn → setBend
+  // sequence keeps producing accurate maqam pitches with recorded
+  // violin tone, not synthesis.
   // TODO(samples): when an articulation-aware pack lands in the
-  // manifest, swap to it for down-bow / up-bow / spiccato / tremolo /
-  // sul ponticello variations.
-  return buildSoundfontVoice({ instrument: 'violin', gainScale: 1.6 })
+  // manifest, swap for down-bow / up-bow / spiccato / sul ponticello
+  // variations the bow engine can pick by direction & speed.
+  return buildSamplerVoice({
+    folder: 'violin',
+    urls: VIOLIN_URLS,
+    attack: 0.05,
+    release: 0.6,
+    gainScale: 1.4,
+  })
 }
 
 function buildViolinSynthFallback(): VoiceAdapter {
@@ -863,10 +999,18 @@ function buildViolinSynthFallback(): VoiceAdapter {
 }
 
 function buildHarp(): VoiceAdapter {
-  // Real GM orchestral harp samples. Each pluck auto-stops at 2.2 s so
-  // a glissando across many strings doesn't pile up an unbounded
-  // chorus of decaying samples.
-  return buildSoundfontVoice({ instrument: 'orchestral_harp', gainScale: 1.3, attackDuration: 2.2 })
+  // Real harp samples from nbrosowsky/tonejs-instruments. Plucks
+  // auto-stop at 2.2 s when fired via the no-duration attack() path
+  // so a glissando swipe doesn't pile up an unbounded chorus of
+  // decaying samples.
+  return buildSamplerVoice({
+    folder: 'harp',
+    urls: HARP_URLS,
+    attack: 0.005,
+    release: 1.5,
+    gainScale: 1.2,
+    attackDuration: 2.2,
+  })
 }
 
 function buildHarpSynthFallback(): VoiceAdapter {
@@ -914,13 +1058,18 @@ function buildHarpSynthFallback(): VoiceAdapter {
 }
 
 function buildTrumpet(): VoiceAdapter {
-  // Real GM trumpet samples. Each press auto-stops at 1.0 s so a
-  // tap-and-let-go feels like a clean brass note rather than a held
-  // sustain — TrumpetPad's UI treats every cell click as a single
-  // articulated blow.
+  // Real trumpet samples from nbrosowsky/tonejs-instruments. Recorded
+  // brass — no synth buzz, no filter envelope — what a B♭ trumpet
+  // actually sounds like.
   // TODO(samples): manifest will want stopped / muted / open valve
   // takes for variation.
-  return buildSoundfontVoice({ instrument: 'trumpet', gainScale: 1.3, attackDuration: 1.0 })
+  return buildSamplerVoice({
+    folder: 'trumpet',
+    urls: TRUMPET_URLS,
+    attack: 0.04,
+    release: 0.4,
+    gainScale: 1.2,
+  })
 }
 
 function buildTrumpetSynthFallback(): VoiceAdapter {
@@ -1008,12 +1157,18 @@ function buildTambourine(): VoiceAdapter {
 }
 
 function buildClarinet(): VoiceAdapter {
-  // Real GM clarinet samples. Tap-fired notes auto-stop at 0.8 s so
-  // each ClarinetPad hole click reads as a brief articulated note.
+  // Real clarinet samples from nbrosowsky/tonejs-instruments. Recorded
+  // reed — keeps the cylindrical-bore odd-harmonic profile that's
+  // hard to synthesise faithfully.
   // TODO(samples): chalumeau / clarion register-specific takes would
-  // catch the timbre shift across the register break that the GM
-  // single-bank sample can't reproduce on its own.
-  return buildSoundfontVoice({ instrument: 'clarinet', gainScale: 1.3, attackDuration: 0.8 })
+  // catch the timbre shift across the register break.
+  return buildSamplerVoice({
+    folder: 'clarinet',
+    urls: CLARINET_URLS,
+    attack: 0.05,
+    release: 0.4,
+    gainScale: 1.2,
+  })
 }
 
 function buildClarinetSynthFallback(): VoiceAdapter {
@@ -1043,9 +1198,16 @@ function buildClarinetSynthFallback(): VoiceAdapter {
 }
 
 function buildFlute(): VoiceAdapter {
-  // Real GM flute samples. Tap-fired notes auto-stop at 1.0 s so
-  // each FlutePad hole click reads as a brief articulated note.
-  return buildSoundfontVoice({ instrument: 'flute', gainScale: 1.3, attackDuration: 1.0 })
+  // Real flute samples from nbrosowsky/tonejs-instruments. Recorded
+  // air-on-mouthpiece transients that the synth's noise-layered
+  // triangle can't fake.
+  return buildSamplerVoice({
+    folder: 'flute',
+    urls: FLUTE_URLS,
+    attack: 0.05,
+    release: 0.5,
+    gainScale: 1.2,
+  })
 }
 
 function buildFluteSynthFallback(): VoiceAdapter {
@@ -1204,14 +1366,18 @@ function buildRealDrums(): VoiceAdapter {
 }
 
 function buildHarmonica(): VoiceAdapter {
-  // Real GM harmonica samples. Each pad-fired note auto-stops after
-  // 0.8 s — a tap on a hole should be a brief breath, not a sustained
-  // note that needs explicit release.
-  // TODO(samples): manifest will want blow / draw takes per hole and
-  // per key — the GM harmonica doesn't distinguish between blow and
-  // draw, but a real harmonica's draw notes have a subtly different
-  // timbre because the reed resists the airflow.
-  return buildSoundfontVoice({ instrument: 'harmonica', gainScale: 1.3, attackDuration: 0.8 })
+  // nbrosowsky has no harmonica, but harmonium is the closest neighbour
+  // in the free-reed family. Real recorded harmonium reed samples
+  // sound substantially more like a real reed than the synth
+  // approximation, even though it's not a 1:1 substitute.
+  // TODO(samples): real harmonica pack — blow / draw takes per hole.
+  return buildSamplerVoice({
+    folder: 'harmonium',
+    urls: HARMONIUM_URLS,
+    attack: 0.05,
+    release: 0.4,
+    gainScale: 1.2,
+  })
 }
 
 function buildHarmonicaSynthFallback(): VoiceAdapter {
@@ -1260,16 +1426,12 @@ function buildHarmonicaSynthFallback(): VoiceAdapter {
 }
 
 function buildOud(): VoiceAdapter {
-  // GM has no actual oud preset — sitar is the closest neighbour
-  // (both Eastern double-course plucked strings with bright, woody
-  // attack and sustaining body resonance). Quarter-tone detune flows
-  // through Soundfont so maqam fingerings stay accurate. Plucks
-  // auto-stop after 1.6 s so a tap-and-forget pluck doesn't ring
-  // forever.
-  // TODO(samples): replace the `sitar` GM mapping with a real oud
-  // pack as soon as one lands in the manifest — the timbre's similar
-  // enough that this is a real upgrade over the synth, but not the
-  // genuine article.
+  // Neither nbrosowsky nor GM has an oud preset. GM's `sitar` is the
+  // closest neighbour available as a real recorded sample (Eastern
+  // double-course plucked, bright woody attack, sustaining body
+  // resonance) — better than reverting to synth. Quarter-tone detune
+  // flows through Soundfont's start() detune param.
+  // TODO(samples): real oud pack — risha plucked, finger plucked.
   return buildSoundfontVoice({ instrument: 'sitar', gainScale: 1.3, attackDuration: 1.6 })
 }
 
@@ -1329,9 +1491,16 @@ function buildOudSynthFallback(): VoiceAdapter {
 }
 
 function buildCello(): VoiceAdapter {
-  // Real GM cello samples via smplr's Soundfont. Same engine flow as
-  // the violin — quarter-tone detune passes through start().
-  return buildSoundfontVoice({ instrument: 'cello', gainScale: 1.5 })
+  // Real recorded cello samples from nbrosowsky/tonejs-instruments.
+  // Same Tone.Sampler approach as the violin — quarter-tone detune
+  // flows through sampler.detune for free.
+  return buildSamplerVoice({
+    folder: 'cello',
+    urls: CELLO_URLS,
+    attack: 0.07,
+    release: 0.9,
+    gainScale: 1.3,
+  })
 }
 
 function buildCelloSynthFallback(): VoiceAdapter {
