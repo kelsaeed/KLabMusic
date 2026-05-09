@@ -363,6 +363,7 @@
     "stepLength": "الخطوة",
     "generate": "توليد",
     "playMelody": "تشغيل",
+    "stopMelody": "إيقاف",
     "scaleName": {
       "major": "ماجور",
       "minor": "مينور",

@@ -5,14 +5,18 @@ import { useAudioStore } from '@/stores/audio'
 import { useMultiplayerStore } from '@/stores/multiplayer'
 
 // Real-device QA aid. Hidden by default; opt in via the `?debug=1` URL
-// param OR by tapping the screen 4× in <600 ms (so a tester on a phone
-// can summon it without typing). Polls the engine's diagnostic snapshot
-// at 4 Hz — frequent enough to see a stuck note linger, slow enough not
-// to perceptibly compete with the audio worklet for cycles.
+// param. The earlier 4-tap-anywhere summon was triggering accidentally
+// on mobile during normal swipe / strum play (any pad gesture that
+// bounced the finger four times in 600ms popped the panel up unbidden),
+// so the gesture trigger has been removed — testers append ?debug=1 to
+// the URL to opt in. The dismiss button stays so an accidental load
+// with the param can still be hidden.
 //
-// Reads ONLY observed state. Mutating from here is intentionally not
-// supported; if you need to clear a stuck note, use the panic button
-// the audio engine already exposes.
+// Polls the engine's diagnostic snapshot at 4 Hz — frequent enough to
+// see a stuck note linger, slow enough not to perceptibly compete with
+// the audio worklet for cycles. Reads ONLY observed state; mutation
+// goes through the panic button which uses the audio engine's existing
+// panic() entry-point.
 
 const { getEngineDiagnostics, panic } = useAudio()
 const audioStore = useAudioStore()
@@ -27,18 +31,6 @@ const isDebugQuery = () =>
   typeof window !== 'undefined' &&
   new URLSearchParams(window.location.search).has('debug')
 
-// Tap-to-summon — 4 taps in 600 ms anywhere on the page.
-const tapTimes: number[] = []
-function onWindowPointer() {
-  const now = performance.now()
-  tapTimes.push(now)
-  while (tapTimes.length > 0 && now - tapTimes[0] > 600) tapTimes.shift()
-  if (tapTimes.length >= 4) {
-    visible.value = !visible.value
-    tapTimes.length = 0
-  }
-}
-
 function tick() {
   if (!visible.value) return
   diag.value = getEngineDiagnostics()
@@ -47,12 +39,10 @@ function tick() {
 onMounted(() => {
   if (isDebugQuery()) visible.value = true
   pollTimer = setInterval(tick, 250)
-  window.addEventListener('pointerdown', onWindowPointer, { passive: true })
 })
 
 onBeforeUnmount(() => {
   if (pollTimer) clearInterval(pollTimer)
-  window.removeEventListener('pointerdown', onWindowPointer)
 })
 
 // Per-instrument load state straight off the audio store. Filter to

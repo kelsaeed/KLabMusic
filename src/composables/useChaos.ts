@@ -263,6 +263,13 @@ const KEYS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] a
 
 const chaosAmount = ref(0)
 const arpRunning = ref(false)
+const melodyPlaying = ref(false)
+// Tone.getDraw().schedule returns a numeric event id. We hold every
+// draw event a melody schedules so stopMelody can cancel them all.
+// Without this, "Play melody" fires N callbacks the user can't cancel
+// — exactly the no-stop-button bug real-device QA flagged.
+let melodyDrawIds: number[] = []
+let melodyEndTimer: ReturnType<typeof setTimeout> | null = null
 const lastMelody = ref<string[]>([])
 // Parallel array — cents-shift to apply to each note in lastMelody when
 // playMelody fires it through playOnTimed. Non-zero only when the melody was
@@ -580,35 +587,74 @@ export function useChaos() {
 
   async function playMelody(notes: string[], stepSec = 0.25) {
     await ensureToneStarted()
+    // Stop any in-flight melody first so a fresh play doesn't
+    // overlap with leftover scheduled steps from the previous call.
+    stopMelody()
     const noteDur = Math.min(0.5, stepSec * 0.85)
     // Snapshot the cents array at schedule time. lastMelodyCents is
     // module-scoped state and could be overwritten by a fresh generate
     // call mid-playback otherwise.
     const cents = lastMelodyCents.value.slice()
+    melodyPlaying.value = true
     notes.forEach((note, i) => {
       const t = Tone.now() + i * stepSec
-      void Tone.getDraw().schedule(() => {
+      const id = Tone.getDraw().schedule(() => {
         // Clamp the generated note into the active instrument's playable
         // range so a "majestic" mood targeting C5 doesn't hand a violin
         // pad a B6 it can't reach in first position. Falls through
         // unchanged for instruments without a declared range (the
         // glitch / fx voices and the percussion pads).
-        const id = audioStore.activeInstrument
-        const finalNote = clampNoteToRange(id, note)
+        const ai = audioStore.activeInstrument
+        const finalNote = clampNoteToRange(ai, note)
         // Pass the per-note maqam shift directly to playOnTimed so the
         // voice bakes it into the per-voice frequency. Two consecutive
         // chaos notes at different cents now hold their own pitch
         // instead of clobbering each other through a shared detune
         // param (the half-flat sika of Rast, the bayati second, etc.).
         const shift = cents[i] ?? 0
-        void playOnTimed(id, finalNote, noteDur, 100, shift)
+        void playOnTimed(ai, finalNote, noteDur, 100, shift)
         // Broadcast each generated step too so peers in the room hear
         // the same maqam-aware line — note:play already carries cents
         // through the wire, so a Bayati melody plays in tune across the
         // room instead of being snapped back to 12-TET on the receiver.
-        broadcastNote(id, finalNote, 100, shift)
+        broadcastNote(ai, finalNote, 100, shift)
       }, t)
+      // Tone.Draw.schedule returns a number id we can pass to clear()
+      // — we collect all of them so stopMelody can cancel mid-stream.
+      melodyDrawIds.push(id as unknown as number)
     })
+    // Clear melodyPlaying once the last note's release has elapsed,
+    // so the UI button flips back from Stop to Play without the user
+    // having to click again. +0.2 s margin past the final note's end.
+    const total = notes.length * stepSec + noteDur + 0.2
+    melodyEndTimer = setTimeout(() => {
+      melodyPlaying.value = false
+      melodyDrawIds = []
+      melodyEndTimer = null
+    }, total * 1000)
+  }
+
+  /**
+   * Cancel any melody that's mid-flight — clears every scheduled draw
+   * event, damps the active instrument so currently-ringing notes
+   * stop cleanly, and resets the UI playing flag. Called automatically
+   * before a fresh playMelody so back-to-back plays don't overlap.
+   */
+  function stopMelody() {
+    for (const id of melodyDrawIds) {
+      try { Tone.getDraw().cancel(id as unknown as number) } catch { /* idem */ }
+    }
+    melodyDrawIds = []
+    if (melodyEndTimer) {
+      clearTimeout(melodyEndTimer)
+      melodyEndTimer = null
+    }
+    if (melodyPlaying.value) {
+      // Damp the active instrument so the last attacked note isn't
+      // left ringing past the cancel.
+      dampInstrument(audioStore.activeInstrument)
+    }
+    melodyPlaying.value = false
   }
 
   function clampNoteToRange(instrumentId: InstrumentId, note: string): string {
@@ -636,6 +682,7 @@ export function useChaos() {
     chaosAmount,
     arpRunning,
     lastMelody,
+    melodyPlaying,
     setChaosAmount,
     setChaosX,
     setChaosY,
@@ -644,6 +691,7 @@ export function useChaos() {
     stopArp,
     generateMelody,
     playMelody,
+    stopMelody,
     KEYS,
     SCALES,
     MOODS,

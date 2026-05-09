@@ -363,6 +363,7 @@
     "stepLength": "Step",
     "generate": "Generate",
     "playMelody": "Play",
+    "stopMelody": "Stop",
     "scaleName": {
       "major": "Major",
       "minor": "Minor",

@@ -9,7 +9,16 @@ import {
   MOODS,
 } from '@/composables/useChaos'
 
-const { generateMelody, playMelody, lastMelody, KEYS, MAQAM_IDS, MAQAM_PRESETS } = useChaos()
+const {
+  generateMelody,
+  playMelody,
+  stopMelody,
+  melodyPlaying,
+  lastMelody,
+  KEYS,
+  MAQAM_IDS,
+  MAQAM_PRESETS,
+} = useChaos()
 const { t } = useI18n()
 
 const key = ref<string>('C')
@@ -32,6 +41,15 @@ function generate() {
 function play() {
   if (lastMelody.value.length === 0) generate()
   void playMelody(lastMelody.value, stepSec.value)
+}
+
+function toggle() {
+  // The play button doubles as a stop button while a melody is in
+  // flight — the previous "Play" with no Stop left every queued note
+  // unstoppable until the whole melody finished, which is a real-
+  // device QA flag because a long mood like "celebrating" runs ~10s.
+  if (melodyPlaying.value) stopMelody()
+  else play()
 }
 </script>
 
@@ -85,7 +103,9 @@ function play() {
 
     <div class="actions">
       <button class="ghost" @click="generate">{{ t('chaos.generate') }}</button>
-      <button class="primary" @click="play">{{ t('chaos.playMelody') }}</button>
+      <button class="primary" :class="{ on: melodyPlaying }" @click="toggle">
+        {{ melodyPlaying ? '◼ ' + t('chaos.stopMelody') : '▶ ' + t('chaos.playMelody') }}
+      </button>
     </div>
 
     <p v-if="lastMelody.length > 0" class="notes mono">{{ lastMelody.join(' · ') }}</p>

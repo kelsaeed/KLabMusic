@@ -39,6 +39,19 @@ interface VoiceAdapter {
   setBendCents: (cents: number) => void
   loaded?: Promise<void>
   dispose: () => void
+  /**
+   * For voices whose audio AUTO-DECAYS without an explicit release
+   * (guitar pluck, oud, harp, drums one-shots, glitch noise…), this
+   * is the natural decay window in seconds. playOn passes it as an
+   * autoCleanupSec hint to trackNoteOn so the tracker drops the
+   * entry once the audio is genuinely gone — preventing the runaway
+   * "guitar:A2 41.9s active" leak that piled up voices, exhausted
+   * the polyphony cap, and triggered the audio-worker overload that
+   * sounded like an electrical wshhhh on mobile. Sustained voices
+   * (piano, violin, organ) leave it undefined; their tracker entry
+   * persists until release(note) is called, which is correct.
+   */
+  naturalDecaySec?: number
 }
 
 // Tone-style trigger surface shared by Tone.Sampler, Tone.PolySynth,
@@ -826,6 +839,11 @@ function buildGuitar(): VoiceAdapter {
     setVolumeDb: (db) => { out.gain.value = 2.5 * Tone.dbToGain(db) },
     setBendCents: (c) => { cachedCents = c },
     loaded: guitar.loaded().then(() => undefined),
+    // Pluck duration + a small tail margin: the audio is silent by
+    // 1.6s but the envelope needs an extra fraction of a second to
+    // fully release. Without this hint the tracker entry leaks and
+    // phantom-active guitar notes pile up forever.
+    naturalDecaySec: PLUCK_DURATION + 0.4,
     dispose: () => {
       guitar.disconnect()
       out.dispose()
@@ -898,6 +916,14 @@ function buildSoundfontVoice(opts: {
     setVolumeDb: (db) => { out.gain.value = gainScale * Tone.dbToGain(db) },
     setBendCents: (c) => { detuneCents = c },
     loaded: sound.loaded().then(() => undefined),
+    // attackDuration is set for plucked / decay voices (oud, harp); a
+    // small tail margin past it covers the envelope release. Sustained
+    // voices (violin, cello, clarinet, etc.) leave attackDuration
+    // undefined and so naturalDecaySec stays undefined too, which is
+    // correct — they're released by the caller, not auto-cleaned.
+    naturalDecaySec: opts.attackDuration !== undefined
+      ? opts.attackDuration + 0.4
+      : undefined,
     dispose: () => {
       sound.disconnect()
       out.dispose()
@@ -996,6 +1022,9 @@ function buildSamplerVoice(opts: {
       if (detune) detune.value = cents
     },
     loaded,
+    naturalDecaySec: opts.attackDuration !== undefined
+      ? opts.attackDuration + (opts.release ?? 0.4) + 0.2
+      : undefined,
     dispose: () => {
       sampler.dispose()
       out.dispose()
@@ -1256,6 +1285,10 @@ function buildGuitarSynthFallback(): VoiceAdapter {
     output: synth,
     setVolumeDb: (db) => { synth.volume.value = db },
     setBendCents: () => { /* PluckSynth has no detune AudioParam — per-attack cents handled via valueFor instead */ },
+    // Karplus-Strong settles in ~3 s with the dampening + resonance
+    // values we use; tracker entry must outlive the audible decay or
+    // the user gets phantom-stuck notes filling the polyphony cap.
+    naturalDecaySec: 3,
     dispose: () => synth.dispose(),
   }
 }
@@ -1474,6 +1507,10 @@ function buildHarpSynthFallback(): VoiceAdapter {
     output: out,
     setVolumeDb: (db) => { out.gain.value = Tone.dbToGain(db) },
     setBendCents: () => { /* PluckSynth has no detune AudioParam — per-attack cents handled via valueFor instead */ },
+    // Harp strings ring out longer than the guitar fallback — high
+    // resonance + low dampening keeps the open-string sustain audible
+    // out to ~4 s. Tracker auto-clean must wait that long.
+    naturalDecaySec: 4,
     dispose: () => {
       for (const s of synths) s.dispose()
       tone.dispose(); out.dispose()
@@ -1714,92 +1751,151 @@ function buildFluteSynthFallback(): VoiceAdapter {
 }
 
 function buildRealDrums(): VoiceAdapter {
-  // Phase 7 — full acoustic drum kit, distinct from the existing 'drums'
-  // (TR-808 trigger box / "Beats"). Pieces: kick, snare, hihat closed,
-  // hihat open, ride, crash, tom1, tom2, floor tom. Each is a Tone-
-  // synth-built one-shot — MembraneSynth for the drums with skins,
-  // NoiseSynth for the bright/airy hits, MetalSynth for cymbals.
-  // TODO(samples): manifest will want real recorded hits per piece —
-  // synthetic kick / snare are recognisable but lifeless next to a
-  // miked kit, especially at low velocities.
+  // Acoustic band kit — deeper kick (the "DOM" thump real bands use),
+  // cracking snare with snare-wire noise on top of a tuned drum body
+  // (the "TUCK"), well-pitched toms (high / mid / floor), lively
+  // cymbals. Each piece is multi-layered where a single synth can't
+  // capture the characteristic acoustic sound — kick has a beater
+  // click on top of the membrane, snare has wires + a tonal body + a
+  // high-passed crack burst that gives it bite.
+
+  // — KICK ("DOM") — deep, punchy, audible beater click
   const kick = new Tone.MembraneSynth({
-    pitchDecay: 0.06,
-    octaves: 6,
-    envelope: { attack: 0.001, decay: 0.45, sustain: 0, release: 0.55 },
+    pitchDecay: 0.035,         // tighter sweep = punchier head
+    octaves: 9,                 // wider drop = deeper landing pitch
+    envelope: { attack: 0.001, decay: 0.65, sustain: 0, release: 1.0 },
   })
-  const snare = new Tone.NoiseSynth({
+  // Beater click on top of the membrane. Short pink-noise pop fed
+  // through a high-pass filter so only the click character (and not
+  // the rumble) reaches the mix — that's what makes a real kick read
+  // as 'attacked' instead of just a low blob.
+  const kickClick = new Tone.NoiseSynth({
+    noise: { type: 'pink' },
+    envelope: { attack: 0.001, decay: 0.012, sustain: 0 },
+  })
+  const kickClickHpf = new Tone.Filter({ type: 'highpass', frequency: 1500, Q: 0.7 })
+  kickClick.connect(kickClickHpf)
+  kickClick.volume.value = -8
+
+  // — SNARE ("TUCK") — wire snares + tonal body + crack
+  const snareWires = new Tone.NoiseSynth({
     noise: { type: 'white' },
-    envelope: { attack: 0.001, decay: 0.2, sustain: 0 },
+    envelope: { attack: 0.001, decay: 0.16, sustain: 0 },
   })
-  // Layer a tonal "snap" with the snare noise so it doesn't read as a
-  // pure shaker — real snares have a clear pitched body.
-  const snareTone = new Tone.MembraneSynth({
-    pitchDecay: 0.02,
-    octaves: 3,
-    envelope: { attack: 0.001, decay: 0.1, sustain: 0, release: 0.1 },
+  const snareBody = new Tone.MembraneSynth({
+    pitchDecay: 0.012,
+    octaves: 4,
+    envelope: { attack: 0.001, decay: 0.13, sustain: 0, release: 0.16 },
   })
+  // High-passed pink-noise burst — adds the characteristic snare
+  // bite that pure white noise + body can't produce on its own.
+  const snareCrack = new Tone.NoiseSynth({
+    noise: { type: 'pink' },
+    envelope: { attack: 0.001, decay: 0.04, sustain: 0 },
+  })
+  const snareCrackHpf = new Tone.Filter({ type: 'highpass', frequency: 4000, Q: 0.9 })
+  snareCrack.connect(snareCrackHpf)
+
+  // — HI-HATS — bright noise with HPF for sizzle
   const hihatClosed = new Tone.NoiseSynth({
     noise: { type: 'white' },
-    envelope: { attack: 0.001, decay: 0.05, sustain: 0 },
+    envelope: { attack: 0.001, decay: 0.045, sustain: 0 },
   })
   const hihatOpen = new Tone.NoiseSynth({
     noise: { type: 'white' },
-    envelope: { attack: 0.001, decay: 0.4, sustain: 0 },
+    envelope: { attack: 0.001, decay: 0.45, sustain: 0 },
   })
+  const hihatHpf = new Tone.Filter({ type: 'highpass', frequency: 7000, Q: 0.6 })
+  hihatClosed.connect(hihatHpf)
+  hihatOpen.connect(hihatHpf)
+
+  // — CYMBALS — MetalSynth ride and crash, longer decay than before
   const ride = new Tone.MetalSynth({
-    envelope: { attack: 0.001, decay: 1.4, release: 0.4 },
+    envelope: { attack: 0.001, decay: 1.6, release: 0.6 },
     harmonicity: 12,
     modulationIndex: 22,
     resonance: 4500,
     octaves: 2,
   })
   const crash = new Tone.MetalSynth({
-    envelope: { attack: 0.001, decay: 2.2, release: 1.5 },
+    envelope: { attack: 0.001, decay: 2.5, release: 1.8 },
     harmonicity: 5,
     modulationIndex: 32,
     resonance: 4000,
     octaves: 1.5,
   })
+
+  // — TOMS ("Dum") — three pitched membranes, real-band sized
+  // (high / mid / floor). Each pitched a fifth apart — A2, F2, B1 —
+  // so a roll across the toms reads as a real descending fill.
   const tom1 = new Tone.MembraneSynth({
-    pitchDecay: 0.08,
-    octaves: 4,
-    envelope: { attack: 0.001, decay: 0.4, sustain: 0, release: 0.5 },
-  })
-  const tom2 = new Tone.MembraneSynth({
-    pitchDecay: 0.08,
+    pitchDecay: 0.05,
     octaves: 4,
     envelope: { attack: 0.001, decay: 0.45, sustain: 0, release: 0.55 },
   })
+  const tom2 = new Tone.MembraneSynth({
+    pitchDecay: 0.06,
+    octaves: 4,
+    envelope: { attack: 0.001, decay: 0.55, sustain: 0, release: 0.65 },
+  })
   const floor = new Tone.MembraneSynth({
-    pitchDecay: 0.1,
+    pitchDecay: 0.08,
     octaves: 5,
-    envelope: { attack: 0.001, decay: 0.55, sustain: 0, release: 0.7 },
+    envelope: { attack: 0.001, decay: 0.7, sustain: 0, release: 0.85 },
   })
 
-  // Cymbal volumes pre-trimmed because MetalSynth is loud relative to
-  // the other hits — without this the ride alone clips the master.
+  // Volume balancing — the membrane voices pre-boost because their
+  // envelopes peak below the noise voices at unit gain, and the
+  // cymbals + hats pre-trim because MetalSynth + NoiseSynth at unit
+  // gain swamp the kit. These numbers are tuned so a paint-pattern
+  // beat-maker bar reads as proportionally weighted (kick + snare
+  // dominant, cymbals colourful but not piercing).
+  kick.volume.value = -2
+  snareBody.volume.value = -8
+  snareWires.volume.value = -4
+  snareCrack.volume.value = -3
   ride.volume.value = -16
-  crash.volume.value = -14
+  crash.volume.value = -13
+  hihatClosed.volume.value = -10
+  hihatOpen.volume.value = -10
+  tom1.volume.value = -2
+  tom2.volume.value = -1
+  floor.volume.value = 0
 
-  const out = new Tone.Gain(1)
-  ;[kick, snare, snareTone, hihatClosed, hihatOpen, ride, crash, tom1, tom2, floor]
-    .forEach((node) => node.connect(out))
+  const out = new Tone.Gain(1.15)
+  ;[kick, snareBody, snareWires, ride, crash, tom1, tom2, floor].forEach((node) => node.connect(out))
+  kickClickHpf.connect(out)
+  snareCrackHpf.connect(out)
+  hihatHpf.connect(out)
 
   const fire = (name: string, vel: number) => {
     const v = Math.max(0.05, vel / 127)
     switch (name) {
-      case 'kick': kick.triggerAttackRelease('C2', '8n', undefined, v); break
-      case 'snare':
-        snare.triggerAttackRelease('16n', undefined, v)
-        snareTone.triggerAttackRelease('A2', '32n', undefined, v * 0.6)
+      case 'kick':
+        // C1 instead of C2 — drops the fundamental an octave so the
+        // kick lands in the body-shaking 50-65 Hz range a real bass
+        // drum produces. The click layer triggers in the same gesture
+        // so the user hears DOM as one sound, not kick + click.
+        kick.triggerAttackRelease('C1', '4n', undefined, v)
+        kickClick.triggerAttackRelease('64n', undefined, v * 0.7)
         break
-      case 'hihatC': hihatClosed.triggerAttackRelease('32n', undefined, v); break
+      case 'snare':
+        // Three layers fired together: body for pitched thwack, wires
+        // for the noise rattle, crack for the high-frequency bite.
+        snareBody.triggerAttackRelease('A2', '16n', undefined, v * 0.85)
+        snareWires.triggerAttackRelease('16n', undefined, v)
+        snareCrack.triggerAttackRelease('32n', undefined, v * 0.7)
+        break
+      case 'hihatC': hihatClosed.triggerAttackRelease('64n', undefined, v); break
       case 'hihatO': hihatOpen.triggerAttackRelease('8n', undefined, v); break
       case 'ride': ride.triggerAttackRelease('C5', '4n', Tone.now(), v); break
       case 'crash': crash.triggerAttackRelease('C5', '2n', Tone.now(), v); break
-      case 'tom1': tom1.triggerAttackRelease('B2', '8n', undefined, v); break
-      case 'tom2': tom2.triggerAttackRelease('A2', '8n', undefined, v); break
-      case 'floor': floor.triggerAttackRelease('E2', '8n', undefined, v); break
+      // Toms tuned a perfect fifth apart so a high→mid→floor roll
+      // reads as a real descending fill rather than three identical
+      // thumps. tom1 = rack tom (A2), tom2 = mid tom (F2), floor = B1.
+      case 'tom1': tom1.triggerAttackRelease('A2', '8n', undefined, v); break
+      case 'tom2': tom2.triggerAttackRelease('F2', '8n', undefined, v); break
+      case 'floor': floor.triggerAttackRelease('B1', '8n', undefined, v); break
     }
   }
 
@@ -1809,11 +1905,13 @@ function buildRealDrums(): VoiceAdapter {
     release: () => { /* one-shots */ },
     damp: () => { /* idem */ },
     output: out,
-    setVolumeDb: (db) => { out.gain.value = Tone.dbToGain(db) },
+    setVolumeDb: (db) => { out.gain.value = 1.15 * Tone.dbToGain(db) },
     setBendCents: () => { /* drums don't bend */ },
     dispose: () => {
-      kick.dispose(); snare.dispose(); snareTone.dispose()
-      hihatClosed.dispose(); hihatOpen.dispose()
+      kick.dispose(); kickClick.dispose(); kickClickHpf.dispose()
+      snareWires.dispose(); snareBody.dispose()
+      snareCrack.dispose(); snareCrackHpf.dispose()
+      hihatClosed.dispose(); hihatOpen.dispose(); hihatHpf.dispose()
       ride.dispose(); crash.dispose()
       tom1.dispose(); tom2.dispose(); floor.dispose()
       out.dispose()
@@ -1910,8 +2008,17 @@ function buildOud(): VoiceAdapter {
   // double-course plucked, bright woody attack, sustaining body
   // resonance) — better than reverting to synth. Quarter-tone detune
   // flows through Soundfont's start() detune param.
+  // attackDuration was 1.6 s, which sustained the sitar's drone-like
+  // sympathetic-string overtones long after a real oud risha would
+  // have damped — the resonance pile-up under fast strums was the
+  // 'weeeeird wshhhh' real-device feedback flagged. 0.9 s lets a
+  // pluck ring out musically without those overtones stacking into
+  // muddy noise.
+  // gainScale dropped from 1.3 to 1.0 because the same overtone pile-
+  // up was making a fast cell-swipe peak above unity through the
+  // master compressor's threshold and pumping the limiter audibly.
   // TODO(samples): real oud pack — risha plucked, finger plucked.
-  return buildSoundfontVoice({ instrument: 'sitar', gainScale: 1.3, attackDuration: 1.6 })
+  return buildSoundfontVoice({ instrument: 'sitar', gainScale: 1.0, attackDuration: 0.9 })
 }
 
 function buildOudSynthFallback(): VoiceAdapter {
@@ -1963,6 +2070,10 @@ function buildOudSynthFallback(): VoiceAdapter {
     output: out,
     setVolumeDb: (db) => { out.gain.value = Tone.dbToGain(db) },
     setBendCents: (c) => { detuneCents = c },
+    // Karplus-Strong oud body settles in ~3 s; tracker entry must
+    // outlive the audible decay so phantom-active oud notes don't
+    // pile up under a fast risha-strum.
+    naturalDecaySec: 3,
     dispose: () => {
       for (const s of synths) s.dispose()
       body.dispose()
@@ -2497,7 +2608,13 @@ export function useAudio() {
     await ensureToneStarted()
     const node = await ensureInstrument(id)
     if (!node) return
-    if (!trackNoteOn(id, note, node.voice)) return
+    // Use the voice's own natural-decay hint as the tracker auto-
+    // cleanup window so decay-style voices (guitar pluck, oud, harp,
+    // drum one-shots) drop their tracker entry once the audio is
+    // genuinely gone. Without this the entry persists forever, the
+    // polyphony cap fills with phantom-active notes, voice stealing
+    // churns, and the audio worker overloads into the wshhhh state.
+    if (!trackNoteOn(id, note, node.voice, node.voice.naturalDecaySec)) return
     node.voice.attack(note, velocity, cents, articulation)
     if (!silent && INSTRUMENTS[id].playMode === 'note') store.noteOn(note)
   }
