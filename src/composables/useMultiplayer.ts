@@ -307,10 +307,41 @@ export function useMultiplayer() {
       .on('broadcast', { event: 'beatmaker:state' }, ({ payload }) => {
         // Full beat-maker state replication — every pattern, track, step,
         // BPM, swing, song-mode flag in one packet, debounced 200 ms by
-        // the sender. Replaces the older fine-grained beat:toggle event.
+        // the sender. Replaces the older fine-grained beat:toggle event,
+        // and also serves as the divergence-recovery backstop when a
+        // beat:patch packet is dropped.
         const p = payload as { state: BeatMakerSharedState; player: string }
         if (p.player === store.localId) return
         applyBeatState(p.state)
+      })
+      .on('broadcast', { event: 'beat:patch' }, ({ payload }) => {
+        // Lightweight per-action patch for the high-frequency edits
+        // (step paint, velocity slider, cents slider). Sized in tens of
+        // bytes vs the kilobytes of a full pattern snapshot, so a paint
+        // drag at 60Hz no longer chokes Supabase realtime. We replay
+        // the action on the same store API the local user calls, so
+        // both peers end up with byte-identical state.
+        const p = payload as
+          | { op: 'setStepActive'; trackId: string; stepIndex: number; active: boolean; player: string }
+          | { op: 'setStepVelocity'; trackId: string; stepIndex: number; velocity: number; player: string }
+          | { op: 'setStepCents'; trackId: string; stepIndex: number; cents: number; player: string }
+        if (p.player === store.localId) return
+        // holdReceiving (not just isReceiving=true/false) because the
+        // store action triggers $subscribe → scheduleBeatBroadcast,
+        // which would queue a full-state echo back to the sender 200ms
+        // later if the receiving flag had already cleared.
+        holdReceiving()
+        // The action call itself ALSO triggers $onAction inside our
+        // patch sender — but isReceiving.value is held true for the
+        // 350ms RECEIVE_HOLD_MS window, so the patch sender's
+        // store.isConnected && !isReceiving guard skips the echo.
+        if (p.op === 'setStepActive') {
+          beatStore.setStepActive(p.trackId, p.stepIndex, p.active)
+        } else if (p.op === 'setStepVelocity') {
+          beatStore.setStepVelocity(p.trackId, p.stepIndex, p.velocity)
+        } else if (p.op === 'setStepCents') {
+          beatStore.setStepCents(p.trackId, p.stepIndex, p.cents)
+        }
       })
       .on('broadcast', { event: 'arrange:state' }, ({ payload }) => {
         // Full arrangement state replication — tracks, clips, FX,
@@ -417,19 +448,55 @@ export function useMultiplayer() {
     // Pinia's $subscribe fires after every state mutation that traverses
     // the store's own state. Debouncing inside scheduleBeatBroadcast /
     // scheduleArrangeBroadcast collapses rapid-fire edits (clip drag,
-    // automation point drag) into one packet at gesture-end.
+    // automation point drag) into one packet at gesture-end. Even with
+    // patches enabled below, the full-state debounce stays — it's the
+    // join-room sync target (state:reply) AND the divergence-recovery
+    // backstop when a patch packet is dropped or arrives out of order.
     unsubscribeBeatState = beatStore.$subscribe(() => {
       scheduleBeatBroadcast()
     }, { detached: true })
     unsubscribeArrangeState = arrangeStore.$subscribe(() => {
       scheduleArrangeBroadcast()
     }, { detached: true })
-    // Compatibility hook for the per-action note broadcast — kept so the
-    // ghost-note feature (see another player's keypresses flash on your
-    // keyboard) still works alongside full-state replication.
-    unsubscribeBeat = beatStore.$onAction(({ name, after }) => {
-      void name
-      void after
+    // High-frequency operation patches — much smaller than re-broadcasting
+    // the entire pattern set every time the user paints a step or drags a
+    // velocity / cents slider. Only the three step-level setters get
+    // patched here (paint drag and slider drag are the bandwidth-heavy
+    // gestures); structural edits like add/remove pattern or track stay
+    // on the full-state path because they're rare and bundle additional
+    // bookkeeping the receiver already gets right via apply-state.
+    unsubscribeBeat = beatStore.$onAction(({ name, args, after }) => {
+      after(() => {
+        if (!store.isConnected || isReceiving.value) return
+        if (name === 'setStepActive') {
+          const [trackId, stepIndex, active] = args as [string, number, boolean]
+          broadcast('beat:patch', {
+            op: 'setStepActive',
+            trackId,
+            stepIndex,
+            active,
+            player: store.localId,
+          })
+        } else if (name === 'setStepVelocity') {
+          const [trackId, stepIndex, velocity] = args as [string, number, number]
+          broadcast('beat:patch', {
+            op: 'setStepVelocity',
+            trackId,
+            stepIndex,
+            velocity,
+            player: store.localId,
+          })
+        } else if (name === 'setStepCents') {
+          const [trackId, stepIndex, cents] = args as [string, number, number]
+          broadcast('beat:patch', {
+            op: 'setStepCents',
+            trackId,
+            stepIndex,
+            cents,
+            player: store.localId,
+          })
+        }
+      })
     })
   }
   function unwireSyncSubscriptions() {

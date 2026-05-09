@@ -2587,6 +2587,43 @@ export function useAudio() {
     ctl.enabled = !ctl.enabled
   }
 
+  /**
+   * Live engine diagnostics — used by the debug overlay so a real-device
+   * QA pass can see exactly why a phone is sounding wrong (stuck note
+   * names lingering past their release, polyphony pinning at the cap on
+   * a heavy chord, AudioContext stuck in 'suspended' from missed user
+   * gesture, sampled instruments still loading on a slow CDN). All
+   * values are snapshots — call again to re-read.
+   */
+  function getEngineDiagnostics(): {
+    audioContextState: string
+    sampleRate: number
+    polyphony: { active: number; limit: number; isMobile: boolean }
+    activeNotes: Array<{ instrumentId: InstrumentId; note: string; startedAt: number }>
+    loadedInstruments: InstrumentId[]
+  } {
+    const ctx = Tone.getContext()
+    const notes: Array<{ instrumentId: InstrumentId; note: string; startedAt: number }> = []
+    for (const entry of activeNotes.values()) {
+      notes.push({
+        instrumentId: entry.instrumentId,
+        note: entry.note,
+        startedAt: entry.startedAt,
+      })
+    }
+    return {
+      audioContextState: ctx.state,
+      sampleRate: ctx.sampleRate,
+      polyphony: {
+        active: activeNotes.size,
+        limit: POLYPHONY_LIMIT,
+        isMobile: detectMobile(),
+      },
+      activeNotes: notes,
+      loadedInstruments: [...nodes.keys()],
+    }
+  }
+
   return {
     playNote,
     stopNote,
@@ -2611,5 +2648,6 @@ export function useAudio() {
     ensureInstrument,
     ensureToneStarted,
     prefetchAvailableInstruments,
+    getEngineDiagnostics,
   }
 }

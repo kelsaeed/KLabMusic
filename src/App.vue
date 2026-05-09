@@ -1,7 +1,17 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { defineAsyncComponent, onMounted } from 'vue'
 import { useTheme } from '@/composables/useTheme'
 import { useLocale } from '@/i18n'
+
+// Debug overlay is hidden until ?debug=1 is present in the URL or the
+// user taps 4× quickly anywhere on the page — opt-in only. Loaded
+// async so the overlay's transitive useAudio import (which pulls in
+// tone + smplr) doesn't bloat the entry chunk. The route into the
+// overlay's own bundle happens after first paint, before tap-to-summon
+// is realistic anyway.
+const DebugOverlay = defineAsyncComponent(
+  () => import('@/components/debug/DebugOverlay.vue'),
+)
 
 const { initTheme } = useTheme()
 const { initLocale } = useLocale()
@@ -31,6 +41,7 @@ onMounted(() => {
       <component :is="Component" />
     </Transition>
   </RouterView>
+  <DebugOverlay />
 </template>
 
 <style>
