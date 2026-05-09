@@ -109,6 +109,7 @@
       "lead": "Lead",
       "organ": "Organ",
       "drums": "Beats",
+      "violin": "Violin",
       "glitch": "Glitch",
       "meme": "Meme"
     },
@@ -512,7 +513,8 @@
     "heading": {
       "piano": "Piano",
       "drums": "Beats pad",
-      "guitar": "Classical guitar"
+      "guitar": "Classical guitar",
+      "violin": "Violin"
     },
     "octaveUp": "Octave up",
     "octaveDown": "Octave down",
@@ -527,6 +529,13 @@
   },
   "drums": {
     "hint": "Click harder (lower on the pad) for higher velocity"
+  },
+  "violin": {
+    "maqam": "Maqam",
+    "damp": "Mute",
+    "dampHint": "Stop the bow and silence every string.",
+    "bowHint": "Drag across strings to bow — slow drag bows softly, fast drag bows hard. Tap a single position to pluck (pizzicato).",
+    "quarterTone": "Quarter-tone position — sits between Western pitches."
   },
   "guitar": {
     "strings": "Open strings",

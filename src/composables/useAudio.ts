@@ -734,6 +734,48 @@ const FALLBACK_BUILDERS: Partial<Record<InstrumentId, () => VoiceAdapter>> = {
   drums: buildDrumsSynthFallback,
 }
 
+function buildViolin(): VoiceAdapter {
+  // Tone.js synth approximation of a bowed violin — Phase 3. Real samples
+  // (down-bow / up-bow / staccato) plug in via the Phase 10 manifest.
+  // Tone.PolySynth(Tone.MonoSynth) gives every voice its own filter
+  // envelope, which is what makes the bow "sing": as the note rises the
+  // filter envelope opens and the saw harmonics come through, so faster
+  // / louder bowing audibly brightens the timbre.
+  // TODO(samples): the manifest will want down-bow + up-bow + spiccato +
+  // tremolo + sul ponticello takes per string; pick them by the
+  // articulation that the bow engine reports.
+  const synth = new Tone.PolySynth(Tone.MonoSynth, {
+    oscillator: { type: 'sawtooth' },
+    filter: { Q: 2, type: 'lowpass', rolloff: -24 },
+    envelope: { attack: 0.18, decay: 0.05, sustain: 0.85, release: 0.6 },
+    filterEnvelope: {
+      attack: 0.2,
+      decay: 0.4,
+      sustain: 0.6,
+      release: 1.2,
+      baseFrequency: 350,
+      octaves: 3,
+    },
+    volume: -10,
+  })
+  // Subtle vibrato — a real violin has a slow LFO around 5 Hz with
+  // shallow depth. Strong enough that a sustained note breathes, weak
+  // enough that it never reads as a pitch warble.
+  const vibrato = new Tone.Vibrato({ frequency: 5, depth: 0.04 })
+  synth.connect(vibrato)
+  return {
+    attack: (note, vel) => synth.triggerAttack(note, undefined, Math.max(0.05, vel / 127)),
+    attackRelease: (note, dur, vel) =>
+      synth.triggerAttackRelease(note, dur, undefined, Math.max(0.05, vel / 127)),
+    release: (note) => (note ? synth.triggerRelease(note) : synth.releaseAll()),
+    damp: () => synth.releaseAll(),
+    output: vibrato,
+    setVolumeDb: (db) => { synth.volume.value = db },
+    setBendCents: (c) => synth.set({ detune: c }),
+    dispose: () => { synth.dispose(); vibrato.dispose() },
+  }
+}
+
 function buildGlitch(): VoiceAdapter {
   // One-shot pink-noise burst through a bit-crusher. NoiseSynth auto-stops,
   // so this can never hang on the system if a release event is missed.
@@ -766,6 +808,7 @@ const BUILDERS: Record<InstrumentId, () => VoiceAdapter | null> = {
   lead: buildLead,
   organ: buildOrgan,
   drums: buildDrums,
+  violin: buildViolin,
   glitch: buildGlitch,
   meme: () => null,
 }
@@ -1074,6 +1117,18 @@ export function useAudio() {
     for (const node of nodes.values()) node.voice.setBendCents(cents)
   }
 
+  /**
+   * Bend a single instrument without touching the others. Used by the
+   * bowed-string / oud fingerboards to drive quarter-tone detune on
+   * just their own voice, so a maqam played on the violin doesn't pull
+   * the piano off-pitch underneath it.
+   */
+  function setBend(id: InstrumentId, cents: number) {
+    const node = nodes.get(id)
+    if (!node) return
+    node.voice.setBendCents(cents)
+  }
+
   function setChaosX(value: number) {
     if (!chaosFilter) return
     const clamped = Math.max(0, Math.min(1, value))
@@ -1138,6 +1193,7 @@ export function useAudio() {
     stopAll,
     dampInstrument,
     setMasterBend,
+    setBend,
     setChaosX,
     setChaosY,
     glitchBurst,

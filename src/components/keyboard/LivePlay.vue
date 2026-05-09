@@ -8,6 +8,7 @@ import { useToast } from '@/composables/useToast'
 import Piano from './Piano.vue'
 import DrumPad from './DrumPad.vue'
 import GuitarPad from './GuitarPad.vue'
+import ViolinPad from './ViolinPad.vue'
 import PitchBend from './PitchBend.vue'
 import ModWheel from './ModWheel.vue'
 
@@ -78,10 +79,11 @@ function discardTake() {
   clearLiveTake()
 }
 
-const layout = computed<'piano' | 'drums' | 'guitar'>(() => {
+const layout = computed<'piano' | 'drums' | 'guitar' | 'violin'>(() => {
   const id = audioStore.activeInstrument
   if (id === 'drums') return 'drums'
   if (id === 'guitar') return 'guitar'
+  if (id === 'violin') return 'violin'
   return 'piano'
 })
 
@@ -176,6 +178,7 @@ function onPianoRelease(note: string) {
 
     <DrumPad v-if="layout === 'drums'" />
     <GuitarPad v-else-if="layout === 'guitar'" />
+    <ViolinPad v-else-if="layout === 'violin'" />
     <Piano
       v-else
       :start-octave="startOctave"

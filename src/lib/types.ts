@@ -112,6 +112,7 @@ export type InstrumentId =
   | 'lead'
   | 'organ'
   | 'drums'
+  | 'violin'
   | 'glitch'
   | 'meme'
 
