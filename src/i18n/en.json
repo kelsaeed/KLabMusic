@@ -110,6 +110,7 @@
       "organ": "Organ",
       "drums": "Beats",
       "violin": "Violin",
+      "cello": "Cello",
       "glitch": "Glitch",
       "meme": "Meme"
     },
@@ -514,7 +515,8 @@
       "piano": "Piano",
       "drums": "Beats pad",
       "guitar": "Classical guitar",
-      "violin": "Violin"
+      "violin": "Violin",
+      "cello": "Cello"
     },
     "octaveUp": "Octave up",
     "octaveDown": "Octave down",
@@ -536,6 +538,9 @@
     "dampHint": "Stop the bow and silence every string.",
     "bowHint": "Drag across strings to bow — slow drag bows softly, fast drag bows hard. Tap a single position to pluck (pizzicato).",
     "quarterTone": "Quarter-tone position — sits between Western pitches."
+  },
+  "cello": {
+    "bowHint": "Drag along a string to bow it — the cello prefers a slow, deliberate stroke. Tap to pluck."
   },
   "guitar": {
     "strings": "Open strings",

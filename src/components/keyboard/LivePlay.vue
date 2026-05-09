@@ -9,6 +9,7 @@ import Piano from './Piano.vue'
 import DrumPad from './DrumPad.vue'
 import GuitarPad from './GuitarPad.vue'
 import ViolinPad from './ViolinPad.vue'
+import CelloPad from './CelloPad.vue'
 import PitchBend from './PitchBend.vue'
 import ModWheel from './ModWheel.vue'
 
@@ -79,11 +80,12 @@ function discardTake() {
   clearLiveTake()
 }
 
-const layout = computed<'piano' | 'drums' | 'guitar' | 'violin'>(() => {
+const layout = computed<'piano' | 'drums' | 'guitar' | 'violin' | 'cello'>(() => {
   const id = audioStore.activeInstrument
   if (id === 'drums') return 'drums'
   if (id === 'guitar') return 'guitar'
   if (id === 'violin') return 'violin'
+  if (id === 'cello') return 'cello'
   return 'piano'
 })
 
@@ -179,6 +181,7 @@ function onPianoRelease(note: string) {
     <DrumPad v-if="layout === 'drums'" />
     <GuitarPad v-else-if="layout === 'guitar'" />
     <ViolinPad v-else-if="layout === 'violin'" />
+    <CelloPad v-else-if="layout === 'cello'" />
     <Piano
       v-else
       :start-octave="startOctave"

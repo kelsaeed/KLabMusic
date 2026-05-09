@@ -113,6 +113,7 @@ export type InstrumentId =
   | 'organ'
   | 'drums'
   | 'violin'
+  | 'cello'
   | 'glitch'
   | 'meme'
 

@@ -776,6 +776,43 @@ function buildViolin(): VoiceAdapter {
   }
 }
 
+function buildCello(): VoiceAdapter {
+  // Phase 4 — bowed cello. Same shape as buildViolin but with a slower
+  // attack, longer release, deeper filter base, and a slightly slower
+  // vibrato — all the things that make a cello feel "bigger" than a
+  // violin without changing the actual range of pitches we play.
+  // TODO(samples): manifest will want C / G / D / A string takes for
+  // both bow directions plus pizzicato; until then, this synth is the
+  // fallback path so the cello is always playable offline.
+  const synth = new Tone.PolySynth(Tone.MonoSynth, {
+    oscillator: { type: 'sawtooth' },
+    filter: { Q: 1.5, type: 'lowpass', rolloff: -24 },
+    envelope: { attack: 0.28, decay: 0.08, sustain: 0.85, release: 1.2 },
+    filterEnvelope: {
+      attack: 0.3,
+      decay: 0.5,
+      sustain: 0.55,
+      release: 1.6,
+      baseFrequency: 200,
+      octaves: 3,
+    },
+    volume: -8,
+  })
+  const vibrato = new Tone.Vibrato({ frequency: 4.5, depth: 0.05 })
+  synth.connect(vibrato)
+  return {
+    attack: (note, vel) => synth.triggerAttack(note, undefined, Math.max(0.05, vel / 127)),
+    attackRelease: (note, dur, vel) =>
+      synth.triggerAttackRelease(note, dur, undefined, Math.max(0.05, vel / 127)),
+    release: (note) => (note ? synth.triggerRelease(note) : synth.releaseAll()),
+    damp: () => synth.releaseAll(),
+    output: vibrato,
+    setVolumeDb: (db) => { synth.volume.value = db },
+    setBendCents: (c) => synth.set({ detune: c }),
+    dispose: () => { synth.dispose(); vibrato.dispose() },
+  }
+}
+
 function buildGlitch(): VoiceAdapter {
   // One-shot pink-noise burst through a bit-crusher. NoiseSynth auto-stops,
   // so this can never hang on the system if a release event is missed.
@@ -809,6 +846,7 @@ const BUILDERS: Record<InstrumentId, () => VoiceAdapter | null> = {
   organ: buildOrgan,
   drums: buildDrums,
   violin: buildViolin,
+  cello: buildCello,
   glitch: buildGlitch,
   meme: () => null,
 }
