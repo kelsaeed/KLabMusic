@@ -143,6 +143,17 @@ function onDown(e: PointerEvent) {
   pluckCell(cell, 105)
 }
 
+// Re-pluck throttle window. Mobile audio worker can't sustain the
+// 28 ms desktop rate when each pluck spawns a Soundfont buffer source
+// that rings for 0.9 s — the simultaneous-source pile-up was a
+// concrete cause of the 'wshhhh' real-device QA flagged. 60 ms (~16
+// plucks/sec) keeps a fast strum musical without saturating the
+// audio pipeline. Touch pointers always get the slower rate, mouse
+// keeps the snappier desktop value.
+function strumThrottleMs(e: PointerEvent): number {
+  return e.pointerType === 'mouse' ? 28 : 60
+}
+
 function onMove(e: PointerEvent) {
   if (!dragging.value) return
   if (e.pointerType === 'mouse' && e.buttons === 0) {
@@ -152,12 +163,8 @@ function onMove(e: PointerEvent) {
   const cell = readCell(document.elementFromPoint(e.clientX, e.clientY))
   if (!cell) return
   const key = `${cell.courseIndex}:${cell.step}`
-  // Re-pluck when the finger crosses into a new cell. Throttle by 28 ms
-  // so a fast diagonal swipe doesn't fire dozens of plucks per frame
-  // (which clobbers the PluckSynth pool and produces machine-gun
-  // chatter instead of a clean strum).
   const now = performance.now()
-  if (key !== lastCellKey.value && now - lastFireTime.value > 28) {
+  if (key !== lastCellKey.value && now - lastFireTime.value > strumThrottleMs(e)) {
     lastCellKey.value = key
     lastFireTime.value = now
     // Velocity scales with how fast the user is moving — for now use a

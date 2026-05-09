@@ -80,6 +80,12 @@ function notationOf(note: string): string {
 const dragging = ref(false)
 const dragStartY = ref(0)
 const lastHoleIndex = ref(0)
+// Drag throttle. Mobile audio worker can't keep up with one new hole
+// per pointermove on a fast swipe — each harmonica note plays for
+// 0.4 s, so a 10-hole swipe in 200 ms accumulates 10 overlapping
+// samples and audibly chokes the audio pipeline. Skip new fires
+// inside this window to keep the swipe musical.
+const lastFireAt = ref(0)
 const flashedHole = ref<{ index: number; mode: BreathMode } | null>(null)
 
 function flash(index: number, m: BreathMode) {
@@ -106,6 +112,12 @@ function readHoleIndex(el: Element | null): number {
   return Number.isFinite(idx) ? idx : 0
 }
 
+function swipeThrottleMs(e: PointerEvent): number {
+  // Touch pointers always get the slower 60 ms rate; mouse keeps the
+  // snappier desktop default. See `lastFireAt` comment for why.
+  return e.pointerType === 'mouse' ? 30 : 60
+}
+
 function onDown(e: PointerEvent) {
   ;(e.target as Element)?.releasePointerCapture?.(e.pointerId)
   const idx = readHoleIndex(document.elementFromPoint(e.clientX, e.clientY))
@@ -113,6 +125,7 @@ function onDown(e: PointerEvent) {
   dragging.value = true
   dragStartY.value = e.clientY
   lastHoleIndex.value = idx
+  lastFireAt.value = performance.now()
   // Initial press uses whatever mode the toggle currently has.
   playHole(idx, mode.value, 110)
 }
@@ -134,8 +147,10 @@ function onMove(e: PointerEvent) {
   }
   const idx = readHoleIndex(document.elementFromPoint(e.clientX, e.clientY))
   if (!idx) return
-  if (idx !== lastHoleIndex.value) {
+  const now = performance.now()
+  if (idx !== lastHoleIndex.value && now - lastFireAt.value > swipeThrottleMs(e)) {
     lastHoleIndex.value = idx
+    lastFireAt.value = now
     playHole(idx, liveMode, 100)
   }
 }

@@ -43,32 +43,54 @@ export interface SampleManifest {
 }
 
 /**
- * Default sample manifest shipped with the build. Empty out of the box
- * because the only free, CDN-hostable, properly-licensed pack with a
- * complete kit-piece set is the Boochi44 vintage trap kit, which
- * sounds like vinyl-textured hip-hop drums — not the band-style
- * acoustic kit users actually expect from realDrums. Shipping it as
- * the default got real-world feedback that the drums "sound like
- * beats" not "DOM TUCK Dum" band drums, so we removed the entries
- * and routed users to the well-tuned synth in buildRealDrums.
+ * Default sample manifest shipped with the build. Routes the
+ * percussion-heavy realDrums voice to recorded acoustic samples
+ * because the multi-layered synth equivalent (deep membrane + beater
+ * click + HPF, snare wires + body + crack + HPF, etc.) burns more
+ * mobile DSP per audio frame than the audio worker can sustain — a
+ * fast beat-maker pattern produced an electrical 'wshhhh' on real-
+ * device QA when the kit was synth-only. A Tone.Player per piece is
+ * one node + one buffer; the synth equivalent per kick was three
+ * nodes plus a filter. Samples win on mobile.
  *
- * Seams stay wired — drop in a real acoustic drum pack via
- * loadSampleManifest({realDrums: {...}}) when one becomes available
- * (or paste in a custom URL set), and the manifest path takes over
- * automatically. Same for oud / tambourine / harmonica, which never
- * had free CDN-hostable packs to begin with:
- *  - oud → falls back to GM Soundfont 'sitar' (closest plucked-
- *    double-string Soundfont preset).
- *  - tambourine → synth approximation in BUILDERS.tambourine.
- *  - harmonica → nbrosowsky/tonejs-instruments harmonium fallback
- *    (free reed neighbour; recorded audio, just not actually a
- *    harmonica). True harmonica samples need a paid / curated pack.
- *  - realDrums → multi-layered synth in BUILDERS.realDrums (kick
- *    has a beater click on top of a deep membrane, snare layers
- *    wires + body + a high-passed crack, etc.) tuned to read as a
- *    real acoustic kit rather than a TR-808 trigger box.
+ * Source: Tonejs/audio drum-samples/acoustic-kit (kick / snare /
+ * hihat / tom1 / tom2 / tom3). These are the same files Tone.js's
+ * own examples ship — Chris Wilson's web-audio-samples repo,
+ * publicly maintained for Web Audio tutorials and demos for years.
+ * Files are tiny (5-7 KB each at 128 kbps mono) so first-load adds
+ * essentially zero bandwidth. The synth fallback in BUILDERS still
+ * handles ride / crash / floor (no samples for those in this kit)
+ * and stays as the offline / blocked-CDN fallback for everything.
+ *
+ * Seams stay open for oud / tambourine / harmonica — no free
+ * CDN-hostable pack with a consistent kit-piece set has been found:
+ *  - oud → GM Soundfont 'sitar' is the closest plucked-double-
+ *    string preset.
+ *  - tambourine → BUILDERS.tambourine synth.
+ *  - harmonica → nbrosowsky harmonium (free-reed neighbour).
  */
-export const MANIFEST: SampleManifest = {}
+const TONE_ACOUSTIC = 'https://cdn.jsdelivr.net/gh/Tonejs/audio@master/drum-samples/acoustic-kit'
+export const MANIFEST: SampleManifest = {
+  realDrums: {
+    kick: { default: `${TONE_ACOUSTIC}/kick.mp3` },
+    snare: { default: `${TONE_ACOUSTIC}/snare.mp3` },
+    // The kit ships only one closed hihat variant; route both
+    // closed and open keys to it so the engine plays SOMETHING for
+    // hihatO instead of dropping straight to the synth fallback. A
+    // future pack with proper open / closed variants will override
+    // these entries via loadSampleManifest({...}).
+    hihatC: { default: `${TONE_ACOUSTIC}/hihat.mp3` },
+    hihatO: { default: `${TONE_ACOUSTIC}/hihat.mp3` },
+    tom1: { default: `${TONE_ACOUSTIC}/tom1.mp3` },
+    tom2: { default: `${TONE_ACOUSTIC}/tom2.mp3` },
+    floor: { default: `${TONE_ACOUSTIC}/tom3.mp3` },
+    // ride / crash intentionally omitted — Tone.js acoustic-kit
+    // doesn't include them. The synth fallback in buildRealDrums
+    // covers those two pieces (MetalSynth ride + crash), which is
+    // cheap enough on mobile that the manifest+synth hybrid is
+    // a clear win over all-synth.
+  },
+}
 
 /**
  * Look up a sample for a given instrument / note / articulation. Returns
