@@ -69,6 +69,9 @@ async function onTuneAll() {
     // pass uses the same target as the per-clip tune row. Without this,
     // ClipControls would tune one clip to Hijaz on D and Smart Tune
     // would tune everything else to Western major — a confusing mix.
+    // When the user has accepted the maqam suggestion via onPickMaqam,
+    // store.songMaqam is set and the recorder pipeline takes the maqam
+    // path with fractional-cents intervals.
     const { tuned, skipped } = tuneAllClipsToKey(
       detection.value.key,
       detection.value.scale,
@@ -82,6 +85,28 @@ async function onTuneAll() {
   } finally {
     tuning.value = false
   }
+}
+
+/**
+ * One-tap accept of the detected maqam. We persist both the maqam id
+ * AND the maqam's tonic onto the recorder store so a subsequent bulk
+ * tune-all targets the maqam's canonical key (Bayati on D, Hijaz on D,
+ * Rast on C…) instead of whatever Western key the major/minor matcher
+ * happened to land on. Tapping a second time toggles back to "none".
+ */
+function onPickMaqam() {
+  if (!detection.value?.maqam) return
+  const m = detection.value.maqam
+  if (store.songMaqam === m.maqamId) {
+    store.songMaqam = null
+    return
+  }
+  store.songMaqam = m.maqamId
+  // The recorder pipeline reads songKey separately for non-maqam paths;
+  // overriding it to the maqam tonic keeps the displayed key + the
+  // active tune target consistent if the user later switches off the
+  // maqam without re-running detection.
+  store.songKey = m.tonic
 }
 
 const PITCH_NAMES = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B']
@@ -129,6 +154,24 @@ const chromaBars = computed(() => {
         <span class="big mono">{{ detection.key }} {{ t(`recorder.tune.scaleName.${detection.scale}`) }}</span>
         <span class="conf mono">
           {{ confidenceLabel }} ({{ Math.round(detection.confidence * 100) }}%)
+        </span>
+      </div>
+      <!-- Maqam suggestion — surfaces whatever maqam the 24-bin matcher
+           preferred. Lets the user one-tap switch the bulk-tune target
+           from Western major/minor to a maqam shape; the bulk tune call
+           below already accepts a maqam id. -->
+      <div v-if="detection.maqam && detection.maqam.confidence > 0.2" class="maqam-suggest">
+        <span class="maqam-suggest-lbl mono">{{ t('smartTune.maqamMatch') }}</span>
+        <button
+          type="button"
+          class="maqam-suggest-btn mono"
+          :class="{ on: store.songMaqam === detection.maqam.maqamId }"
+          @click="onPickMaqam"
+        >
+          {{ detection.maqam.tonic }} {{ MAQAM_PRESETS[detection.maqam.maqamId].name }}
+        </button>
+        <span class="maqam-suggest-conf mono">
+          {{ Math.round(detection.maqam.confidence * 100) }}%
         </span>
       </div>
 
@@ -324,4 +367,44 @@ const chromaBars = computed(() => {
   box-shadow: 0 4px 16px var(--accent-glow);
 }
 .tune-all:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.maqam-suggest {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.35rem 0.5rem;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  flex-wrap: wrap;
+  position: relative;
+}
+.maqam-suggest-lbl {
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+.maqam-suggest-btn {
+  font-size: 0.7rem;
+  padding: 0.3rem 0.65rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  border-radius: 999px;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+}
+.maqam-suggest-btn:hover { border-color: #a78bfa; }
+.maqam-suggest-btn.on {
+  background: #a78bfa;
+  border-color: #a78bfa;
+  color: var(--text-inverse);
+  box-shadow: 0 0 8px rgba(167, 139, 250, 0.55);
+}
+.maqam-suggest-conf {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  margin-inline-start: auto;
+}
 </style>

@@ -196,9 +196,12 @@ export function tuneClipToKey(
   const detected = midiFloatToPitchResult(midi)
   const targetMidi = snapMidiToScale(midi, keyIndex, scale, customIntervals)
   const target = midiFloatToPitchResult(targetMidi)
-  // Round to integer semitones so it composes cleanly with the existing
-  // pitchSemitones range slider — sub-semitone correction is a Phase 4
-  // problem (full per-frame autotune via offline render).
-  const semitones = Math.round(targetMidi - midi)
+  // Fractional semitone correction — preserves quarter-tone offsets when
+  // the customIntervals contain non-integer values (the maqam path passes
+  // step/2 directly, so a Bayati second targets +1.5 st rather than the
+  // previous integer-rounded +1 or +2 that snapped the half-flat away).
+  // Tone.PitchShift accepts fractional pitch values verbatim, so the
+  // recorder's existing playback path renders the correction faithfully.
+  const semitones = targetMidi - midi
   return { detected, target, semitones }
 }

@@ -20,23 +20,37 @@ import { MAQAM_PRESETS } from '@/lib/microtonal'
 import type { Clip } from '@/lib/types'
 
 /**
- * Convert a maqam preset id into the semitone-rounded interval set + the
- * canonical tonic note name. Mirrors the same conversion used by the
- * chaos engine so a single composition can reuse the same maqam
- * everywhere — beat-maker chips, chaos melody, and now tune-to-key —
- * and get the same scale shape on each.
+ * Convert a maqam preset id into the FRACTIONAL semitone interval set +
+ * the canonical tonic. Maqam steps are quarter-tones (50 c each), so
+ * dividing by 2 gives a value in semitones that may be half-integer
+ * (sika of Rast at 1.5 st, half-flat second of Bayati at 1.5 st). Those
+ * fractional offsets flow through snapMidiToScale into a non-integer
+ * pitchSemitones, which Tone.PitchShift renders faithfully — the
+ * earlier `Math.round(step/2)` collapsed every half-flat to its nearest
+ * 12-TET semitone and made vocal Smart Tune's "maqam" mode equivalent
+ * to "the closest Western scale," which is exactly what the audit
+ * flagged. Dedupe on the rounded pitch class so genuinely-equal degrees
+ * from different octaves don't double-count.
  */
 function maqamToTuneIntervals(
   id: keyof typeof MAQAM_PRESETS,
 ): { intervals: number[]; tonic: string } | null {
   const m = MAQAM_PRESETS[id]
   if (!m) return null
-  const semis = new Set<number>()
-  for (const step of m.steps) semis.add(Math.round(step / 2) % 12)
-  return {
-    intervals: [...semis].sort((a, b) => a - b),
-    tonic: m.tonic,
+  const seen = new Set<string>()
+  const intervals: number[] = []
+  for (const step of m.steps) {
+    const semi = (step / 2) % 12
+    // Use a fixed-precision key for dedupe — two intervals 1.5 vs 1.5
+    // would otherwise insert twice through Set<number> if they came
+    // from arithmetic with different rounding.
+    const key = semi.toFixed(2)
+    if (seen.has(key)) continue
+    seen.add(key)
+    intervals.push(semi)
   }
+  intervals.sort((a, b) => a - b)
+  return { intervals, tonic: m.tonic }
 }
 
 const WAVEFORM_BUCKETS = 600

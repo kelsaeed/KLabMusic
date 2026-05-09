@@ -77,10 +77,16 @@ function onTune() {
     return
   }
   detectedPitch.value = result.detected
+  // semitones is now fractional (maqam half-flats land at ±0.5 st), so
+  // print two decimals — "+1.50 st" reads as a quarter-tone shift, where
+  // the previous integer "+1" or "+2" hid the half-flat the user just
+  // requested.
+  const semis = result.semitones
+  const semisLabel = semis >= 0 ? `+${semis.toFixed(2)}` : semis.toFixed(2)
   tuneStatus.value = t('recorder.tune.applied', {
     from: result.detected.noteName,
     to: result.target.noteName,
-    semitones: result.semitones >= 0 ? `+${result.semitones}` : `${result.semitones}`,
+    semitones: semisLabel,
   })
   setTimeout(() => (tuneStatus.value = ''), 4000)
 }
@@ -120,9 +126,16 @@ function patch(clipId: string, key: keyof Clip, value: Clip[keyof Clip]) {
 
     <div class="grid">
       <label class="ctl">
-        <span class="lbl mono">{{ t('recorder.pitch') }} {{ clip.pitchSemitones }}st</span>
+        <span class="lbl mono">
+          {{ t('recorder.pitch') }} {{ clip.pitchSemitones.toFixed(2) }}st
+        </span>
+        <!-- step 0.5 lets the slider land on quarter-tones (a half-flat
+             second is exactly +1.5 st) so a maqam-tuned clip's pitch
+             slider snaps to the same grid Smart Tune uses. The drag is
+             still smooth at 0.5 — fine enough for hand-trim, coarse
+             enough that reading the value is unambiguous. -->
         <input
-          type="range" min="-12" max="12" step="1"
+          type="range" min="-12" max="12" step="0.5"
           :value="clip.pitchSemitones"
           @input="patch(clip.id, 'pitchSemitones', Number(($event.target as HTMLInputElement).value))"
         />

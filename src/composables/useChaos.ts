@@ -2,6 +2,7 @@ import * as Tone from 'tone'
 import { ref, watch } from 'vue'
 import { useAudio } from '@/composables/useAudio'
 import { useAudioStore } from '@/stores/audio'
+import { useMultiplayer } from '@/composables/useMultiplayer'
 import { INSTRUMENT_ORDER, INSTRUMENTS } from '@/lib/instruments'
 import { MAQAM_PRESETS } from '@/lib/microtonal'
 import type { InstrumentId } from '@/lib/types'
@@ -290,6 +291,13 @@ export function useChaos() {
     dampInstrument,
     ensureToneStarted,
   } = useAudio()
+  // Each chaos note (auto-arp tick or generated melody step) becomes a
+  // note:play broadcast when the user is in a multiplayer room, so peers
+  // hear the same line you do. broadcastNote is a no-op when not in a
+  // room and self-skips while another peer's broadcast is being applied
+  // (see useMultiplayer.broadcastNote / isReceiving), so unconditional
+  // calls here are safe.
+  const { broadcastNote } = useMultiplayer()
 
   if (!watcherWired) {
     watcherWired = true
@@ -337,14 +345,17 @@ export function useChaos() {
       else note = chord[i % chord.length]
       i++
       const playNote = note
+      const arpInstrument = audioStore.activeInstrument
       Tone.getDraw().schedule(() => {
-        void playOnTimed(audioStore.activeInstrument, playNote, noteDur, 100)
+        void playOnTimed(arpInstrument, playNote, noteDur, 100)
+        broadcastNote(arpInstrument, playNote, 100)
       }, time)
       if (mode === 'chord') {
         for (let c = 1; c < chord.length; c++) {
           const otherNote = chord[c]
           Tone.getDraw().schedule(() => {
-            void playOnTimed(audioStore.activeInstrument, otherNote, noteDur, 100)
+            void playOnTimed(arpInstrument, otherNote, noteDur, 100)
+            broadcastNote(arpInstrument, otherNote, 100)
           }, time)
         }
       }
@@ -591,6 +602,11 @@ export function useChaos() {
         // param (the half-flat sika of Rast, the bayati second, etc.).
         const shift = cents[i] ?? 0
         void playOnTimed(id, finalNote, noteDur, 100, shift)
+        // Broadcast each generated step too so peers in the room hear
+        // the same maqam-aware line — note:play already carries cents
+        // through the wire, so a Bayati melody plays in tune across the
+        // room instead of being snapped back to 12-TET on the receiver.
+        broadcastNote(id, finalNote, 100, shift)
       }, t)
     })
   }

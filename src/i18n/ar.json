@@ -433,7 +433,8 @@
     "couldNotDetect": "تعذر تحديد المقام — قد تكون التسجيلات هادئة جدًا أو متعددة الأصوات.",
     "confidenceHigh": "بثقة",
     "confidenceMedium": "مرجّح",
-    "confidenceLow": "أفضل تخمين"
+    "confidenceLow": "أفضل تخمين",
+    "maqamMatch": "أقرب مقام"
   },
   "liveTake": {
     "record": "تسجيل الأداء",

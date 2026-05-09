@@ -433,7 +433,8 @@
     "couldNotDetect": "Couldn't pin down a key — recordings may be too quiet or too polyphonic.",
     "confidenceHigh": "Confident",
     "confidenceMedium": "Likely",
-    "confidenceLow": "Best guess"
+    "confidenceLow": "Best guess",
+    "maqamMatch": "Closest maqam"
   },
   "liveTake": {
     "record": "Record take",
