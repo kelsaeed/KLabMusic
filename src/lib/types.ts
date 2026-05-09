@@ -23,6 +23,13 @@ export interface LiveTakeEvent {
   instrument: InstrumentId
   note: string
   velocity: number
+  /** Microtonal pitch offset in cents to apply via setBend before this
+   *  note's attack. Optional + defaults to 0 — only the bowed strings,
+   *  oud, and other quarter-tone-capable voices populate it (the
+   *  violin pad's bow engine, oud pluck handler, and any future
+   *  microtonal pad). 12-TET-only voices leave it unset and the
+   *  arrangement-replay path treats undefined as 0. */
+  cents?: number
 }
 
 export interface ArrangeClip {

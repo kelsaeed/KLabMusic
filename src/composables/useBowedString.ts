@@ -102,6 +102,10 @@ export function useBowedString(config: BowConfig): UseBowedStringReturn {
   let segmentStartedAt = 0
   let segmentNote = ''
   let segmentVelocity = 0
+  // Cents shift active during the current bow segment. Captured here
+  // alongside the note so a recorded maqam performance keeps its
+  // quarter-tone fingerings on arrangement playback.
+  let segmentCents = 0
 
   function resolveNote(stringIndex: number, quarterSteps: number) {
     const string = config.strings[stringIndex]
@@ -140,6 +144,7 @@ export function useBowedString(config: BowConfig): UseBowedStringReturn {
     segmentStartedAt = performance.now()
     segmentNote = note
     segmentVelocity = shaped
+    segmentCents = cents
     state.value = {
       stringIndex,
       quarterSteps,
@@ -152,8 +157,15 @@ export function useBowedString(config: BowConfig): UseBowedStringReturn {
   function flushSegment() {
     if (!segmentNote) return
     const durationSec = (performance.now() - segmentStartedAt) / 1000
-    live.recordLivePlay(config.instrumentId, segmentNote, segmentVelocity, durationSec)
+    live.recordLivePlay(
+      config.instrumentId,
+      segmentNote,
+      segmentVelocity,
+      durationSec,
+      segmentCents,
+    )
     segmentNote = ''
+    segmentCents = 0
   }
 
   function bowMoveTo(
@@ -206,7 +218,7 @@ export function useBowedString(config: BowConfig): UseBowedStringReturn {
     audio.setBend(config.instrumentId, cents)
     const v = Math.max(40, Math.min(127, velocity))
     void audio.playOnTimed(config.instrumentId, note, 0.4, v)
-    live.recordLivePlay(config.instrumentId, note, v, 0.4)
+    live.recordLivePlay(config.instrumentId, note, v, 0.4, cents)
   }
 
   return {

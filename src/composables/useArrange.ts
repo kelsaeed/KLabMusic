@@ -100,7 +100,7 @@ export function useArrange() {
   const store = useArrangeStore()
   const recorderStore = useRecorderStore()
   const beatStore = useBeatMakerStore()
-  const { ensureToneStarted, ensureInstrument, playOnTimed, getMasterInput } = useAudio()
+  const { ensureToneStarted, ensureInstrument, playOnTimed, setBend, getMasterInput } = useAudio()
 
   function scheduleAudioClip(track: ArrangeTrack, clip: ArrangeClip, destination?: Tone.ToneAudioNode) {
     if (clip.source.kind !== 'audio') return
@@ -388,6 +388,12 @@ export function useArrange() {
         const automatedVol = store.sampleAutomation(track, 'volume', absoluteT)
         const vol = automatedVol !== null ? automatedVol : trackVolMul
         Tone.getDraw().schedule(() => {
+          // Apply the recorded microtonal bend (if any) right before
+          // the attack so a maqam violin take replays with its
+          // original quarter-tone fingerings, not snapped to the
+          // nearest semitone. setBend on a 12-TET-only voice is a
+          // no-op so non-microtonal takes don't change behaviour.
+          setBend(ev.instrument, ev.cents ?? 0)
           void playOnTimed(ev.instrument, ev.note, remaining, Math.round(ev.velocity * vol))
         }, time)
       }, absoluteT)

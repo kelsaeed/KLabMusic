@@ -162,16 +162,21 @@ export function useLivePlay() {
     note: string,
     velocity: number,
     durationSec: number,
+    cents = 0,
   ) {
     if (!isRecordingLive.value) return
     const time = (performance.now() - liveTakeStartedAt) / 1000
-    liveTakeEvents.value.push({
+    const event: LiveTakeEvent = {
       time: Math.max(0, time),
       duration: Math.max(0.05, durationSec),
       instrument: instrumentId,
       note,
       velocity,
-    })
+    }
+    // Only persist cents when there's actually a microtonal shift —
+    // keeps non-maqam takes from carrying noise on every event.
+    if (cents !== 0) event.cents = cents
+    liveTakeEvents.value.push(event)
   }
 
   function startLiveTake() {

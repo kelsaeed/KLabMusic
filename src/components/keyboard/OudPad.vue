@@ -121,7 +121,7 @@ function pluckCell(cell: Cell, velocity: number) {
   // delay line, so the order matters.
   setBend('oud', cell.cents)
   void playOnTimed('oud', cell.noteName, 1.4, velocity)
-  recordLivePlay('oud', cell.noteName, velocity, 1.4)
+  recordLivePlay('oud', cell.noteName, velocity, 1.4, cell.cents)
   flash(`${cell.courseIndex}:${cell.step}`)
 }
 
