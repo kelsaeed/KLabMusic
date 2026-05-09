@@ -2,6 +2,7 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAudio } from '@/composables/useAudio'
+import { useLivePlay } from '@/composables/useLivePlay'
 
 // Phase 8 — tambourine. Three gestures map to the three sample names
 // the buildTambourine voice understands:
@@ -13,6 +14,7 @@ import { useAudio } from '@/composables/useAudio'
 
 const { t } = useI18n()
 const { playOn } = useAudio()
+const { recordLivePlay } = useLivePlay()
 
 const dragging = ref(false)
 const lastShakeTime = ref(0)
@@ -39,9 +41,11 @@ function onDown(e: PointerEvent) {
   tapTimestamps.push(now)
   if (detectRoll(now)) {
     void playOn('tambourine', 'roll', 100)
+    recordLivePlay('tambourine', 'roll', 100, 0.2)
     pulse('roll')
   } else {
     void playOn('tambourine', 'hit', 110)
+    recordLivePlay('tambourine', 'hit', 110, 0.2)
     pulse('hit')
   }
 }
@@ -60,6 +64,7 @@ function onMove(e: PointerEvent) {
   if (now - lastShakeTime.value < 70) return
   lastShakeTime.value = now
   void playOn('tambourine', 'shake', 80)
+  recordLivePlay('tambourine', 'shake', 80, 0.1)
   pulse('shake')
 }
 

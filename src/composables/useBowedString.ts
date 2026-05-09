@@ -10,6 +10,7 @@
 import * as Tone from 'tone'
 import { ref, type Ref } from 'vue'
 import { useAudio } from '@/composables/useAudio'
+import { useLivePlay } from '@/composables/useLivePlay'
 import type { InstrumentId } from '@/lib/types'
 
 export interface BowedStringSpec {
@@ -86,6 +87,7 @@ export interface UseBowedStringReturn {
 
 export function useBowedString(config: BowConfig): UseBowedStringReturn {
   const audio = useAudio()
+  const live = useLivePlay()
   const state = ref<BowState>({
     stringIndex: -1,
     quarterSteps: 0,
@@ -93,6 +95,13 @@ export function useBowedString(config: BowConfig): UseBowedStringReturn {
     detuneCents: 0,
     direction: 'down',
   })
+  // When did the current bow segment begin? Each "segment" is the time
+  // from one bowAttack until the next bowMoveTo / bowRelease — that's
+  // the duration we report to the live-take recorder when the segment
+  // ends so playback re-articulates with the right note length.
+  let segmentStartedAt = 0
+  let segmentNote = ''
+  let segmentVelocity = 0
 
   function resolveNote(stringIndex: number, quarterSteps: number) {
     const string = config.strings[stringIndex]
@@ -126,7 +135,11 @@ export function useBowedString(config: BowConfig): UseBowedStringReturn {
     // is already at the correct microtonal pitch. Doing it in the wrong
     // order produces an audible 50-cent slide on every quarter-tone note.
     audio.setBend(config.instrumentId, cents)
-    void audio.playOn(config.instrumentId, note, shapeVelocity(velocity, direction), true)
+    const shaped = shapeVelocity(velocity, direction)
+    void audio.playOn(config.instrumentId, note, shaped, true)
+    segmentStartedAt = performance.now()
+    segmentNote = note
+    segmentVelocity = shaped
     state.value = {
       stringIndex,
       quarterSteps,
@@ -134,6 +147,13 @@ export function useBowedString(config: BowConfig): UseBowedStringReturn {
       detuneCents: cents,
       direction,
     }
+  }
+
+  function flushSegment() {
+    if (!segmentNote) return
+    const durationSec = (performance.now() - segmentStartedAt) / 1000
+    live.recordLivePlay(config.instrumentId, segmentNote, segmentVelocity, durationSec)
+    segmentNote = ''
   }
 
   function bowMoveTo(
@@ -159,12 +179,14 @@ export function useBowedString(config: BowConfig): UseBowedStringReturn {
     // flip — re-articulates the note. Release the prior pitch first so
     // the polyphonic synth doesn't accumulate stale voices.
     audio.stopOn(config.instrumentId, midiToNote(state.value.noteMidi))
+    flushSegment()
     bowAttack(stringIndex, quarterSteps, velocity, direction)
   }
 
   function bowRelease() {
     if (state.value.stringIndex === -1) return
     audio.stopOn(config.instrumentId, midiToNote(state.value.noteMidi))
+    flushSegment()
     // Reset detune so a future plain-tone attack on this instrument from
     // some other UI doesn't inherit a 50 cent shift.
     audio.setBend(config.instrumentId, 0)
@@ -182,7 +204,9 @@ export function useBowedString(config: BowConfig): UseBowedStringReturn {
     if (!string) return
     const { note, cents } = resolveNote(stringIndex, quarterSteps)
     audio.setBend(config.instrumentId, cents)
-    void audio.playOnTimed(config.instrumentId, note, 0.4, Math.max(40, Math.min(127, velocity)))
+    const v = Math.max(40, Math.min(127, velocity))
+    void audio.playOnTimed(config.instrumentId, note, 0.4, v)
+    live.recordLivePlay(config.instrumentId, note, v, 0.4)
   }
 
   return {

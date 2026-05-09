@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAudio } from '@/composables/useAudio'
+import { useLivePlay } from '@/composables/useLivePlay'
 import { useAudioStore } from '@/stores/audio'
 import { formatNote } from '@/lib/notation'
 import * as Tone from 'tone'
@@ -15,6 +16,7 @@ import * as Tone from 'tone'
 const { t } = useI18n()
 const audioStore = useAudioStore()
 const { playOnTimed, dampInstrument } = useAudio()
+const { recordLivePlay } = useLivePlay()
 
 const HOLE_COUNT = 6
 // C major scale starting C4 → D, E, F, G, A.
@@ -39,6 +41,7 @@ function play(holeIdx: number) {
   const note = holes.value[holeIdx]?.note
   if (!note) return
   void playOnTimed('flute', note, 0.7, 100)
+  recordLivePlay('flute', note, 100, 0.7)
   flashed.value = holeIdx
   setTimeout(() => {
     if (flashed.value === holeIdx) flashed.value = null

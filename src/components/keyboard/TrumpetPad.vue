@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAudio } from '@/composables/useAudio'
+import { useLivePlay } from '@/composables/useLivePlay'
 import { useAudioStore } from '@/stores/audio'
 import { formatNote } from '@/lib/notation'
 import * as Tone from 'tone'
@@ -16,6 +17,7 @@ import * as Tone from 'tone'
 const { t } = useI18n()
 const audioStore = useAudioStore()
 const { playOnTimed, dampInstrument } = useAudio()
+const { recordLivePlay } = useLivePlay()
 
 // Standard semitone offset for each three-bit valve combination
 // (1+2 = 3 semis down, etc) referenced from open. Index 0..7 = bits
@@ -79,6 +81,7 @@ function play(cell: Cell) {
     heldValves.value = new Set()
   }, 350)
   void playOnTimed('trumpet', cell.note, 0.7, 110)
+  recordLivePlay('trumpet', cell.note, 110, 0.7)
   flashed.value = `${cell.valves.join(',')}-${cell.partial}`
   setTimeout(() => {
     if (flashed.value === `${cell.valves.join(',')}-${cell.partial}`) flashed.value = ''

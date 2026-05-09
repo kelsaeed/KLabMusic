@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAudio } from '@/composables/useAudio'
+import { useLivePlay } from '@/composables/useLivePlay'
 import { useAudioStore } from '@/stores/audio'
 import { formatNote } from '@/lib/notation'
 import * as Tone from 'tone'
@@ -15,6 +16,7 @@ import * as Tone from 'tone'
 const { t } = useI18n()
 const audioStore = useAudioStore()
 const { playOnTimed, dampInstrument } = useAudio()
+const { recordLivePlay } = useLivePlay()
 
 const HOLE_COUNT = 12
 
@@ -41,6 +43,7 @@ function play(holeIdx: number) {
   const note = holes.value[holeIdx]?.note
   if (!note) return
   void playOnTimed('clarinet', note, 0.55, 105)
+  recordLivePlay('clarinet', note, 105, 0.55)
   flashed.value = holeIdx
   setTimeout(() => {
     if (flashed.value === holeIdx) flashed.value = null

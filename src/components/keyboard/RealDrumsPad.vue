@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAudio } from '@/composables/useAudio'
+import { useLivePlay } from '@/composables/useLivePlay'
 
 // Phase 7 — full acoustic drum-kit pad. Distinct from the "Beats" pad
 // (which is the TR-808 trigger box). The kit is laid out roughly the
@@ -12,6 +13,7 @@ import { useAudio } from '@/composables/useAudio'
 
 const { t } = useI18n()
 const { playOn } = useAudio()
+const { recordLivePlay } = useLivePlay()
 
 interface Piece {
   /** Sample id understood by buildRealDrums in useAudio. */
@@ -56,6 +58,7 @@ function hit(piece: Piece, e: PointerEvent) {
   const target = e.currentTarget as HTMLElement
   const vel = velocityFromY(e, target)
   void playOn('realDrums', piece.sample, vel)
+  recordLivePlay('realDrums', piece.sample, vel, 0.4)
   flashing.value = new Set([...flashing.value, piece.sample])
   setTimeout(() => {
     flashing.value.delete(piece.sample)

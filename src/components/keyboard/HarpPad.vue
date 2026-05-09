@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAudio } from '@/composables/useAudio'
+import { useLivePlay } from '@/composables/useLivePlay'
 import { useAudioStore } from '@/stores/audio'
 import { formatNote } from '@/lib/notation'
 import * as Tone from 'tone'
@@ -14,6 +15,7 @@ import * as Tone from 'tone'
 const { t } = useI18n()
 const audioStore = useAudioStore()
 const { dampInstrument, playOnTimed } = useAudio()
+const { recordLivePlay } = useLivePlay()
 
 const SCALE_DEGREES = [0, 2, 4, 5, 7, 9, 11] // C major
 const STRING_COUNT = 22
@@ -40,6 +42,7 @@ const flashed = ref<string>('')
 
 function pluck(note: string) {
   void playOnTimed('harp', note, 1.6, 110)
+  recordLivePlay('harp', note, 110, 1.6)
   flashed.value = note
   setTimeout(() => {
     if (flashed.value === note) flashed.value = ''

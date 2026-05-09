@@ -144,6 +144,36 @@ export function useLivePlay() {
     broadcastNoteStop(audioStore.activeInstrument, rootNote)
   }
 
+  /**
+   * Capture a single note event into the active live take, used by the
+   * new instrument pads (violin, cello, oud, harmonica, harp, trumpet,
+   * tambourine, clarinet, flute, real drums) which call useAudio
+   * directly rather than going through this composable's `press` /
+   * `release` funnel. Without this, gestures performed on those pads
+   * during a live-take record would silently disappear from the
+   * captured arrangement.
+   *
+   * Pads call this AFTER their playOn / playOnTimed call, with the same
+   * note name + velocity + the duration they passed to playOnTimed
+   * (or an estimate of how long the gesture sustained for).
+   */
+  function recordLivePlay(
+    instrumentId: InstrumentId,
+    note: string,
+    velocity: number,
+    durationSec: number,
+  ) {
+    if (!isRecordingLive.value) return
+    const time = (performance.now() - liveTakeStartedAt) / 1000
+    liveTakeEvents.value.push({
+      time: Math.max(0, time),
+      duration: Math.max(0.05, durationSec),
+      instrument: instrumentId,
+      note,
+      velocity,
+    })
+  }
+
   function startLiveTake() {
     liveTakeEvents.value = []
     livePending.clear()
@@ -221,5 +251,6 @@ export function useLivePlay() {
     startLiveTake,
     stopLiveTake,
     clearLiveTake,
+    recordLivePlay,
   }
 }

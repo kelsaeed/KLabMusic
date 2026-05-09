@@ -2,7 +2,8 @@ import * as Tone from 'tone'
 import { ref, watch } from 'vue'
 import { useAudio } from '@/composables/useAudio'
 import { useAudioStore } from '@/stores/audio'
-import { INSTRUMENT_ORDER } from '@/lib/instruments'
+import { INSTRUMENT_ORDER, INSTRUMENTS } from '@/lib/instruments'
+import type { InstrumentId } from '@/lib/types'
 
 export type ArpMode = 'up' | 'down' | 'random' | 'chord'
 export type Scale = 'major' | 'minor' | 'pentatonic' | 'blues' | 'dorian'
@@ -473,9 +474,37 @@ export function useChaos() {
     notes.forEach((note, i) => {
       const t = Tone.now() + i * stepSec
       void Tone.getDraw().schedule(() => {
-        void playOnTimed(audioStore.activeInstrument, note, noteDur, 100)
+        // Clamp the generated note into the active instrument's playable
+        // range so a "majestic" mood targeting C5 doesn't hand a violin
+        // pad a B6 it can't reach in first position. Falls through
+        // unchanged for instruments without a declared range (the
+        // glitch / fx voices and the percussion pads).
+        const id = audioStore.activeInstrument
+        const finalNote = clampNoteToRange(id, note)
+        void playOnTimed(id, finalNote, noteDur, 100)
       }, t)
     })
+  }
+
+  function clampNoteToRange(instrumentId: InstrumentId, note: string): string {
+    const meta = INSTRUMENTS[instrumentId]
+    if (!meta?.range) return note
+    try {
+      const noteMidi = Tone.Frequency(note).toMidi()
+      const lowMidi = Tone.Frequency(meta.range.low).toMidi()
+      const highMidi = Tone.Frequency(meta.range.high).toMidi()
+      let m = noteMidi
+      while (m < lowMidi) m += 12
+      while (m > highMidi) m -= 12
+      // If the range is so narrow the note still doesn't fit (e.g. a
+      // percussion-only voice with a coincidentally-defined tiny range),
+      // fall back to the original — better to play out of range than
+      // silently swallow the note.
+      if (m < lowMidi || m > highMidi) return note
+      return Tone.Frequency(m, 'midi').toNote()
+    } catch {
+      return note
+    }
   }
 
   return {

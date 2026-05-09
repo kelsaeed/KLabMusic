@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAudio } from '@/composables/useAudio'
+import { useLivePlay } from '@/composables/useLivePlay'
 import { useAudioStore } from '@/stores/audio'
 import { formatNote } from '@/lib/notation'
 import * as Tone from 'tone'
@@ -14,6 +15,7 @@ import * as Tone from 'tone'
 const { t } = useI18n()
 const audioStore = useAudioStore()
 const { playOnTimed, dampInstrument } = useAudio()
+const { recordLivePlay } = useLivePlay()
 
 // Standard Richter intervals from the harmonica's root, expressed in
 // semitones. Notice hole 7's draw is BELOW its blow — the famous Richter
@@ -91,6 +93,7 @@ function playHole(index: number, m: BreathMode, velocity = 100) {
   if (!hole) return
   const note = m === 'blow' ? hole.blowNote : hole.drawNote
   void playOnTimed('harmonica', note, 0.4, velocity)
+  recordLivePlay('harmonica', note, velocity, 0.4)
   flash(index, m)
 }
 
