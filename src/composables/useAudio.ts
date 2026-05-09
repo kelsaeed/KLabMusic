@@ -776,6 +776,67 @@ function buildViolin(): VoiceAdapter {
   }
 }
 
+function buildOud(): VoiceAdapter {
+  // Phase 5 — Arabic oud. Karplus-Strong (Tone.PluckSynth) is the
+  // closest synth approximation of a plucked string family — woody
+  // attack noise, exponential decay shaped by the string-dampening
+  // parameter, harmonic content from the resonance setting. Single
+  // PluckSynth is monophonic, so we round-robin a small pool to allow
+  // overlapping notes during a fast risha-strum or chord roll.
+  // TODO(samples): manifest will want individual oud course samples
+  // (low to high) for both finger pluck and risha attacks; this synth
+  // path is the offline fallback.
+  const POOL_SIZE = 4
+  const out = new Tone.Gain(1.4)
+  const body = new Tone.Filter({ frequency: 1800, type: 'lowpass', Q: 0.9 })
+  body.connect(out)
+  const synths: Tone.PluckSynth[] = []
+  for (let i = 0; i < POOL_SIZE; i++) {
+    const s = new Tone.PluckSynth({
+      attackNoise: 1.4,
+      dampening: 3500,
+      resonance: 0.85,
+    })
+    s.connect(body)
+    synths.push(s)
+  }
+  let idx = 0
+  // PluckSynth.triggerAttack only takes (note, time) — there's no
+  // velocity arg and no detune param — so velocity is applied as a
+  // pre-attack volume change on the chosen pool voice, and quarter-
+  // tone shifts are applied by transposing the frequency directly
+  // before triggering.
+  let detuneCents = 0
+
+  const triggerOne = (note: string | number, vel: number, durationSec?: number) => {
+    const s = synths[idx]
+    idx = (idx + 1) % POOL_SIZE
+    s.volume.value = Math.max(-30, Tone.gainToDb(Math.max(0.05, vel / 127)))
+    const baseHz = Tone.Frequency(note).toFrequency()
+    const finalHz = baseHz * Math.pow(2, detuneCents / 1200)
+    if (durationSec !== undefined) {
+      s.triggerAttackRelease(finalHz, durationSec)
+    } else {
+      s.triggerAttack(finalHz)
+    }
+  }
+
+  return {
+    attack: (note, vel) => triggerOne(note, vel),
+    attackRelease: (note, dur, vel) => triggerOne(note, vel, dur),
+    release: () => { /* PluckSynth auto-decays — strings keep ringing */ },
+    damp: () => { for (const s of synths) s.triggerRelease() },
+    output: out,
+    setVolumeDb: (db) => { out.gain.value = Tone.dbToGain(db) },
+    setBendCents: (c) => { detuneCents = c },
+    dispose: () => {
+      for (const s of synths) s.dispose()
+      body.dispose()
+      out.dispose()
+    },
+  }
+}
+
 function buildCello(): VoiceAdapter {
   // Phase 4 — bowed cello. Same shape as buildViolin but with a slower
   // attack, longer release, deeper filter base, and a slightly slower
@@ -847,6 +908,7 @@ const BUILDERS: Record<InstrumentId, () => VoiceAdapter | null> = {
   drums: buildDrums,
   violin: buildViolin,
   cello: buildCello,
+  oud: buildOud,
   glitch: buildGlitch,
   meme: () => null,
 }
