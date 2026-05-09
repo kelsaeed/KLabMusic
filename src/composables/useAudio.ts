@@ -177,8 +177,192 @@ let masterAnalyser: Tone.Analyser | null = null
 let masterFft: Tone.Analyser | null = null
 let globalFx: FxChain | null = null
 let mastering: MasteringChain | null = null
+let safetyLimiter: Tone.Compressor | null = null
 let masterReady = false
 let toneStarted = false
+
+// — Voice lifecycle tracking —
+//
+// Without this, the same melodic note can be `attack()`ed twice while
+// the first attack is still active — the second call doesn't replace
+// the first, it stacks ANOTHER voice on top, and after a few minutes
+// of held / re-triggered notes you get a sustained buzz of stuck
+// voices that never released. This map is the source of truth for
+// "is note X currently sounding on instrument Y?" and the dedup gate
+// for fresh attacks.
+//
+// Percussion (drums, realDrums, tambourine) deliberately bypasses this
+// — every kick / snare hit is meant to retrigger and the samples
+// auto-decay; tracking them as held notes would block fast hi-hat
+// patterns.
+interface ActiveNote {
+  instrumentId: InstrumentId
+  note: string
+  /** Wall-clock time the attack fired — used for FIFO voice-stealing
+   *  when polyphony hits the cap. */
+  startedAt: number
+  /** Cached voice reference so panic / steal can release without
+   *  re-resolving the instrument node. */
+  voice: VoiceAdapter
+  /** When set, scheduled timer that auto-removes this note from the
+   *  active map after attackRelease's duration ends. Cleared on
+   *  manual release so we don't double-untrack. */
+  autoCleanupTimer?: ReturnType<typeof setTimeout>
+}
+const activeNotes = new Map<string, ActiveNote>()
+
+function noteKey(id: InstrumentId, note: string): string {
+  return `${id}:${note}`
+}
+
+// — Polyphony cap + voice stealing —
+//
+// Mobile devices choke past ~12 simultaneous tone voices on the
+// default audio buffer size; desktop holds steady at 32. Beyond the
+// cap we steal the OLDEST active voice — same pattern hardware
+// synths used in the 80s — so a frantic chord roll can't wedge the
+// audio worker and starve every other note.
+function detectMobile(): boolean {
+  if (typeof window === 'undefined') return false
+  if (typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches) {
+    return true
+  }
+  return /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent || '')
+}
+const POLYPHONY_LIMIT = detectMobile() ? 12 : 32
+
+// Dev-only diagnostic logger. Vite strips DEV-gated branches in prod
+// builds so this contributes zero bytes / overhead to the shipped app.
+function debugAudio(...args: unknown[]) {
+  if (import.meta.env?.DEV) {
+    // eslint-disable-next-line no-console
+    console.log('[audio]', ...args)
+  }
+}
+
+function stealOldestVoice(): boolean {
+  let oldestKey: string | null = null
+  let oldestTime = Infinity
+  for (const [key, n] of activeNotes) {
+    if (n.startedAt < oldestTime) {
+      oldestTime = n.startedAt
+      oldestKey = key
+    }
+  }
+  if (!oldestKey) return false
+  const stolen = activeNotes.get(oldestKey)!
+  debugAudio('steal', oldestKey, 'count=' + activeNotes.size)
+  if (stolen.autoCleanupTimer) clearTimeout(stolen.autoCleanupTimer)
+  // The voice's envelope release shapes a smooth fade-out — calling
+  // release(note) never produces an abrupt cut so this doubles as
+  // the "safe release envelope" requirement. Wrapped in try / catch
+  // because a half-disposed voice (mid-instrument-switch race) might
+  // throw, and a steal failure must not break the active-notes map.
+  try { stolen.voice.release(stolen.note) } catch { /* swallow */ }
+  activeNotes.delete(oldestKey)
+  return true
+}
+
+/**
+ * Returns true if the attack should proceed, false if it was deduped
+ * or blocked. Caller MUST honour the return value — calling
+ * voice.attack after a false return is exactly the bug class this
+ * tracking exists to catch.
+ */
+function trackNoteOn(
+  id: InstrumentId,
+  note: string,
+  voice: VoiceAdapter,
+  autoCleanupSec?: number,
+): boolean {
+  const meta = INSTRUMENTS[id]
+  // Percussion samples retrigger on every hit by design — fast
+  // hi-hat and snare patterns need this. Track-and-dedup applies
+  // only to held melodic notes.
+  if (meta?.playMode !== 'note') return true
+
+  const key = noteKey(id, note)
+  if (activeNotes.has(key)) {
+    debugAudio('dup-skip', key)
+    return false
+  }
+  if (activeNotes.size >= POLYPHONY_LIMIT) {
+    stealOldestVoice()
+  }
+  const entry: ActiveNote = {
+    instrumentId: id,
+    note,
+    startedAt: performance.now(),
+    voice,
+  }
+  if (autoCleanupSec !== undefined) {
+    // attackRelease will auto-release at the envelope level; we just
+    // need to drop our tracking entry so a same-note re-attack works
+    // once the duration elapses. 60 ms tail past the duration covers
+    // typical envelope releases without blocking realistic re-attack
+    // rates (a 16th-note tremolo at 120 BPM is 125 ms apart).
+    entry.autoCleanupTimer = setTimeout(() => {
+      const cur = activeNotes.get(key)
+      if (cur === entry) activeNotes.delete(key)
+    }, autoCleanupSec * 1000 + 60)
+  }
+  activeNotes.set(key, entry)
+  return true
+}
+
+function trackNoteOff(id: InstrumentId, note: string) {
+  const meta = INSTRUMENTS[id]
+  if (meta?.playMode !== 'note') return
+  const key = noteKey(id, note)
+  const entry = activeNotes.get(key)
+  if (!entry) return
+  if (entry.autoCleanupTimer) clearTimeout(entry.autoCleanupTimer)
+  activeNotes.delete(key)
+}
+
+/**
+ * Hard reset. Releases every tracked voice, damps every loaded
+ * instrument as a belt-and-suspenders pass, and clears every map the
+ * engine owns. Called from lifecycle events (blur, page hide, tab
+ * hidden) where audio might be interrupted by the OS, and from the
+ * exposed `panic()` for manual user invocation.
+ */
+function panicAllNotesOff() {
+  debugAudio('panic count=' + activeNotes.size)
+  for (const note of activeNotes.values()) {
+    if (note.autoCleanupTimer) clearTimeout(note.autoCleanupTimer)
+    try { note.voice.release(note.note) } catch { /* swallow */ }
+  }
+  activeNotes.clear()
+  for (const node of nodes.values()) {
+    try { node.voice.damp() } catch { /* swallow */ }
+  }
+  // Sync the audio store's view of active notes too — the piano UI
+  // reads from there to render lit keys.
+  try {
+    useAudioStore().activeNotes = new Set()
+  } catch { /* store may not be available during teardown */ }
+}
+
+let lifecycleHooked = false
+function hookLifecycleEvents() {
+  if (lifecycleHooked || typeof window === 'undefined') return
+  lifecycleHooked = true
+  // Tab loses focus / page navigates away / device sleeps — the OS
+  // can suspend the AudioContext mid-note. Without panic, suspended
+  // notes resume in a stuck-on state when the context wakes back up,
+  // which is the "buzz that won't go away" bug on mobile.
+  window.addEventListener('blur', panicAllNotesOff)
+  window.addEventListener('pagehide', panicAllNotesOff)
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) panicAllNotesOff()
+  })
+  // pointercancel is the "something went wrong with the touch" event
+  // — reaching here means the OS or the browser pulled the gesture
+  // out from under us. Per-pad handlers already wire pointerup, but
+  // pointercancel is sometimes missed in rapid swipes. Safety net.
+  window.addEventListener('pointercancel', panicAllNotesOff)
+}
 
 let firstGesturePromise: Promise<void> | null = null
 function waitForFirstGesture(): Promise<void> {
@@ -269,6 +453,20 @@ function ensureMaster() {
   masterFft = new Tone.Analyser('fft', 64)
   globalFx = buildGlobalFx()
   mastering = buildMasteringChain()
+  // Always-on safety limiter at the very end of the chain. The
+  // mastering preset's own limiter is bypassable (the "off" preset
+  // sets ceiling at 0 dB which is permissive) — this one ALWAYS sits
+  // at -6 dB threshold / 12:1 ratio with a 3 ms attack so a 32-voice
+  // pile-up or a runaway delay feedback burst can't reach the
+  // destination at clipping levels. Even if every layer above it
+  // misbehaves, peaks here are gently squashed instead of distorting.
+  safetyLimiter = new Tone.Compressor({
+    threshold: -6,
+    ratio: 12,
+    attack: 0.003,
+    release: 0.1,
+    knee: 0,
+  })
   masterVolume.chain(
     globalFx.reverb,
     globalFx.delay,
@@ -280,14 +478,17 @@ function ensureMaster() {
     chaosFilter,
     chaosReverb,
     chaosCrush,
-    // Mastering chain runs LAST so it shapes the final mix — EQ glue, then
-    // compressor for cohesion, then limiter as a hard ceiling. Analyser/FFT
-    // taps are after mastering so the visualizer reflects what the user
-    // actually hears.
+    // Mastering chain shapes the final mix — EQ glue, then compressor
+    // for cohesion, then preset limiter as the soft ceiling.
     mastering.eq,
     mastering.compressor,
     mastering.makeup,
     mastering.limiter,
+    // Safety limiter is downstream of the preset chain so it catches
+    // anything the preset misses. Analyser / FFT taps after the
+    // safety limiter so the visualizer reflects what the user
+    // actually hears.
+    safetyLimiter,
     masterAnalyser,
     masterFft,
     Tone.getDestination(),
@@ -297,6 +498,10 @@ function ensureMaster() {
   // so it isn't sitting at constructor defaults until the user opens the
   // mastering dialog.
   applyMasteringPreset(useAudioStore().masteringPreset as MasteringPresetId)
+  // Lifecycle hooks installed once the master chain exists — earlier
+  // and panic would race construction; later and a blur during the
+  // first audible note could leak a stuck voice.
+  hookLifecycleEvents()
   masterReady = true
 }
 
@@ -1852,6 +2057,7 @@ export function useAudio() {
     const id = store.activeInstrument
     const node = await ensureInstrument(id)
     if (!node) return
+    if (!trackNoteOn(id, note, node.voice)) return
     node.voice.attack(note, velocity)
     if (INSTRUMENTS[id].playMode === 'note') store.noteOn(note)
   }
@@ -1861,13 +2067,17 @@ export function useAudio() {
     const node = nodes.get(id)
     if (!node) return
     node.voice.release(note)
-    if (note) store.noteOff(note)
+    if (note) {
+      trackNoteOff(id, note)
+      store.noteOff(note)
+    }
   }
 
   async function playOn(id: InstrumentId, note: string, velocity = 100, silent = false) {
     await ensureToneStarted()
     const node = await ensureInstrument(id)
     if (!node) return
+    if (!trackNoteOn(id, note, node.voice)) return
     node.voice.attack(note, velocity)
     if (!silent && INSTRUMENTS[id].playMode === 'note') store.noteOn(note)
   }
@@ -1881,6 +2091,7 @@ export function useAudio() {
     await ensureToneStarted()
     const node = await ensureInstrument(id)
     if (!node) return
+    if (!trackNoteOn(id, note, node.voice, durationSec)) return
     node.voice.attackRelease(note, durationSec, velocity)
   }
 
@@ -1889,7 +2100,10 @@ export function useAudio() {
     const node = nodes.get(id)
     if (!node) return
     node.voice.release(note)
-    if (note) store.noteOff(note)
+    if (note) {
+      trackNoteOff(id, note)
+      store.noteOff(note)
+    }
   }
 
   function dampInstrument(id?: InstrumentId) {
@@ -1900,12 +2114,22 @@ export function useAudio() {
     const node = nodes.get(id)
     if (!node) return
     node.voice.damp()
+    // Clear tracking entries that belong to this instrument so a later
+    // re-attack on the same note doesn't get blocked as a "duplicate".
+    for (const [key, entry] of activeNotes) {
+      if (entry.instrumentId !== id) continue
+      if (entry.autoCleanupTimer) clearTimeout(entry.autoCleanupTimer)
+      activeNotes.delete(key)
+    }
     store.activeNotes = new Set()
   }
 
   function stopAll() {
-    for (const node of nodes.values()) node.voice.damp()
-    store.activeNotes = new Set()
+    panicAllNotesOff()
+  }
+
+  function panic() {
+    panicAllNotesOff()
   }
 
   function setMasterBend(cents: number) {
@@ -1986,6 +2210,7 @@ export function useAudio() {
     playOnTimed,
     stopOn,
     stopAll,
+    panic,
     dampInstrument,
     setMasterBend,
     setBend,
