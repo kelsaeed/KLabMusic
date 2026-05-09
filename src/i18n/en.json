@@ -436,6 +436,35 @@
     "confidenceLow": "Best guess",
     "maqamMatch": "Closest maqam"
   },
+  "practice": {
+    "title": "Practice",
+    "midi": {
+      "title": "MIDI keyboard",
+      "connect": "Connect MIDI keyboard",
+      "enabled": "Listen for MIDI input",
+      "noDevices": "No MIDI devices detected",
+      "hint": "Connect a USB / Bluetooth MIDI keyboard and play it through the active instrument."
+    },
+    "drone": {
+      "title": "Drone",
+      "start": "Play drone",
+      "stop": "Stop drone",
+      "cents": "Cents",
+      "hint": "Sustained tonic to anchor maqam practice — sing or play against it to hear half-flats in tune."
+    },
+    "metronome": {
+      "title": "Metronome",
+      "start": "Click",
+      "stop": "Stop click",
+      "bpm": "BPM",
+      "signature": "Signature"
+    },
+    "tuner": {
+      "title": "Tuner",
+      "start": "Start tuner",
+      "stop": "Stop tuner"
+    }
+  },
   "liveTake": {
     "record": "Record take",
     "stop": "Stop · {n} notes",

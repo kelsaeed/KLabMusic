@@ -8,6 +8,7 @@ import EffectsPanel from './EffectsPanel.vue'
 import MasterControls from './MasterControls.vue'
 import EffectsLibrary from './EffectsLibrary.vue'
 import LivePlay from '@/components/keyboard/LivePlay.vue'
+import PracticePanel from '@/components/practice/PracticePanel.vue'
 
 const store = useAudioStore()
 const { ensureInstrument } = useAudio()
@@ -36,6 +37,7 @@ onMounted(() => {
         <span class="lib-ico" aria-hidden="true">🎛</span>
         <span class="lib-label">{{ t('fxlib.openButton') }}</span>
       </button>
+      <PracticePanel />
       <EffectsPanel />
     </aside>
     <EffectsLibrary :open="fxLibOpen" @close="fxLibOpen = false" />
