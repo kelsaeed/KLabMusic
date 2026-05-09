@@ -109,6 +109,7 @@
       "lead": "Lead",
       "organ": "Organ",
       "drums": "Beats",
+      "realDrums": "Drum Kit",
       "violin": "Violin",
       "cello": "Cello",
       "oud": "Oud",
@@ -516,6 +517,7 @@
     "heading": {
       "piano": "Piano",
       "drums": "Beats pad",
+      "realDrums": "Drum kit",
       "guitar": "Classical guitar",
       "violin": "Violin",
       "cello": "Cello",

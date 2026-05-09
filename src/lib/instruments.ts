@@ -131,6 +131,18 @@ export const INSTRUMENTS: Record<InstrumentId, InstrumentMeta> = {
     hasQuarterTones: true,
     description: 'Bowed violin — swipe across the strings to bow, tap to pluck. Maqam-aware fingerboard with quarter-tone positions.',
   },
+  realDrums: {
+    id: 'realDrums',
+    category: 'percussion',
+    playMode: 'sample',
+    icon: '🥁',
+    available: true,
+    samples: ['kick', 'snare', 'hihatC', 'hihatO', 'ride', 'crash', 'tom1', 'tom2', 'floor'],
+    realm: 'percussion',
+    articulations: ['hit'],
+    hasQuarterTones: false,
+    description: 'Full acoustic drum kit — kick, snare, hats, toms, ride, crash. Velocity-sensitive hits.',
+  },
   harmonica: {
     id: 'harmonica',
     category: 'synth',
@@ -212,6 +224,7 @@ export const INSTRUMENT_ORDER: readonly InstrumentId[] = [
   'lead',
   'organ',
   'drums',
+  'realDrums',
   'glitch',
   'meme',
 ]
@@ -260,6 +273,7 @@ const NOTE_RANGES: Record<InstrumentId, readonly string[]> = {
   cello: noteRange(2, 4),
   oud: noteRange(2, 5),
   harmonica: noteRange(4, 6),
+  realDrums: [],
   glitch: noteRange(3, 5),
   meme: [],
 }
@@ -281,6 +295,7 @@ export const DEFAULT_NOTE_FOR: Record<InstrumentId, string> = {
   cello: 'D3',
   oud: 'D3',
   harmonica: 'C4',
+  realDrums: 'kick',
   glitch: 'C4',
   meme: 'airhorn',
 }

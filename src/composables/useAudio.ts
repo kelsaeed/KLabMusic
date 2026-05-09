@@ -776,6 +776,114 @@ function buildViolin(): VoiceAdapter {
   }
 }
 
+function buildRealDrums(): VoiceAdapter {
+  // Phase 7 — full acoustic drum kit, distinct from the existing 'drums'
+  // (TR-808 trigger box / "Beats"). Pieces: kick, snare, hihat closed,
+  // hihat open, ride, crash, tom1, tom2, floor tom. Each is a Tone-
+  // synth-built one-shot — MembraneSynth for the drums with skins,
+  // NoiseSynth for the bright/airy hits, MetalSynth for cymbals.
+  // TODO(samples): manifest will want real recorded hits per piece —
+  // synthetic kick / snare are recognisable but lifeless next to a
+  // miked kit, especially at low velocities.
+  const kick = new Tone.MembraneSynth({
+    pitchDecay: 0.06,
+    octaves: 6,
+    envelope: { attack: 0.001, decay: 0.45, sustain: 0, release: 0.55 },
+  })
+  const snare = new Tone.NoiseSynth({
+    noise: { type: 'white' },
+    envelope: { attack: 0.001, decay: 0.2, sustain: 0 },
+  })
+  // Layer a tonal "snap" with the snare noise so it doesn't read as a
+  // pure shaker — real snares have a clear pitched body.
+  const snareTone = new Tone.MembraneSynth({
+    pitchDecay: 0.02,
+    octaves: 3,
+    envelope: { attack: 0.001, decay: 0.1, sustain: 0, release: 0.1 },
+  })
+  const hihatClosed = new Tone.NoiseSynth({
+    noise: { type: 'white' },
+    envelope: { attack: 0.001, decay: 0.05, sustain: 0 },
+  })
+  const hihatOpen = new Tone.NoiseSynth({
+    noise: { type: 'white' },
+    envelope: { attack: 0.001, decay: 0.4, sustain: 0 },
+  })
+  const ride = new Tone.MetalSynth({
+    envelope: { attack: 0.001, decay: 1.4, release: 0.4 },
+    harmonicity: 12,
+    modulationIndex: 22,
+    resonance: 4500,
+    octaves: 2,
+  })
+  const crash = new Tone.MetalSynth({
+    envelope: { attack: 0.001, decay: 2.2, release: 1.5 },
+    harmonicity: 5,
+    modulationIndex: 32,
+    resonance: 4000,
+    octaves: 1.5,
+  })
+  const tom1 = new Tone.MembraneSynth({
+    pitchDecay: 0.08,
+    octaves: 4,
+    envelope: { attack: 0.001, decay: 0.4, sustain: 0, release: 0.5 },
+  })
+  const tom2 = new Tone.MembraneSynth({
+    pitchDecay: 0.08,
+    octaves: 4,
+    envelope: { attack: 0.001, decay: 0.45, sustain: 0, release: 0.55 },
+  })
+  const floor = new Tone.MembraneSynth({
+    pitchDecay: 0.1,
+    octaves: 5,
+    envelope: { attack: 0.001, decay: 0.55, sustain: 0, release: 0.7 },
+  })
+
+  // Cymbal volumes pre-trimmed because MetalSynth is loud relative to
+  // the other hits — without this the ride alone clips the master.
+  ride.volume.value = -16
+  crash.volume.value = -14
+
+  const out = new Tone.Gain(1)
+  ;[kick, snare, snareTone, hihatClosed, hihatOpen, ride, crash, tom1, tom2, floor]
+    .forEach((node) => node.connect(out))
+
+  const fire = (name: string, vel: number) => {
+    const v = Math.max(0.05, vel / 127)
+    switch (name) {
+      case 'kick': kick.triggerAttackRelease('C2', '8n', undefined, v); break
+      case 'snare':
+        snare.triggerAttackRelease('16n', undefined, v)
+        snareTone.triggerAttackRelease('A2', '32n', undefined, v * 0.6)
+        break
+      case 'hihatC': hihatClosed.triggerAttackRelease('32n', undefined, v); break
+      case 'hihatO': hihatOpen.triggerAttackRelease('8n', undefined, v); break
+      case 'ride': ride.triggerAttackRelease('C5', '4n', Tone.now(), v); break
+      case 'crash': crash.triggerAttackRelease('C5', '2n', Tone.now(), v); break
+      case 'tom1': tom1.triggerAttackRelease('B2', '8n', undefined, v); break
+      case 'tom2': tom2.triggerAttackRelease('A2', '8n', undefined, v); break
+      case 'floor': floor.triggerAttackRelease('E2', '8n', undefined, v); break
+    }
+  }
+
+  return {
+    attack: fire,
+    attackRelease: (name, _dur, vel) => fire(name, vel),
+    release: () => { /* one-shots */ },
+    damp: () => { /* idem */ },
+    output: out,
+    setVolumeDb: (db) => { out.gain.value = Tone.dbToGain(db) },
+    setBendCents: () => { /* drums don't bend */ },
+    dispose: () => {
+      kick.dispose(); snare.dispose(); snareTone.dispose()
+      hihatClosed.dispose(); hihatOpen.dispose()
+      ride.dispose(); crash.dispose()
+      tom1.dispose(); tom2.dispose(); floor.dispose()
+      out.dispose()
+    },
+  }
+}
+
 function buildHarmonica(): VoiceAdapter {
   // Phase 6 — diatonic harmonica. The reed sound is approximated by a
   // dual-detuned saw through a bandpass filter, with a fast soft attack
@@ -957,6 +1065,7 @@ const BUILDERS: Record<InstrumentId, () => VoiceAdapter | null> = {
   lead: buildLead,
   organ: buildOrgan,
   drums: buildDrums,
+  realDrums: buildRealDrums,
   violin: buildViolin,
   cello: buildCello,
   oud: buildOud,

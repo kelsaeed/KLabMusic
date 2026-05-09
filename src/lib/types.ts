@@ -116,6 +116,7 @@ export type InstrumentId =
   | 'cello'
   | 'oud'
   | 'harmonica'
+  | 'realDrums'
   | 'glitch'
   | 'meme'
 
