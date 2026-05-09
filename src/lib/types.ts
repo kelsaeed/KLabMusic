@@ -117,6 +117,11 @@ export type InstrumentId =
   | 'oud'
   | 'harmonica'
   | 'realDrums'
+  | 'harp'
+  | 'trumpet'
+  | 'tambourine'
+  | 'clarinet'
+  | 'flute'
   | 'glitch'
   | 'meme'
 

@@ -114,6 +114,11 @@
       "cello": "Cello",
       "oud": "Oud",
       "harmonica": "Harmonica",
+      "harp": "Harp",
+      "trumpet": "Trumpet",
+      "tambourine": "Tambourine",
+      "clarinet": "Clarinet",
+      "flute": "Flute",
       "glitch": "Glitch",
       "meme": "Meme"
     },
@@ -522,7 +527,12 @@
       "violin": "Violin",
       "cello": "Cello",
       "oud": "Oud",
-      "harmonica": "Harmonica"
+      "harmonica": "Harmonica",
+      "harp": "Harp",
+      "trumpet": "Trumpet",
+      "tambourine": "Tambourine",
+      "clarinet": "Clarinet",
+      "flute": "Flute"
     },
     "octaveUp": "Octave up",
     "octaveDown": "Octave down",
@@ -556,6 +566,32 @@
     "blow": "Blow",
     "draw": "Draw",
     "hint": "Tap a hole to play it. Drag downward across the holes to blow, drag upward to draw."
+  },
+  "harp": {
+    "hint": "Pluck a single string, or swipe across them for a glissando."
+  },
+  "trumpet": {
+    "hint": "Tap a fingering at low / mid / high partial to play. The valves above show what's pressed.",
+    "open": "Open",
+    "partial": {
+      "low": "Low",
+      "mid": "Mid",
+      "high": "High"
+    }
+  },
+  "tambourine": {
+    "hint": "Tap to hit, drag to shake, rapid taps for a roll.",
+    "label": "Tambourine"
+  },
+  "clarinet": {
+    "hint": "Tap a tone hole to play. The register key jumps the octave.",
+    "register": "Register",
+    "registerHint": "Toggle the register key — jumps to the upper octave."
+  },
+  "flute": {
+    "hint": "Tap a tone hole to play. The register key jumps the octave.",
+    "register": "Register",
+    "registerHint": "Toggle the register key — jumps to the upper octave."
   },
   "guitar": {
     "strings": "Open strings",

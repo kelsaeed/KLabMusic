@@ -13,6 +13,11 @@ import CelloPad from './CelloPad.vue'
 import OudPad from './OudPad.vue'
 import HarmonicaPad from './HarmonicaPad.vue'
 import RealDrumsPad from './RealDrumsPad.vue'
+import HarpPad from './HarpPad.vue'
+import TrumpetPad from './TrumpetPad.vue'
+import TambourinePad from './TambourinePad.vue'
+import ClarinetPad from './ClarinetPad.vue'
+import FlutePad from './FlutePad.vue'
 import PitchBend from './PitchBend.vue'
 import ModWheel from './ModWheel.vue'
 
@@ -84,7 +89,8 @@ function discardTake() {
 }
 
 const layout = computed<
-  'piano' | 'drums' | 'realDrums' | 'guitar' | 'violin' | 'cello' | 'oud' | 'harmonica'
+  | 'piano' | 'drums' | 'realDrums' | 'guitar' | 'violin' | 'cello' | 'oud'
+  | 'harmonica' | 'harp' | 'trumpet' | 'tambourine' | 'clarinet' | 'flute'
 >(() => {
   const id = audioStore.activeInstrument
   if (id === 'drums') return 'drums'
@@ -94,6 +100,11 @@ const layout = computed<
   if (id === 'cello') return 'cello'
   if (id === 'oud') return 'oud'
   if (id === 'harmonica') return 'harmonica'
+  if (id === 'harp') return 'harp'
+  if (id === 'trumpet') return 'trumpet'
+  if (id === 'tambourine') return 'tambourine'
+  if (id === 'clarinet') return 'clarinet'
+  if (id === 'flute') return 'flute'
   return 'piano'
 })
 
@@ -193,6 +204,11 @@ function onPianoRelease(note: string) {
     <CelloPad v-else-if="layout === 'cello'" />
     <OudPad v-else-if="layout === 'oud'" />
     <HarmonicaPad v-else-if="layout === 'harmonica'" />
+    <HarpPad v-else-if="layout === 'harp'" />
+    <TrumpetPad v-else-if="layout === 'trumpet'" />
+    <TambourinePad v-else-if="layout === 'tambourine'" />
+    <ClarinetPad v-else-if="layout === 'clarinet'" />
+    <FlutePad v-else-if="layout === 'flute'" />
     <Piano
       v-else
       :start-octave="startOctave"

@@ -776,6 +776,216 @@ function buildViolin(): VoiceAdapter {
   }
 }
 
+function buildHarp(): VoiceAdapter {
+  // Phase 8 — concert harp. Same Karplus-Strong family as the oud, but
+  // tuned brighter and with a longer dampening envelope so the strings
+  // ring rather than dampen quickly.
+  // TODO(samples): manifest will want recorded harp glissandos and
+  // single plucks per string.
+  const POOL_SIZE = 6
+  const out = new Tone.Gain(1.2)
+  const tone = new Tone.Filter({ frequency: 5000, type: 'lowpass', Q: 0.6 })
+  tone.connect(out)
+  const synths: Tone.PluckSynth[] = []
+  for (let i = 0; i < POOL_SIZE; i++) {
+    const s = new Tone.PluckSynth({
+      attackNoise: 0.7,
+      dampening: 5500,
+      resonance: 0.96,
+    })
+    s.connect(tone)
+    synths.push(s)
+  }
+  let idx = 0
+  return {
+    attack: (note, vel) => {
+      const s = synths[idx]
+      idx = (idx + 1) % POOL_SIZE
+      s.volume.value = Math.max(-30, Tone.gainToDb(Math.max(0.05, vel / 127)))
+      s.triggerAttack(note)
+    },
+    attackRelease: (note, dur, vel) => {
+      const s = synths[idx]
+      idx = (idx + 1) % POOL_SIZE
+      s.volume.value = Math.max(-30, Tone.gainToDb(Math.max(0.05, vel / 127)))
+      s.triggerAttackRelease(note, dur)
+    },
+    release: () => { /* harp strings ring out naturally */ },
+    damp: () => { for (const s of synths) s.triggerRelease() },
+    output: out,
+    setVolumeDb: (db) => { out.gain.value = Tone.dbToGain(db) },
+    setBendCents: () => { /* PluckSynth has no detune */ },
+    dispose: () => {
+      for (const s of synths) s.dispose()
+      tone.dispose(); out.dispose()
+    },
+  }
+}
+
+function buildTrumpet(): VoiceAdapter {
+  // Phase 8 — B♭ trumpet. Brass tone needs a bright sawtooth + filter
+  // envelope that opens fast (the brass "blare") plus a touch of
+  // distortion for the buzz of the lips on the mouthpiece.
+  // TODO(samples): manifest will want stopped / open valve takes.
+  const synth = new Tone.PolySynth(Tone.MonoSynth, {
+    oscillator: { type: 'sawtooth' },
+    filter: { Q: 1.5, type: 'lowpass', rolloff: -12 },
+    envelope: { attack: 0.06, decay: 0.08, sustain: 0.85, release: 0.25 },
+    filterEnvelope: {
+      attack: 0.04,
+      decay: 0.15,
+      sustain: 0.7,
+      release: 0.25,
+      baseFrequency: 800,
+      octaves: 2.5,
+    },
+    volume: -10,
+  })
+  const drive = new Tone.Distortion({ distortion: 0.15, wet: 0.35 })
+  synth.connect(drive)
+  return {
+    attack: (note, vel) => synth.triggerAttack(note, undefined, Math.max(0.05, vel / 127)),
+    attackRelease: (note, dur, vel) =>
+      synth.triggerAttackRelease(note, dur, undefined, Math.max(0.05, vel / 127)),
+    release: (note) => (note ? synth.triggerRelease(note) : synth.releaseAll()),
+    damp: () => synth.releaseAll(),
+    output: drive,
+    setVolumeDb: (db) => { synth.volume.value = db },
+    setBendCents: (c) => synth.set({ detune: c }),
+    dispose: () => { synth.dispose(); drive.dispose() },
+  }
+}
+
+function buildTambourine(): VoiceAdapter {
+  // Phase 8 — tambourine. Two layers: a short noise burst for the skin
+  // hit (when present — a real tambourine is jingles-on-a-frame, often
+  // skin-less) plus a metal synth for the jingles. Different sample
+  // names produce different envelopes (hit / shake / roll).
+  const skin = new Tone.NoiseSynth({
+    noise: { type: 'pink' },
+    envelope: { attack: 0.001, decay: 0.05, sustain: 0 },
+  })
+  const jingle = new Tone.MetalSynth({
+    envelope: { attack: 0.001, decay: 0.45, release: 0.15 },
+    harmonicity: 8,
+    modulationIndex: 28,
+    resonance: 6000,
+    octaves: 1.5,
+  })
+  jingle.volume.value = -16
+  const out = new Tone.Gain(1)
+  skin.connect(out)
+  jingle.connect(out)
+
+  const fire = (name: string, vel: number) => {
+    const v = Math.max(0.05, vel / 127)
+    switch (name) {
+      case 'hit':
+        skin.triggerAttackRelease('16n', undefined, v * 0.4)
+        jingle.triggerAttackRelease('C5', '8n', Tone.now(), v)
+        break
+      case 'shake':
+        // A continuous shake is delivered by the gesture as a stream
+        // of these calls — short, soft, no skin-hit.
+        jingle.triggerAttackRelease('C5', '32n', Tone.now(), v * 0.5)
+        break
+      case 'roll':
+        jingle.triggerAttackRelease('C5', '16n', Tone.now(), v * 0.7)
+        break
+    }
+  }
+
+  return {
+    attack: fire,
+    attackRelease: (name, _dur, vel) => fire(name, vel),
+    release: () => { /* one-shot */ },
+    damp: () => { /* one-shot */ },
+    output: out,
+    setVolumeDb: (db) => { out.gain.value = Tone.dbToGain(db) },
+    setBendCents: () => { /* not pitched */ },
+    dispose: () => { skin.dispose(); jingle.dispose(); out.dispose() },
+  }
+}
+
+function buildClarinet(): VoiceAdapter {
+  // Phase 8 — clarinet. Cylindrical bore = strong odd harmonics. Square
+  // wave + a low-pass filter envelope sits closer to that profile than
+  // a saw. Soft attack and a slight vibrato make sustained notes
+  // breathe instead of sounding like a synth pad.
+  // TODO(samples): manifest will want chalumeau (low) and clarion
+  // (upper) register takes — the timbre changes noticeably across the
+  // register break.
+  const synth = new Tone.PolySynth(Tone.Synth, {
+    oscillator: { type: 'square' },
+    envelope: { attack: 0.07, decay: 0.06, sustain: 0.85, release: 0.3 },
+    volume: -12,
+  })
+  const filter = new Tone.Filter({ frequency: 1800, type: 'lowpass', Q: 0.7 })
+  const vibrato = new Tone.Vibrato({ frequency: 4.5, depth: 0.025 })
+  synth.connect(filter)
+  filter.connect(vibrato)
+  return {
+    attack: (note, vel) => synth.triggerAttack(note, undefined, Math.max(0.05, vel / 127)),
+    attackRelease: (note, dur, vel) =>
+      synth.triggerAttackRelease(note, dur, undefined, Math.max(0.05, vel / 127)),
+    release: (note) => (note ? synth.triggerRelease(note) : synth.releaseAll()),
+    damp: () => synth.releaseAll(),
+    output: vibrato,
+    setVolumeDb: (db) => { synth.volume.value = db },
+    setBendCents: (c) => synth.set({ detune: c }),
+    dispose: () => { synth.dispose(); filter.dispose(); vibrato.dispose() },
+  }
+}
+
+function buildFlute(): VoiceAdapter {
+  // Phase 8 — concert flute. Triangle wave is the cleanest single-osc
+  // approximation of the flute's near-pure tone. Layer a soft filtered
+  // pink-noise breath, gated by the same envelope, so attacks have
+  // that air-on-mouthpiece character a bare triangle synth lacks.
+  // TODO(samples): manifest will want recorded flute notes — the
+  // breath synthesis here is workable but unmistakably synth.
+  const synth = new Tone.PolySynth(Tone.Synth, {
+    oscillator: { type: 'triangle' },
+    envelope: { attack: 0.08, decay: 0.05, sustain: 0.9, release: 0.35 },
+    volume: -10,
+  })
+  const breath = new Tone.NoiseSynth({
+    noise: { type: 'pink' },
+    envelope: { attack: 0.05, decay: 0.1, sustain: 0.05, release: 0.25 },
+    volume: -28,
+  })
+  const breathFilter = new Tone.Filter({ frequency: 6000, type: 'highpass', Q: 0.3 })
+  breath.connect(breathFilter)
+  const vibrato = new Tone.Vibrato({ frequency: 5.5, depth: 0.03 })
+  synth.connect(vibrato)
+  breathFilter.connect(vibrato)
+  return {
+    attack: (note, vel) => {
+      const v = Math.max(0.05, vel / 127)
+      synth.triggerAttack(note, undefined, v)
+      breath.triggerAttack(undefined, v * 0.4)
+    },
+    attackRelease: (note, dur, vel) => {
+      const v = Math.max(0.05, vel / 127)
+      synth.triggerAttackRelease(note, dur, undefined, v)
+      breath.triggerAttackRelease(dur, undefined, v * 0.4)
+    },
+    release: (note) => {
+      if (note) synth.triggerRelease(note)
+      else synth.releaseAll()
+      breath.triggerRelease()
+    },
+    damp: () => { synth.releaseAll(); breath.triggerRelease() },
+    output: vibrato,
+    setVolumeDb: (db) => { synth.volume.value = db },
+    setBendCents: (c) => synth.set({ detune: c }),
+    dispose: () => {
+      synth.dispose(); breath.dispose()
+      breathFilter.dispose(); vibrato.dispose()
+    },
+  }
+}
+
 function buildRealDrums(): VoiceAdapter {
   // Phase 7 — full acoustic drum kit, distinct from the existing 'drums'
   // (TR-808 trigger box / "Beats"). Pieces: kick, snare, hihat closed,
@@ -1070,6 +1280,11 @@ const BUILDERS: Record<InstrumentId, () => VoiceAdapter | null> = {
   cello: buildCello,
   oud: buildOud,
   harmonica: buildHarmonica,
+  harp: buildHarp,
+  trumpet: buildTrumpet,
+  tambourine: buildTambourine,
+  clarinet: buildClarinet,
+  flute: buildFlute,
   glitch: buildGlitch,
   meme: () => null,
 }
