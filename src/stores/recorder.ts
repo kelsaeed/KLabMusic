@@ -2,6 +2,9 @@ import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import type { Scale, Key } from '@/lib/pitch'
 import type { Clip, ClipPatch } from '@/lib/types'
+import type { MAQAM_PRESETS } from '@/lib/microtonal'
+
+export type MaqamTuneId = keyof typeof MAQAM_PRESETS
 
 export const useRecorderStore = defineStore('recorder', () => {
   const clips = ref<Clip[]>([])
@@ -17,8 +20,19 @@ export const useRecorderStore = defineStore('recorder', () => {
   // is in one key and every vocal take should snap to it.
   const songKey = ref<Key>((localStorage.getItem('klm:songKey') as Key) || 'C')
   const songScale = ref<Scale>((localStorage.getItem('klm:songScale') as Scale) || 'major')
+  // Optional maqam override for the tune-to-key flow. null = use scale.
+  // Persisted alongside songKey / songScale so the user's choice survives
+  // a refresh, same as the rest of the song-tuning context.
+  const persistedMaqam = localStorage.getItem('klm:songMaqam')
+  const songMaqam = ref<MaqamTuneId | null>(
+    persistedMaqam ? (persistedMaqam as MaqamTuneId) : null,
+  )
   watch(songKey, (v) => localStorage.setItem('klm:songKey', v))
   watch(songScale, (v) => localStorage.setItem('klm:songScale', v))
+  watch(songMaqam, (v) => {
+    if (v) localStorage.setItem('klm:songMaqam', v)
+    else localStorage.removeItem('klm:songMaqam')
+  })
   // Live mic monitoring — true while the recorder is feeding the mic into the
   // master FX chain. Not persisted: every refresh starts in a safe muted
   // state to avoid surprise feedback when the user reloads with headphones
@@ -71,6 +85,7 @@ export const useRecorderStore = defineStore('recorder', () => {
     drawerOpen,
     songKey,
     songScale,
+    songMaqam,
     monitoring,
     monitorGain,
     addClip,

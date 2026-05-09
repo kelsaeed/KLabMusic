@@ -161,6 +161,8 @@
       "subtitle": "Snap pitch to a key",
       "key": "Key",
       "scale": "Scale",
+      "maqam": "Maqam",
+      "maqamNone": "None — use scale",
       "detect": "Detect pitch",
       "tuneToKey": "Tune to key",
       "detected": "Detected: {note} {cents}",

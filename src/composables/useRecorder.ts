@@ -16,7 +16,28 @@ import {
   type PitchResult,
 } from '@/lib/pitch'
 import { detectKey, type KeyDetectionResult } from '@/lib/keyDetection'
+import { MAQAM_PRESETS } from '@/lib/microtonal'
 import type { Clip } from '@/lib/types'
+
+/**
+ * Convert a maqam preset id into the semitone-rounded interval set + the
+ * canonical tonic note name. Mirrors the same conversion used by the
+ * chaos engine so a single composition can reuse the same maqam
+ * everywhere — beat-maker chips, chaos melody, and now tune-to-key —
+ * and get the same scale shape on each.
+ */
+function maqamToTuneIntervals(
+  id: keyof typeof MAQAM_PRESETS,
+): { intervals: number[]; tonic: string } | null {
+  const m = MAQAM_PRESETS[id]
+  if (!m) return null
+  const semis = new Set<number>()
+  for (const step of m.steps) semis.add(Math.round(step / 2) % 12)
+  return {
+    intervals: [...semis].sort((a, b) => a - b),
+    tonic: m.tonic,
+  }
+}
 
 const WAVEFORM_BUCKETS = 600
 
@@ -379,12 +400,29 @@ export function useRecorder() {
     clipId: string,
     key: typeof KEY_NAMES[number],
     scale: Scale,
+    maqamId?: keyof typeof MAQAM_PRESETS | null,
   ): TuneResult | null {
     const clip = store.clips.find((c) => c.id === clipId)
     if (!clip) return null
-    const keyIndex = KEY_NAMES.indexOf(key)
+    let keyIndex = KEY_NAMES.indexOf(key)
     if (keyIndex < 0) return null
-    const result = tuneClipToKey(clip.buffer, clip.trimStart, clip.trimEnd, keyIndex, scale)
+    let customIntervals: number[] | undefined
+    if (maqamId) {
+      const m = maqamToTuneIntervals(maqamId)
+      if (m) {
+        // Maqam wins over the user's key + scale picks: a maqam has a
+        // canonical tonic and shape, and "tune to Hijaz on G" is a
+        // different intent than "tune to G major", so we override
+        // both. Falls back to the user's key when the maqam tonic
+        // can't be resolved (shouldn't happen for the bundled set).
+        customIntervals = m.intervals
+        const tonicIdx = KEY_NAMES.indexOf(m.tonic as typeof KEY_NAMES[number])
+        if (tonicIdx >= 0) keyIndex = tonicIdx
+      }
+    }
+    const result = tuneClipToKey(
+      clip.buffer, clip.trimStart, clip.trimEnd, keyIndex, scale, customIntervals,
+    )
     if (!result) return null
     // Combine with the existing pitchSemitones — if the user already shifted
     // the clip down 2 st by hand, we ADD our correction on top so a second
@@ -410,11 +448,15 @@ export function useRecorder() {
    * UI so the user sees how many clips were corrected vs. how many had no
    * detectable pitch (silence, polyphonic content, breath noise).
    */
-  function tuneAllClipsToKey(key: Key, scale: Scale): { tuned: number; skipped: number } {
+  function tuneAllClipsToKey(
+    key: Key,
+    scale: Scale,
+    maqamId?: keyof typeof MAQAM_PRESETS | null,
+  ): { tuned: number; skipped: number } {
     let tuned = 0
     let skipped = 0
     for (const clip of store.clips) {
-      const result = tuneClipToKeyNow(clip.id, key, scale)
+      const result = tuneClipToKeyNow(clip.id, key, scale, maqamId)
       if (result) tuned++
       else skipped++
     }

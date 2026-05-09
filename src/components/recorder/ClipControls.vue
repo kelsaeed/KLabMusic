@@ -7,6 +7,8 @@ import { useMultiplayer } from '@/composables/useMultiplayer'
 import { useMultiplayerStore } from '@/stores/multiplayer'
 import { useToast } from '@/composables/useToast'
 import { KEY_NAMES, type Scale, type Key, type PitchResult } from '@/lib/pitch'
+import { MAQAM_PRESETS } from '@/lib/microtonal'
+import type { MaqamTuneId } from '@/stores/recorder'
 import type { Clip } from '@/lib/types'
 
 const props = defineProps<{ clip: Clip }>()
@@ -37,6 +39,14 @@ async function onShareToRoom(clipId: string) {
 // than on every clip change because YIN is ~10 ms on a 4 k window and we
 // don't want to run it during scrubbing.
 const SCALES: Scale[] = ['major', 'minor', 'pentatonic', 'minor-pent', 'blues', 'dorian', 'chromatic']
+// Maqam ids the user can tune to. Mirrors the bundled set in
+// lib/microtonal — kept as a hand-listed array here to narrow the
+// type for the v-model and let the UI render in a meaningful order
+// (Object.keys would be alphabetical, this ordering matches how the
+// other maqam pickers in the app surface them).
+const MAQAM_IDS: MaqamTuneId[] = [
+  'rast', 'bayati', 'hijaz', 'saba', 'sika', 'nahawand', 'kurd', 'ajam',
+]
 const detectedPitch = ref<PitchResult | null>(null)
 const tuneStatus = ref('')
 
@@ -55,7 +65,12 @@ function onDetectPitch() {
 }
 
 function onTune() {
-  const result = tuneClipToKeyNow(props.clip.id, store.songKey as Key, store.songScale as Scale)
+  const result = tuneClipToKeyNow(
+    props.clip.id,
+    store.songKey as Key,
+    store.songScale as Scale,
+    store.songMaqam,
+  )
   if (!result) {
     tuneStatus.value = t('recorder.tune.noPitch')
     setTimeout(() => (tuneStatus.value = ''), 2500)
@@ -168,14 +183,23 @@ function patch(clipId: string, key: keyof Clip, value: Clip[keyof Clip]) {
       <div class="tune-row">
         <label class="tune-field">
           <span class="lbl mono">{{ t('recorder.tune.key') }}</span>
-          <select v-model="store.songKey">
+          <select v-model="store.songKey" :disabled="store.songMaqam !== null">
             <option v-for="k in KEY_NAMES" :key="k" :value="k">{{ k }}</option>
           </select>
         </label>
         <label class="tune-field">
           <span class="lbl mono">{{ t('recorder.tune.scale') }}</span>
-          <select v-model="store.songScale">
+          <select v-model="store.songScale" :disabled="store.songMaqam !== null">
             <option v-for="s in SCALES" :key="s" :value="s">{{ t(`recorder.tune.scaleName.${s}`) }}</option>
+          </select>
+        </label>
+        <label class="tune-field">
+          <span class="lbl mono">{{ t('recorder.tune.maqam') }}</span>
+          <select v-model="store.songMaqam">
+            <option :value="null">{{ t('recorder.tune.maqamNone') }}</option>
+            <option v-for="m in MAQAM_IDS" :key="m" :value="m">
+              {{ MAQAM_PRESETS[m].name }}
+            </option>
           </select>
         </label>
         <button class="action" @click="onDetectPitch">{{ t('recorder.tune.detect') }}</button>

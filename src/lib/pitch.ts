@@ -130,13 +130,19 @@ export function midiFloatToPitchResult(midi: number): PitchResult {
  * Searches one octave up and down from the detected pitch so a singer
  * landing 3 semitones above a scale note can be pulled DOWN, not pushed up
  * to the next octave's nearest tone.
+ *
+ * `customIntervals` lets the caller swap the scale's semitone-offset list
+ * for a custom one (the maqam-aware tune flow uses this to feed in the
+ * semitone-rounded steps of a chosen maqam preset). When omitted the
+ * lookup falls back to SCALE_INTERVALS[scale] as before.
  */
 export function snapMidiToScale(
   midi: number,
   keyIndex: number,
   scale: Scale,
+  customIntervals?: number[],
 ): number {
-  const intervals = SCALE_INTERVALS[scale]
+  const intervals = customIntervals ?? SCALE_INTERVALS[scale]
   const baseOctave = Math.floor(midi / 12)
   let bestTarget = midi
   let bestDelta = Infinity
@@ -165,6 +171,10 @@ export function tuneClipToKey(
   trimEnd: number,
   keyIndex: number,
   scale: Scale,
+  /** Optional maqam-derived intervals (semitone-rounded). When supplied,
+   *  takes precedence over `scale` so the snap target lands on a
+   *  maqam-scale tone instead of the Western scale tone. */
+  customIntervals?: number[],
 ): TuneResult | null {
   const sr = buffer.sampleRate
   const channel = buffer.getChannelData(0)
@@ -184,7 +194,7 @@ export function tuneClipToKey(
 
   const midi = frequencyToMidiFloat(hz)
   const detected = midiFloatToPitchResult(midi)
-  const targetMidi = snapMidiToScale(midi, keyIndex, scale)
+  const targetMidi = snapMidiToScale(midi, keyIndex, scale, customIntervals)
   const target = midiFloatToPitchResult(targetMidi)
   // Round to integer semitones so it composes cleanly with the existing
   // pitchSemitones range slider — sub-semitone correction is a Phase 4
