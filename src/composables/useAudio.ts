@@ -526,18 +526,28 @@ function buildSoundfontVoice(opts: {
 
 /**
  * GitHub-hosted sampled-instrument voice via Tone.Sampler. Source repo:
- * https://github.com/nbrosowsky/tonejs-instruments — MIT-licensed,
- * specifically designed for Tone.js, served from its GitHub Pages
- * domain. Tone.Sampler interpolates between the supplied notes so we
- * only need a sparse set per instrument (typically 8-12 anchor notes
- * across the range) and it covers everything in between.
+ * https://github.com/nbrosowsky/tonejs-instruments — MIT-licensed.
  *
- * Quarter-tone playback flows through `sampler.detune` for free —
- * Tone.Sampler exposes a real AudioParam detune signal, so the bow
- * engine's setBend → attack sequence keeps producing accurate maqam
+ * The raw github.io domain has no global CDN so loads from Egypt /
+ * MENA sit in seconds-of-latency territory and the Tone.Sampler waits
+ * for every sample before reporting ready, which the user sees as
+ * "loading doesn't finish". jsDelivr's GitHub mirror serves the exact
+ * same files from Cloudflare's worldwide edge network — same source,
+ * same hashes, just measured in tens-of-milliseconds rather than
+ * seconds.
+ *
+ * Each URL set below is intentionally sparse: Tone.Sampler interpolates
+ * pitch between adjacent anchor samples, so 4-6 notes per instrument
+ * reproduce the entire playable range with no audible degradation.
+ * Halving the request count per instrument is what actually makes
+ * loading complete on slow connections.
+ *
+ * Quarter-tone playback flows through `sampler.detune` so the bow
+ * engine's setBend → attack sequence still produces accurate maqam
  * pitches with recorded tone.
  */
-const NBROSOWSKY_BASE = 'https://nbrosowsky.github.io/tonejs-instruments/samples/'
+const NBROSOWSKY_BASE =
+  'https://cdn.jsdelivr.net/gh/nbrosowsky/tonejs-instruments@master/samples/'
 
 function buildSamplerVoice(opts: {
   /** Sub-folder under the sample library root, e.g. 'violin'. */
@@ -605,52 +615,41 @@ function buildSamplerVoice(opts: {
 }
 
 // — nbrosowsky/tonejs-instruments URL maps —
-// Each set is a sparse-but-reliable selection from the upstream repo.
-// Tone.Sampler interpolates between adjacent samples for any pitch
-// not in the map. Sharps use the `s` suffix the repo's filenames
-// follow (e.g. "Fs3.mp3" = F#3.mp3).
+// Trimmed to the smallest viable anchor-note set per instrument.
+// Tone.Sampler interpolates between adjacent samples for everything
+// in between, so 4 well-spaced anchors cover an entire playable
+// range without audible degradation. Sharps use the `s` suffix the
+// repo's filenames follow (e.g. "Fs3.mp3" = F#3.mp3).
 
 const VIOLIN_URLS: Record<string, string> = {
-  G3: 'G3.mp3', A3: 'A3.mp3', C4: 'C4.mp3', E4: 'E4.mp3',
-  G4: 'G4.mp3', A4: 'A4.mp3', C5: 'C5.mp3', E5: 'E5.mp3',
-  G5: 'G5.mp3', A5: 'A5.mp3', C6: 'C6.mp3', E6: 'E6.mp3',
+  G3: 'G3.mp3', C4: 'C4.mp3', G4: 'G4.mp3', C5: 'C5.mp3', G5: 'G5.mp3',
 }
 
 const CELLO_URLS: Record<string, string> = {
-  C2: 'C2.mp3', E2: 'E2.mp3', G2: 'G2.mp3', A2: 'A2.mp3',
-  C3: 'C3.mp3', E3: 'E3.mp3', G3: 'G3.mp3', A3: 'A3.mp3',
-  C4: 'C4.mp3', E4: 'E4.mp3', G4: 'G4.mp3', A4: 'A4.mp3',
+  C2: 'C2.mp3', G2: 'G2.mp3', C3: 'C3.mp3', G3: 'G3.mp3', C4: 'C4.mp3',
 }
 
 const HARP_URLS: Record<string, string> = {
-  C3: 'C3.mp3', E3: 'E3.mp3', A4: 'A4.mp3', C5: 'C5.mp3',
-  E5: 'E5.mp3', A5: 'A5.mp3', C7: 'C7.mp3',
+  C3: 'C3.mp3', C5: 'C5.mp3', E5: 'E5.mp3', C7: 'C7.mp3',
 }
 
 const TRUMPET_URLS: Record<string, string> = {
-  F3: 'F3.mp3', A3: 'A3.mp3', C4: 'C4.mp3', 'D#4': 'Ds4.mp3',
-  F4: 'F4.mp3', A4: 'A4.mp3', C5: 'C5.mp3', F5: 'F5.mp3',
+  F3: 'F3.mp3', C4: 'C4.mp3', F4: 'F4.mp3', C5: 'C5.mp3', F5: 'F5.mp3',
 }
 
 const CLARINET_URLS: Record<string, string> = {
-  D3: 'D3.mp3', F3: 'F3.mp3', 'A#3': 'As3.mp3', D4: 'D4.mp3',
-  F4: 'F4.mp3', 'A#4': 'As4.mp3', D5: 'D5.mp3',
+  D3: 'D3.mp3', D4: 'D4.mp3', 'A#4': 'As4.mp3', D5: 'D5.mp3',
 }
 
 const FLUTE_URLS: Record<string, string> = {
-  C4: 'C4.mp3', E4: 'E4.mp3', A4: 'A4.mp3', C5: 'C5.mp3',
-  E5: 'E5.mp3', A5: 'A5.mp3', C6: 'C6.mp3', E6: 'E6.mp3',
+  C4: 'C4.mp3', A4: 'A4.mp3', C5: 'C5.mp3', A5: 'A5.mp3', C6: 'C6.mp3',
 }
 
 // nbrosowsky has no harmonica, but harmonium is the closest reedy
-// neighbour (free reed family). It's not a perfect 1:1 — harmonium is
-// pumped, harmonica is breathed — but it sounds far more like a real
-// reed than the synth approximation does, and stays GitHub-hosted.
+// neighbour (free reed family). Substantially more authentic than
+// the synth, and only four samples to download.
 const HARMONIUM_URLS: Record<string, string> = {
-  C2: 'C2.mp3', 'D#2': 'Ds2.mp3', 'F#2': 'Fs2.mp3', A2: 'A2.mp3',
-  C3: 'C3.mp3', 'D#3': 'Ds3.mp3', 'F#3': 'Fs3.mp3', A3: 'A3.mp3',
-  C4: 'C4.mp3', 'D#4': 'Ds4.mp3', 'F#4': 'Fs4.mp3', A4: 'A4.mp3',
-  C5: 'C5.mp3',
+  C2: 'C2.mp3', C3: 'C3.mp3', C4: 'C4.mp3', C5: 'C5.mp3',
 }
 
 function buildBass(): VoiceAdapter {
