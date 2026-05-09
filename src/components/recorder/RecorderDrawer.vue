@@ -8,6 +8,7 @@ import WaveformCanvas from './WaveformCanvas.vue'
 import ClipList from './ClipList.vue'
 import ClipControls from './ClipControls.vue'
 import SmartTunePanel from './SmartTunePanel.vue'
+import RecordingPitchReadout from './RecordingPitchReadout.vue'
 
 const store = useRecorderStore()
 const {
@@ -107,6 +108,7 @@ function onScrub(ratio: number) {
           <span class="rec-dot" />
           {{ store.isRecording ? t('recorder.stopRec', { t: store.recordSeconds.toFixed(1) }) : t('recorder.record') }}
         </button>
+        <RecordingPitchReadout />
         <button class="upload" @click="fileInput?.click()">{{ t('recorder.upload') }}</button>
         <input
           ref="fileInput"

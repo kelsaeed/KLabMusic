@@ -531,6 +531,19 @@ export function useRecorder() {
     }
   }
 
+  /**
+   * The active mic MediaStream, or null when the user hasn't granted
+   * mic access yet. Exposed so a live visualisation (recording pitch
+   * readout, input-level meter) can tap an AnalyserNode off the SAME
+   * stream the MediaRecorder is using — adding a separate
+   * getUserMedia call would request a second mic and on many mobile
+   * devices the second request fails outright. Returns null until
+   * startRecording / startMonitoring has set the stream up.
+   */
+  function getMicStream(): MediaStream | null {
+    return micStream
+  }
+
   return {
     startRecording,
     stopRecording,
@@ -543,6 +556,7 @@ export function useRecorder() {
     tuneClipToKeyNow,
     detectSongKey,
     tuneAllClipsToKey,
+    getMicStream,
     startMonitoring,
     stopMonitoring,
     setMonitorGain,
