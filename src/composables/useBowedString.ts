@@ -149,7 +149,12 @@ export function useBowedString(config: BowConfig): UseBowedStringReturn {
     // order produces an audible 50-cent slide on every quarter-tone note.
     audio.setBend(config.instrumentId, cents)
     const shaped = shapeVelocity(velocity, direction)
-    void audio.playOn(config.instrumentId, note, shaped, true)
+    // Pass bow direction through as the articulation — voices today
+    // ignore it (the recorded violin / cello samples are direction-
+    // agnostic, smplr Soundfont has no down-bow variant either) but
+    // a future articulation pack auto-routes to the right take.
+    const articulation = direction === 'down' ? 'down-bow' : 'up-bow'
+    void audio.playOn(config.instrumentId, note, shaped, true, cents, articulation)
     broadcastNote(config.instrumentId, note, shaped, cents)
     segmentStartedAt = performance.now()
     segmentNote = note
@@ -231,7 +236,10 @@ export function useBowedString(config: BowConfig): UseBowedStringReturn {
     const { note, cents } = resolveNote(stringIndex, quarterSteps)
     audio.setBend(config.instrumentId, cents)
     const v = Math.max(40, Math.min(127, velocity))
-    void audio.playOnTimed(config.instrumentId, note, 0.4, v)
+    // 'pizzicato' is the canonical articulation name for plucked bowed-
+    // string playing; maps to the violin / cello pizzicato sample slot
+    // when an articulation pack lands.
+    void audio.playOnTimed(config.instrumentId, note, 0.4, v, cents, 'pizzicato')
     broadcastNote(config.instrumentId, note, v, cents)
     live.recordLivePlay(config.instrumentId, note, v, 0.4, cents)
   }

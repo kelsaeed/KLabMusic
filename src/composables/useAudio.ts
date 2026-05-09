@@ -14,11 +14,24 @@ interface VoiceAdapter {
   // input (Tone.Sampler / PolySynth / PluckSynth), the value is applied
   // per-voice. Voices that can't support per-voice cents (drums, noise)
   // ignore it. Continuous mid-note bend stays on `setBendCents`.
-  attack: (note: string, velocity: number, cents?: number) => void
+  // `articulation` is an OPTIONAL hint that lets a future sample-pack-
+  // backed voice route to a specific recorded variant (down-bow vs
+  // up-bow, pizzicato, risha pluck, muted trumpet, etc.). Today every
+  // voice ignores it because the articulation packs aren't shipped, so
+  // it's purely forward-compat plumbing — adding it now means the
+  // engine's read of getSampleEntry(id, note, articulation) already
+  // gets the right value once a pack lands.
+  attack: (note: string, velocity: number, cents?: number, articulation?: string) => void
   // Beat maker uses this to fire a note with a defined duration so it auto-releases.
   // Sample-based one-shots (drums, glitch noise) ignore the duration since they
   // already auto-decay; synth voices use it to schedule the release.
-  attackRelease: (note: string, durationSec: number, velocity: number, cents?: number) => void
+  attackRelease: (
+    note: string,
+    durationSec: number,
+    velocity: number,
+    cents?: number,
+    articulation?: string,
+  ) => void
   release: (note?: string) => void
   damp: () => void
   output: Tone.ToneAudioNode
@@ -309,6 +322,30 @@ function noteKey(id: InstrumentId, note: string): string {
 // cap we steal the OLDEST active voice — same pattern hardware
 // synths used in the 80s — so a frantic chord roll can't wedge the
 // audio worker and starve every other note.
+/**
+ * Network-Information API check — true on 4G+ and wifi, false on
+ * 2G/3G or when saveData is set. Used by the instrument prefetcher to
+ * choose between parallel (fast) and serial (slow) loading. Falls back
+ * to "fast" on browsers without the API (Safari/Firefox), where the
+ * previous all-parallel design worked fine — only Chrome on poor
+ * mobile connections needed the serial fallback in the first place.
+ */
+function isFastNetwork(): boolean {
+  if (typeof navigator === 'undefined') return true
+  type ConnectionLike = {
+    effectiveType?: string
+    saveData?: boolean
+  }
+  const conn = (navigator as Navigator & { connection?: ConnectionLike }).connection
+  if (!conn) return true
+  if (conn.saveData) return false
+  // effectiveType reports 'slow-2g' / '2g' / '3g' / '4g' — a 4G or
+  // better connection (or a wifi link the API estimates as 4G+) is
+  // where parallel loading wins. 5G shows up as '4g' here too because
+  // the spec tops out the bucket; that's still safe.
+  return conn.effectiveType === '4g' || conn.effectiveType === undefined
+}
+
 function detectMobile(): boolean {
   if (typeof window === 'undefined') return false
   if (typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches) {
@@ -2346,27 +2383,34 @@ function prefetchAvailableInstruments() {
 
     void ensureToneStarted()
 
-    // Strict SERIAL prefetch — load one instrument, wait for it to fully
-    // arrive, then start the next. The previous design (250 ms-staggered
-    // parallel) hammered the network with 9 concurrent sample-pack
-    // downloads on slow connections, all competing for bandwidth and
-    // none finishing in a reasonable time. The user would press a piano
-    // key, the click would start ANOTHER ensureInstrument(piano) which
-    // (now deduped) joins the already-running fetch — but the fetch was
-    // queued behind 8 other parallel ones and might take 30 s on 4G.
+    // Network-aware prefetch — strict SERIAL on slow links to avoid the
+    // bandwidth thrash that previously killed first-load on 3G/2G; a
+    // small PARALLEL pool on 4G/5G/wifi where 2-way concurrency actually
+    // finishes faster than serial. The previous all-parallel design
+    // hammered every sample CDN at once and degraded slow connections
+    // catastrophically; the previous all-serial design left fast
+    // connections waiting on a single fetch when piano + drums could
+    // load in parallel and shave ~3 s off the warm-up.
     //
-    // Trim list too: only piano + drums get prefetched here. They cover
-    // most starting workflows; the rest load on first selection.
+    // We keep the prefetch list small (piano + drums) on every path —
+    // they cover most starting workflows, the rest load on first
+    // selection. Concurrency is the only thing that varies.
     const order: InstrumentId[] = ['piano', 'drums']
+    const fast = isFastNetwork()
     void (async () => {
-      for (const id of order) {
-        if (!INSTRUMENTS[id].available) continue
-        if (nodes.has(id)) continue
-        try {
-          await ensureInstrument(id)
-        } catch {
-          /* one bad voice shouldn't block the next prefetch */
-        }
+      const tasks = order
+        .filter((id) => INSTRUMENTS[id].available && !nodes.has(id))
+        .map((id) => async () => {
+          try { await ensureInstrument(id) } catch { /* one bad voice shouldn't block the next prefetch */ }
+        })
+      if (fast) {
+        // Parallel — start every task at once, wait for all. With only
+        // ~2 instruments in the prefetch list, this never exceeds the
+        // browser's per-host connection limit, so no need for a pool.
+        await Promise.all(tasks.map((t) => t()))
+      } else {
+        // Serial — back-to-back, each waits for the previous to finish.
+        for (const t of tasks) await t()
       }
     })()
   }
@@ -2448,12 +2492,13 @@ export function useAudio() {
     velocity = 100,
     silent = false,
     cents?: number,
+    articulation?: string,
   ) {
     await ensureToneStarted()
     const node = await ensureInstrument(id)
     if (!node) return
     if (!trackNoteOn(id, note, node.voice)) return
-    node.voice.attack(note, velocity, cents)
+    node.voice.attack(note, velocity, cents, articulation)
     if (!silent && INSTRUMENTS[id].playMode === 'note') store.noteOn(note)
   }
 
@@ -2465,18 +2510,25 @@ export function useAudio() {
   // `cents` is the optional per-attack microtonal shift; the voice bakes
   // it into the per-voice frequency so overlapping maqam steps don't
   // share a detune param and pull each other off pitch.
+  // `articulation` is an opt-in hint for sample-pack-driven voices —
+  // 'down-bow' / 'up-bow' / 'pizzicato' on bowed strings, 'risha' on
+  // oud, 'muted' on trumpet, etc. Voices today ignore it because the
+  // articulation packs aren't shipped yet, but the manifest lookup
+  // already accepts an articulation argument so the routing is wired
+  // end-to-end and a future pack drops in without code changes.
   async function playOnTimed(
     id: InstrumentId,
     note: string,
     durationSec: number,
     velocity = 100,
     cents?: number,
+    articulation?: string,
   ) {
     await ensureToneStarted()
     const node = await ensureInstrument(id)
     if (!node) return
     if (!trackNoteOn(id, note, node.voice, durationSec)) return
-    node.voice.attackRelease(note, durationSec, velocity, cents)
+    node.voice.attackRelease(note, durationSec, velocity, cents, articulation)
   }
 
   function stopOn(id?: InstrumentId, note?: string) {

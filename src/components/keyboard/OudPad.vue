@@ -124,7 +124,10 @@ function pluckCell(cell: Cell, velocity: number) {
   // no detune AudioParam anyway, so the prior setBend path was already
   // partly inert; per-attack cents fixes it for the Karplus-Strong
   // delay line by transposing the seed frequency directly.
-  void playOnTimed('oud', cell.noteName, 1.4, velocity, cell.cents)
+  // 'risha' (the oud's traditional plectrum) is the canonical
+  // articulation tag for an oud pluck — voices ignore it today, but a
+  // future risha-vs-finger sample pack auto-routes via the manifest.
+  void playOnTimed('oud', cell.noteName, 1.4, velocity, cell.cents, 'risha')
   broadcastNote('oud', cell.noteName, velocity, cell.cents)
   recordLivePlay('oud', cell.noteName, velocity, 1.4, cell.cents)
   flash(`${cell.courseIndex}:${cell.step}`)
