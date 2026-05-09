@@ -108,7 +108,7 @@
       "pad": "Pad",
       "lead": "Lead",
       "organ": "Organ",
-      "drums": "Drums",
+      "drums": "Beats",
       "glitch": "Glitch",
       "meme": "Meme"
     },
@@ -511,7 +511,7 @@
     "title": "Piano",
     "heading": {
       "piano": "Piano",
-      "drums": "Drum pad",
+      "drums": "Beats pad",
       "guitar": "Classical guitar"
     },
     "octaveUp": "Octave up",

@@ -118,6 +118,29 @@ export type InstrumentId =
 export type InstrumentCategory = 'sampled' | 'synth' | 'percussion' | 'fx'
 export type InstrumentPlayMode = 'note' | 'sample'
 
+/**
+ * High-level family the instrument belongs to. `category` is finer-grained
+ * (sampled / synth / percussion / fx) and reflects HOW the audio is made;
+ * `realm` reflects HOW IT'S PLAYED — which is what the upcoming per-
+ * instrument UIs (violin bow, oud pluck, harmonica blow/draw, drum kit)
+ * branch on.
+ */
+export type InstrumentRealm =
+  | 'keyboard'    // piano, e-piano, organ
+  | 'string'      // guitar, oud, harp — plucked
+  | 'bowed'       // violin, cello — sustained via bow gesture
+  | 'wind'        // flute, clarinet, harmonica, trumpet
+  | 'percussion'  // beats (TR-808 trigger box), real-drums (full kit), tambourine
+  | 'synth'       // bass, pad, lead — pure-synth voices
+  | 'fx'          // glitch, meme
+
+export interface InstrumentRange {
+  /** Lowest playable note as a note name like "E2". */
+  low: string
+  /** Highest playable note. */
+  high: string
+}
+
 export interface InstrumentMeta {
   id: InstrumentId
   category: InstrumentCategory
@@ -125,6 +148,32 @@ export interface InstrumentMeta {
   icon: string
   available: boolean
   samples?: readonly string[]
+  // — Phase 1 architecture extension —
+  // Optional metadata used by the new instrument engine. Existing voices
+  // had implicit values for most of these; making them explicit lets the
+  // sequencer / chaos / loop station / future per-instrument UIs query
+  // them without each component re-deriving the same defaults.
+  realm?: InstrumentRealm
+  /** Playable note range. For percussion / fx without melodic pitch this
+   *  may be undefined. */
+  range?: InstrumentRange
+  /** Natural / suggested key for the instrument. Used by Chaos Mode to
+   *  generate musically-sensible random output without forcing the user
+   *  to pick a key. */
+  defaultKey?: string
+  /** Suggested scale to pair with defaultKey. */
+  defaultScale?: 'major' | 'minor' | 'pentatonic' | 'blues' | 'dorian'
+  /** Articulations the instrument can produce — bowing direction for
+   *  violin / cello, picking direction for oud / guitar, blow / draw for
+   *  harmonica, etc. The first entry is the default. */
+  articulations?: readonly string[]
+  /** Whether the instrument can play microtonal / quarter-tone pitches.
+   *  Oud / Violin / Cello / Trumpet are true; piano / synth keyboards
+   *  are false. */
+  hasQuarterTones?: boolean
+  /** One-line player-facing description, surfaced by tooltips and the
+   *  instrument selector. */
+  description?: string
 }
 
 export type EffectId =
