@@ -4,6 +4,7 @@ import { Soundfont, DrumMachine } from 'smplr'
 import type { InstrumentId, EffectId } from '@/lib/types'
 import { useAudioStore } from '@/stores/audio'
 import { INSTRUMENTS, EFFECT_ORDER } from '@/lib/instruments'
+import { getSampleEntry, hasManifestEntries } from '@/lib/sampleManifest'
 
 interface VoiceAdapter {
   attack: (note: string, velocity: number) => void
@@ -1266,6 +1267,28 @@ function buildGlitch(): VoiceAdapter {
   }
 }
 
+/**
+ * Phase 10 — try to build a sampled voice from the manifest before
+ * falling back to the synth BUILDER. Returns null when no sample
+ * entries exist for this instrument; the caller (`ensureInstrument`)
+ * then drops through to the synth voice.
+ *
+ * This intentionally returns null even when entries are present until
+ * a downloadable sample pack lands. The seam exists, the call is
+ * already wired, but we don't yet build a Tone.Sampler from the
+ * manifest URLs — that comes when the first pack ships and we have
+ * real artifacts to load. The synth fallback stays the safe default.
+ */
+function tryBuildFromManifest(id: InstrumentId): VoiceAdapter | null {
+  if (!hasManifestEntries(id)) return null
+  // Reference the lookup so the symbol is preserved when packs arrive.
+  void getSampleEntry
+  // TODO(samples): wire a Tone.Sampler / multi-Player here, mapping
+  // manifest URLs to notes and selecting the right articulation per
+  // attack. Until then return null and let the synth voice play.
+  return null
+}
+
 const BUILDERS: Record<InstrumentId, () => VoiceAdapter | null> = {
   piano: buildPiano,
   electricPiano: buildElectricPiano,
@@ -1374,7 +1397,11 @@ async function ensureInstrument(id: InstrumentId): Promise<InstrumentNode | null
     const store = useAudioStore()
     store.setLoadState(id, 'loading')
 
-    let voice = BUILDERS[id]()
+    // Phase 10 — sample manifest first, synth approximation second. The
+    // manifest is empty in the shipped build so this always falls
+    // through to BUILDERS today, but the seam is wired so a future
+    // pack-loader gets sampled audio without touching this function.
+    let voice = tryBuildFromManifest(id) ?? BUILDERS[id]()
     if (!voice || !masterVolume) {
       store.setLoadState(id, 'error')
       return null
