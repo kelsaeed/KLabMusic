@@ -35,8 +35,15 @@ defineProps<{
   position: relative;
   border: 1px solid var(--border);
   background: var(--bg-elevated);
-  /* Touch-action goes on the gesture layer the parent renders inside —
-     it's not enforced here so non-gesture surfaces still scroll. */
+  /* Block browser-managed touch gestures (scroll / zoom) on the
+     placeholder root. Every parent pad either uses pointermove on
+     this element or on a child that bubbles up — in both cases we
+     want the browser to leave the gesture alone. The previous design
+     put this on the parent's gesture layer, which broke for pads that
+     wrap their gesture layer in this placeholder because Vue scoped
+     styles don't always reach the child's root. Putting it here makes
+     it impossible to forget. */
+  touch-action: none;
 }
 .surface.rect { border-radius: var(--radius); }
 .surface.round { border-radius: 50%; }
