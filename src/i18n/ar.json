@@ -329,6 +329,8 @@
     "scale": "السلم",
     "length": "الطول",
     "mood": "الحالة",
+    "maqam": "المقام",
+    "maqamNone": "بدون — استخدم السلم والمفتاح",
     "moodCalm": "هادئ",
     "moodWild": "جامح",
     "moodName": {

@@ -1,9 +1,15 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useChaos, type Scale, type Mood, MOODS } from '@/composables/useChaos'
+import {
+  useChaos,
+  type Scale,
+  type Mood,
+  type MaqamId,
+  MOODS,
+} from '@/composables/useChaos'
 
-const { generateMelody, playMelody, lastMelody, KEYS } = useChaos()
+const { generateMelody, playMelody, lastMelody, KEYS, MAQAM_IDS, MAQAM_PRESETS } = useChaos()
 const { t } = useI18n()
 
 const key = ref<string>('C')
@@ -11,11 +17,16 @@ const scale = ref<Scale>('major')
 const length = ref(8)
 const mood = ref<Mood>('calm')
 const stepSec = ref(0.25)
+// null = no maqam, fall back to the user's scale + mood. Selecting a
+// maqam overrides both the scale picker and the mood's scaleOverride,
+// and forces the key to the maqam's canonical tonic so the result
+// sounds like the named maqam, not a transposed approximation.
+const maqam = ref<MaqamId | null>(null)
 
 const scales: Scale[] = ['major', 'minor', 'pentatonic', 'blues', 'dorian']
 
 function generate() {
-  generateMelody(key.value, scale.value, length.value, mood.value)
+  generateMelody(key.value, scale.value, length.value, mood.value, maqam.value)
 }
 
 function play() {
@@ -36,13 +47,13 @@ function play() {
     <div class="row">
       <label>
         <span class="lbl mono">{{ t('chaos.key') }}</span>
-        <select v-model="key">
+        <select v-model="key" :disabled="maqam !== null">
           <option v-for="k in KEYS" :key="k" :value="k">{{ k }}</option>
         </select>
       </label>
       <label>
         <span class="lbl mono">{{ t('chaos.scale') }}</span>
-        <select v-model="scale">
+        <select v-model="scale" :disabled="maqam !== null">
           <option v-for="s in scales" :key="s" :value="s">{{ t(`chaos.scaleName.${s}`) }}</option>
         </select>
       </label>
@@ -54,6 +65,15 @@ function play() {
         <span class="lbl mono">{{ t('chaos.mood') }}</span>
         <select v-model="mood">
           <option v-for="m in MOODS" :key="m" :value="m">{{ t(`chaos.moodName.${m}`) }}</option>
+        </select>
+      </label>
+      <label class="full-row">
+        <span class="lbl mono">{{ t('chaos.maqam') }}</span>
+        <select v-model="maqam">
+          <option :value="null">{{ t('chaos.maqamNone') }}</option>
+          <option v-for="m in MAQAM_IDS" :key="m" :value="m">
+            {{ MAQAM_PRESETS[m].name }} ({{ MAQAM_PRESETS[m].tonic }})
+          </option>
         </select>
       </label>
     </div>
@@ -93,6 +113,8 @@ function play() {
   gap: 0.4rem;
 }
 .row label, .full { display: flex; flex-direction: column; gap: 0.2rem; }
+.full-row { grid-column: 1 / -1; }
+select:disabled { opacity: 0.45; cursor: not-allowed; }
 .lbl { font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .full input[type='range'] { width: 100%; padding: 0; }
 .actions { display: flex; gap: 0.4rem; }

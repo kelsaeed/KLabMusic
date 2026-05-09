@@ -3,10 +3,21 @@ import { ref, watch } from 'vue'
 import { useAudio } from '@/composables/useAudio'
 import { useAudioStore } from '@/stores/audio'
 import { INSTRUMENT_ORDER, INSTRUMENTS } from '@/lib/instruments'
+import { MAQAM_PRESETS } from '@/lib/microtonal'
 import type { InstrumentId } from '@/lib/types'
 
 export type ArpMode = 'up' | 'down' | 'random' | 'chord'
 export type Scale = 'major' | 'minor' | 'pentatonic' | 'blues' | 'dorian'
+
+// Maqam ids the user can pick from in the chaos melody generator. Mirrors
+// the keys exported from lib/microtonal's MAQAM_PRESETS — kept as a
+// hand-listed const tuple here so the type narrows down to the literal
+// strings (Object.keys would erase to plain string and break exhaustive
+// switches downstream).
+export const MAQAM_IDS = [
+  'rast', 'bayati', 'hijaz', 'saba', 'sika', 'nahawand', 'kurd', 'ajam',
+] as const
+export type MaqamId = typeof MAQAM_IDS[number]
 
 // Moods modulate the random-melody generator. Each mood is a small recipe
 // — preferred scale (overrides the user's pick when set), step-size range,
@@ -368,6 +379,36 @@ export function useChaos() {
   }
 
   /**
+   * Convert a maqam preset's quarter-tone steps into a 12-TET interval
+   * set + the canonical tonic. Each quarter-tone step rounds to its
+   * nearest semitone; multiple quarter-tones that collapse to the
+   * same semitone are deduped and the result is sorted ascending.
+   *
+   * Loses the microtonal flavour of the maqam (the half-flat sika of
+   * Rast, the bayati second, etc.) — chaos plays through the
+   * instrument engine in 12-TET so this is the honest transcription.
+   * The distinctive scale SHAPE survives the rounding (Hijaz keeps
+   * its augmented-second leap, Saba its tetrachord, etc.) so the
+   * melody still reads as that maqam to a listener.
+   *
+   * TODO(microtones): wire setBend per-rendered-note in playMelody so
+   * the actual quarter-tone shifts come through on instruments that
+   * support it (violin / cello / oud) — currently we discard them
+   * here.
+   */
+  function maqamIntervalsAndTonic(id: MaqamId): { intervals: number[]; tonic: string } {
+    const m = MAQAM_PRESETS[id]
+    const semis = new Set<number>()
+    for (const step of m.steps) {
+      semis.add(Math.round(step / 2) % 12)
+    }
+    return {
+      intervals: [...semis].sort((a, b) => a - b),
+      tonic: m.tonic,
+    }
+  }
+
+  /**
    * Render a single [degree, octave-offset] pair into an absolute note name.
    * Wraps degree indices that overflow the scale length into octave bumps,
    * so a motif written with degrees ≥ scale.length still works on a short
@@ -399,11 +440,32 @@ export function useChaos() {
    * mood (sigh figure for sad, fanfare for celebrating, augmented-2nd
    * ornament for arabic, tritone bounce for terrifying, etc).
    */
-  function generateMelody(key: string, scale: Scale, length = 8, mood: Mood = 'calm'): string[] {
-    const keyIdx = KEYS.indexOf(key as typeof KEYS[number])
-    if (keyIdx < 0) return []
+  function generateMelody(
+    key: string,
+    scale: Scale,
+    length = 8,
+    mood: Mood = 'calm',
+    maqam: MaqamId | null = null,
+  ): string[] {
     const recipe = MOOD_RECIPES[mood] ?? MOOD_RECIPES.calm
-    const intervals = recipe.scaleOverride ?? SCALES[scale]
+    let intervals: number[]
+    let keyIdx: number
+    if (maqam) {
+      // Maqam wins over both the user's scale pick and the mood's
+      // scaleOverride — picking a maqam is an explicit "play in this
+      // mode" choice that should beat the mood's default. The
+      // maqam's canonical tonic also overrides the user's key picker
+      // so the named maqam (Hijaz on D, Rast on C) sounds canonical.
+      const r = maqamIntervalsAndTonic(maqam)
+      intervals = r.intervals
+      const idx = KEYS.indexOf(r.tonic as typeof KEYS[number])
+      keyIdx = idx >= 0 ? idx : KEYS.indexOf(key as typeof KEYS[number])
+      if (keyIdx < 0) return []
+    } else {
+      keyIdx = KEYS.indexOf(key as typeof KEYS[number])
+      if (keyIdx < 0) return []
+      intervals = recipe.scaleOverride ?? SCALES[scale]
+    }
     const motifs = recipe.motifs
     const cadence = recipe.cadence
 
@@ -522,5 +584,7 @@ export function useChaos() {
     KEYS,
     SCALES,
     MOODS,
+    MAQAM_IDS,
+    MAQAM_PRESETS,
   }
 }

@@ -329,6 +329,8 @@
     "scale": "Scale",
     "length": "Length",
     "mood": "Mood",
+    "maqam": "Maqam",
+    "maqamNone": "None — use scale + key",
     "moodCalm": "Calm",
     "moodWild": "Wild",
     "moodName": {
