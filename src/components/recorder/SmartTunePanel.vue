@@ -1,10 +1,17 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRecorderStore } from '@/stores/recorder'
+import { useRecorderStore, type MaqamTuneId } from '@/stores/recorder'
 import { useRecorder } from '@/composables/useRecorder'
 import { useToast } from '@/composables/useToast'
+import { MAQAM_PRESETS } from '@/lib/microtonal'
 import type { KeyDetectionResult } from '@/lib/keyDetection'
+
+// Mirrors the order in ClipControls' tune row so the user sees the
+// same maqam labels in the same order in both places.
+const MAQAM_IDS: MaqamTuneId[] = [
+  'rast', 'bayati', 'hijaz', 'saba', 'sika', 'nahawand', 'kurd', 'ajam',
+]
 
 // Smart Tune — one-click vocal tuning for every recorded clip.
 // 1. Detect Song Key runs the chromagram + Krumhansl-Kessler matcher
@@ -58,7 +65,15 @@ async function onTuneAll() {
   tuning.value = true
   await new Promise((r) => setTimeout(r, 0))
   try {
-    const { tuned, skipped } = tuneAllClipsToKey(detection.value.key, detection.value.scale)
+    // Forward the user's maqam override (if any) so a Smart Tune bulk
+    // pass uses the same target as the per-clip tune row. Without this,
+    // ClipControls would tune one clip to Hijaz on D and Smart Tune
+    // would tune everything else to Western major — a confusing mix.
+    const { tuned, skipped } = tuneAllClipsToKey(
+      detection.value.key,
+      detection.value.scale,
+      store.songMaqam,
+    )
     show({
       type: 'success',
       title: t('smartTune.tunedSummary', { tuned, skipped }),
@@ -95,6 +110,15 @@ const chromaBars = computed(() => {
       >
         {{ detecting ? t('smartTune.detecting') : t('smartTune.detectKey') }}
       </button>
+      <label class="maqam-pick mono">
+        <span class="maqam-pick-lbl">{{ t('recorder.tune.maqam') }}</span>
+        <select v-model="store.songMaqam" class="maqam-pick-select">
+          <option :value="null">{{ t('recorder.tune.maqamNone') }}</option>
+          <option v-for="m in MAQAM_IDS" :key="m" :value="m">
+            {{ MAQAM_PRESETS[m].name }}
+          </option>
+        </select>
+      </label>
       <span v-if="!detection && store.clips.length === 0" class="hint mono">
         {{ t('smartTune.noClips') }}
       </span>
@@ -202,6 +226,26 @@ const chromaBars = computed(() => {
   color: var(--text-muted);
   letter-spacing: 0.05em;
 }
+.maqam-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  position: relative;
+}
+.maqam-pick-select {
+  background: var(--bg-base);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.3rem 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+}
+.maqam-pick-select:focus { outline: none; border-color: #a78bfa; }
 
 .result {
   display: flex;
