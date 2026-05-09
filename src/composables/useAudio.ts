@@ -362,6 +362,24 @@ function hookLifecycleEvents() {
   // out from under us. Per-pad handlers already wire pointerup, but
   // pointercancel is sometimes missed in rapid swipes. Safety net.
   window.addEventListener('pointercancel', panicAllNotesOff)
+  // Escape = universal "stop all sound" — DAW convention. Skip when
+  // focus is inside an editable element so Esc still closes modals,
+  // dismisses popovers, and exits text input as the user expects.
+  // We don't preventDefault: we WANT the native escape behaviour
+  // (close dialog, blur input) to keep working alongside the panic.
+  window.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return
+    const target = e.target as HTMLElement | null
+    if (!target) {
+      panicAllNotesOff()
+      return
+    }
+    const tag = target.tagName
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable) {
+      return
+    }
+    panicAllNotesOff()
+  })
 }
 
 let firstGesturePromise: Promise<void> | null = null
