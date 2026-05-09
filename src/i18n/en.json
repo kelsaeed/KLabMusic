@@ -322,7 +322,13 @@
       "root": "Root",
       "quality": "Quality",
       "octave": "Octave",
-      "preview": "Chord"
+      "preview": "Chord",
+      "source": "Source",
+      "sourceCustom": "Custom — pick root + quality",
+      "sourceGuitar": "Guitar chord card",
+      "sourceStrings": "Open strings",
+      "guitarChord": "Guitar chord",
+      "stringSet": "Instrument"
     },
     "arpSpeed": "Step",
     "arpGate": "Gate",

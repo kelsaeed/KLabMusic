@@ -322,7 +322,13 @@
       "root": "الأساس",
       "quality": "النوع",
       "octave": "الأوكتاف",
-      "preview": "الكوردة"
+      "preview": "الكوردة",
+      "source": "المصدر",
+      "sourceCustom": "مخصص — اختر الأساس والنوع",
+      "sourceGuitar": "كوردة جيتار",
+      "sourceStrings": "أوتار مفتوحة",
+      "guitarChord": "كوردة الجيتار",
+      "stringSet": "الآلة"
     },
     "arpSpeed": "الخطوة",
     "arpGate": "البوابة",

@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useChaos, type ArpMode, type MaqamId } from '@/composables/useChaos'
 import { MAQAM_PRESETS } from '@/lib/microtonal'
+import { GUITAR_CHORDS, STRING_PRESETS } from '@/lib/instrumentPresets'
 
 // AutoArp — dropdown chord builder (no typing) feeds the arpeggiator.
 //
@@ -53,6 +54,17 @@ const MAQAM_IDS: MaqamId[] = [
   'rast', 'bayati', 'hijaz', 'saba', 'sika', 'nahawand', 'kurd', 'ajam',
 ]
 
+// "Source" picks where the chord notes come from. 'custom' is the
+// root + quality builder; 'guitar' / 'violin' / 'cello' / 'oud' pull
+// from the shared instrumentPresets — same notes the corresponding
+// pad uses, so the user can echo a guitar chord card or a bowed
+// instrument's open strings into the arp without having to type or
+// remember the voicing.
+type ChordSource = 'custom' | 'guitar' | 'strings'
+const source = ref<ChordSource>('custom')
+const guitarChordId = ref(GUITAR_CHORDS[0].id)
+const stringSetId = ref(STRING_PRESETS[0].id)
+
 const root = ref<RootKey>('C')
 const quality = ref<Quality>('maj')
 const maqam = ref<MaqamId | null>(null)
@@ -62,6 +74,15 @@ const speed = ref(0.18)
 const gate = ref(0.7)
 
 const modes: ArpMode[] = ['up', 'down', 'random', 'chord']
+
+// Picking a non-custom source clears the maqam override since the
+// preset already specifies its own voicing. Without this you could
+// pick "Guitar — Em" and "Maqam: Hijaz" and the maqam would silently
+// take precedence in the chord computed below; toggling the source
+// makes the relationship visible.
+watch(source, (s) => {
+  if (s !== 'custom') maqam.value = null
+})
 
 /**
  * Convert a maqam preset's quarter-tone steps into semitone offsets
@@ -80,6 +101,14 @@ function maqamSemitones(id: MaqamId): { offsets: number[]; tonic: string } {
 }
 
 const chord = computed<string[]>(() => {
+  if (source.value === 'guitar') {
+    const c = GUITAR_CHORDS.find((x) => x.id === guitarChordId.value)
+    return c ? [...c.notes] : []
+  }
+  if (source.value === 'strings') {
+    const s = STRING_PRESETS.find((x) => x.id === stringSetId.value)
+    return s ? [...s.notes] : []
+  }
   if (maqam.value) {
     const { offsets, tonic } = maqamSemitones(maqam.value)
     const tonicIdx = KEYS.indexOf(tonic as RootKey)
@@ -124,38 +153,73 @@ async function toggle() {
       </button>
     </header>
 
-    <!-- Chord builder. Layout: root + quality on one row, octave + maqam
-         override on the next. Maqam override greys out the root + quality
-         pickers because it derives both from the preset's tonic and
-         scale degrees. -->
-    <div class="builder">
-      <label class="field">
-        <span class="lbl mono">{{ t('chaos.chord.root') }}</span>
-        <select v-model="root" :disabled="maqam !== null">
-          <option v-for="k in KEYS" :key="k" :value="k">{{ k }}</option>
-        </select>
-      </label>
-      <label class="field">
-        <span class="lbl mono">{{ t('chaos.chord.quality') }}</span>
-        <select v-model="quality" :disabled="maqam !== null">
-          <option v-for="q in QUALITIES" :key="q" :value="q">{{ q }}</option>
-        </select>
-      </label>
-      <label class="field">
-        <span class="lbl mono">{{ t('chaos.chord.octave') }}</span>
-        <select v-model.number="octave">
-          <option :value="3">3</option>
-          <option :value="4">4</option>
-          <option :value="5">5</option>
-        </select>
-      </label>
-    </div>
+    <!-- Source picker — where the chord notes come from. Switching
+         away from "Custom" hides the root / quality / octave / maqam
+         row and shows the source-specific picker instead. -->
     <label class="field full">
-      <span class="lbl mono">{{ t('chaos.maqam') }}</span>
-      <select v-model="maqam">
-        <option :value="null">{{ t('chaos.maqamNone') }}</option>
-        <option v-for="m in MAQAM_IDS" :key="m" :value="m">
-          {{ MAQAM_PRESETS[m].name }} ({{ MAQAM_PRESETS[m].tonic }})
+      <span class="lbl mono">{{ t('chaos.chord.source') }}</span>
+      <select v-model="source">
+        <option value="custom">{{ t('chaos.chord.sourceCustom') }}</option>
+        <option value="guitar">{{ t('chaos.chord.sourceGuitar') }}</option>
+        <option value="strings">{{ t('chaos.chord.sourceStrings') }}</option>
+      </select>
+    </label>
+
+    <!-- Custom: existing root + quality + octave + maqam builder. -->
+    <template v-if="source === 'custom'">
+      <div class="builder">
+        <label class="field">
+          <span class="lbl mono">{{ t('chaos.chord.root') }}</span>
+          <select v-model="root" :disabled="maqam !== null">
+            <option v-for="k in KEYS" :key="k" :value="k">{{ k }}</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="lbl mono">{{ t('chaos.chord.quality') }}</span>
+          <select v-model="quality" :disabled="maqam !== null">
+            <option v-for="q in QUALITIES" :key="q" :value="q">{{ q }}</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="lbl mono">{{ t('chaos.chord.octave') }}</span>
+          <select v-model.number="octave">
+            <option :value="3">3</option>
+            <option :value="4">4</option>
+            <option :value="5">5</option>
+          </select>
+        </label>
+      </div>
+      <label class="field full">
+        <span class="lbl mono">{{ t('chaos.maqam') }}</span>
+        <select v-model="maqam">
+          <option :value="null">{{ t('chaos.maqamNone') }}</option>
+          <option v-for="m in MAQAM_IDS" :key="m" :value="m">
+            {{ MAQAM_PRESETS[m].name }} ({{ MAQAM_PRESETS[m].tonic }})
+          </option>
+        </select>
+      </label>
+    </template>
+
+    <!-- Guitar chord cards — picks one of the eight first-position
+         chords the GuitarPad ships with. Same voicing the player gets
+         tapping that chord card directly. -->
+    <label v-else-if="source === 'guitar'" class="field full">
+      <span class="lbl mono">{{ t('chaos.chord.guitarChord') }}</span>
+      <select v-model="guitarChordId">
+        <option v-for="c in GUITAR_CHORDS" :key="c.id" :value="c.id">
+          {{ c.name }} — {{ c.notes.join(' ') }}
+        </option>
+      </select>
+    </label>
+
+    <!-- Bowed / oud open strings. The chord is the open-string column
+         of the picked instrument; arping it produces the natural
+         "play every string in turn" pattern. -->
+    <label v-else class="field full">
+      <span class="lbl mono">{{ t('chaos.chord.stringSet') }}</span>
+      <select v-model="stringSetId">
+        <option v-for="s in STRING_PRESETS" :key="s.id" :value="s.id">
+          {{ s.name }} — {{ s.notes.join(' ') }}
         </option>
       </select>
     </label>
