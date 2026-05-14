@@ -96,6 +96,7 @@ onUnmounted(() => {
       <h4>{{ t('chaos.visualizer') }}</h4>
     </header>
     <canvas ref="canvasRef" />
+    <p class="help mono">{{ t('chaos.visualizerHelp') }}</p>
   </section>
 </template>
 
@@ -122,6 +123,16 @@ canvas {
   height: 160px;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.help {
+  margin: 0;
+  font-size: 0.7rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+  padding: 0.4rem 0.55rem;
+  background: var(--bg-elevated);
+  border-left: 2px solid var(--accent-primary);
   border-radius: var(--radius);
 }
 </style>

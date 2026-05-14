@@ -50,6 +50,7 @@ function end() {
       <h4>{{ t('chaos.xyPad') }}</h4>
       <span class="hint mono">{{ t('chaos.xyHint') }}</span>
     </header>
+    <p class="help mono">{{ t('chaos.xyHelp') }}</p>
     <div ref="padRef" class="pad" :class="{ dragging }" @pointerdown="start">
       <div class="grid" />
       <div class="dot" :style="{ left: x * 100 + '%', bottom: y * 100 + '%' }" />
@@ -78,6 +79,16 @@ function end() {
   color: var(--text-muted);
 }
 .hint { font-size: 0.7rem; color: var(--text-muted); }
+.help {
+  margin: 0;
+  font-size: 0.7rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+  padding: 0.4rem 0.55rem;
+  background: var(--bg-elevated);
+  border-left: 2px solid var(--accent-primary);
+  border-radius: var(--radius);
+}
 .pad {
   position: relative;
   width: 100%;

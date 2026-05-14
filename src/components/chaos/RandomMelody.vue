@@ -48,6 +48,14 @@ const scales: Scale[] = ['major', 'minor', 'pentatonic', 'blues', 'dorian']
 // with one click, so users can use the generator as a starting
 // point and then edit individual notes by hand.
 const customText = ref('')
+// Advanced controls (maqam picker + step-length slider) start hidden so
+// the default view stays compact. Users who need maqam mode or a custom
+// step length open the disclosure and the controls slide in.
+const showAdvanced = ref(false)
+// Transient flash on the copy button so the user sees confirmation
+// (the clipboard write itself is silent and async).
+const justCopied = ref(false)
+let copyResetTimer: ReturnType<typeof setTimeout> | null = null
 const NOTE_RE = /^([A-Ga-g])([#b]?)(-?\d{1,2})$/
 // Solfège → letter map so 'do re mi fa sol la si' (the Arabic /
 // French / Italian convention used heavily in maqam pedagogy)
@@ -192,6 +200,41 @@ function copyGeneratedToCustom() {
   if (lastMelody.value.length === 0) return
   customText.value = lastMelody.value.join(' ')
 }
+
+async function copyMelodyToClipboard() {
+  // Writes the generated melody to the system clipboard so the user
+  // can paste it into the custom-melody textarea, the chat, a note,
+  // or back into this app on another device. Falls back to a hidden
+  // textarea selection when the async clipboard API isn't available
+  // (older Safari, insecure-origin builds).
+  if (lastMelody.value.length === 0) return
+  const text = lastMelody.value.join(' ')
+  let ok = false
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text)
+      ok = true
+    }
+  } catch {
+    // Fall through to the legacy path below.
+  }
+  if (!ok) {
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.setAttribute('readonly', '')
+    ta.style.position = 'fixed'
+    ta.style.top = '-1000px'
+    document.body.appendChild(ta)
+    ta.select()
+    try { document.execCommand('copy'); ok = true } catch { /* nothing else to try */ }
+    document.body.removeChild(ta)
+  }
+  if (ok) {
+    justCopied.value = true
+    if (copyResetTimer) clearTimeout(copyResetTimer)
+    copyResetTimer = setTimeout(() => { justCopied.value = false }, 1400)
+  }
+}
 </script>
 
 <template>
@@ -226,21 +269,29 @@ function copyGeneratedToCustom() {
           <option v-for="m in MOODS" :key="m" :value="m">{{ t(`chaos.moodName.${m}`) }}</option>
         </select>
       </label>
-      <label class="full-row">
-        <span class="lbl mono">{{ t('chaos.maqam') }}</span>
-        <select v-model="maqam">
-          <option :value="null">{{ t('chaos.maqamNone') }}</option>
-          <option v-for="m in MAQAM_IDS" :key="m" :value="m">
-            {{ MAQAM_PRESETS[m].name }} ({{ MAQAM_PRESETS[m].tonic }})
-          </option>
-        </select>
-      </label>
     </div>
 
-    <label class="full">
-      <span class="lbl mono">{{ t('chaos.stepLength') }} {{ stepSec.toFixed(2) }}s</span>
-      <input v-model.number="stepSec" type="range" min="0.1" max="0.6" step="0.01" />
-    </label>
+    <!-- Advanced disclosure: maqam picker + step-length slider live
+         here so the default view stays compact. Stays in the same
+         card so closing it doesn't shift other sections. -->
+    <details class="adv" :open="showAdvanced" @toggle="showAdvanced = ($event.target as HTMLDetailsElement).open">
+      <summary class="adv-summary mono">{{ t('chaos.advanced') }}</summary>
+      <div class="adv-body">
+        <label class="full">
+          <span class="lbl mono">{{ t('chaos.maqam') }}</span>
+          <select v-model="maqam">
+            <option :value="null">{{ t('chaos.maqamNone') }}</option>
+            <option v-for="m in MAQAM_IDS" :key="m" :value="m">
+              {{ MAQAM_PRESETS[m].name }} ({{ MAQAM_PRESETS[m].tonic }})
+            </option>
+          </select>
+        </label>
+        <label class="full">
+          <span class="lbl mono">{{ t('chaos.stepLength') }} {{ stepSec.toFixed(2) }}s</span>
+          <input v-model.number="stepSec" type="range" min="0.1" max="0.6" step="0.01" />
+        </label>
+      </div>
+    </details>
 
     <div class="actions">
       <button class="ghost" @click="generate">{{ t('chaos.generate') }}</button>
@@ -251,17 +302,39 @@ function copyGeneratedToCustom() {
 
     <!-- Generated notes — clickable chips. Tap a chip to preview just
          that note on the active instrument; chips light up in sync
-         with the melody during playback. -->
-    <div v-if="lastMelody.length > 0" class="chips">
-      <button
-        v-for="(note, i) in lastMelody"
-        :key="`gen-${i}-${note}`"
-        type="button"
-        class="chip"
-        :class="{ active: activeChipIndex === i }"
-        :title="t('chaos.notePreviewHint')"
-        @click="previewSingleNote(note)"
-      >{{ note }}</button>
+         with the melody during playback. The toolbar above the chip
+         strip is the answer to "I can't copy the generated melody" —
+         one tap puts it on the clipboard, another tap loads it into
+         the custom-melody textarea below. -->
+    <div v-if="lastMelody.length > 0" class="chip-block">
+      <div class="chip-toolbar">
+        <button
+          type="button"
+          class="chip-tool mono"
+          :class="{ done: justCopied }"
+          :title="t('chaos.copyMelodyTitle')"
+          @click="copyMelodyToClipboard"
+        >
+          {{ justCopied ? '✓ ' + t('chaos.copyMelodyDone') : '⧉ ' + t('chaos.copyMelody') }}
+        </button>
+        <button
+          type="button"
+          class="chip-tool mono"
+          :title="t('chaos.useGenerated')"
+          @click="copyGeneratedToCustom"
+        >↓ {{ t('chaos.useGenerated') }}</button>
+      </div>
+      <div class="chips">
+        <button
+          v-for="(note, i) in lastMelody"
+          :key="`gen-${i}-${note}`"
+          type="button"
+          class="chip"
+          :class="{ active: activeChipIndex === i }"
+          :title="t('chaos.notePreviewHint')"
+          @click="previewSingleNote(note)"
+        >{{ note }}</button>
+      </div>
     </div>
 
     <!-- Custom-notes text input — type a note sequence and play it.
@@ -271,15 +344,6 @@ function copyGeneratedToCustom() {
     <div class="custom">
       <header class="custom-head">
         <span class="custom-label mono">{{ t('chaos.customNotes') }}</span>
-        <button
-          v-if="lastMelody.length > 0"
-          type="button"
-          class="copy-btn mono"
-          :title="t('chaos.useGenerated')"
-          @click="copyGeneratedToCustom"
-        >
-          {{ t('chaos.useGenerated') }}
-        </button>
       </header>
       <textarea
         v-model="customText"
@@ -339,6 +403,63 @@ select:disabled { opacity: 0.45; cursor: not-allowed; }
   background: var(--accent-primary); color: var(--text-inverse); border: none;
   font-weight: 600; font-size: 0.8rem; padding: 0.45rem 0.85rem;
 }
+.adv {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.35rem 0.6rem;
+}
+.adv-summary {
+  cursor: pointer;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  user-select: none;
+  padding: 0.2rem 0;
+}
+.adv-summary:hover { color: var(--accent-primary); }
+.adv[open] .adv-summary { color: var(--accent-primary); margin-bottom: 0.45rem; }
+.adv-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.adv-body .full input[type='range'] { width: 100%; padding: 0; }
+
+.chip-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.chip-toolbar {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.chip-tool {
+  font-size: 0.65rem;
+  padding: 0.3rem 0.7rem;
+  background: var(--bg-base);
+  color: var(--accent-primary);
+  border: 1px solid var(--accent-primary);
+  border-radius: 999px;
+  cursor: pointer;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+.chip-tool:hover {
+  background: var(--accent-primary);
+  color: var(--text-inverse);
+}
+.chip-tool.done {
+  background: var(--accent-primary);
+  color: var(--text-inverse);
+  border-color: var(--accent-primary);
+}
+
 .chips {
   display: flex;
   flex-wrap: wrap;
@@ -394,20 +515,6 @@ select:disabled { opacity: 0.45; cursor: not-allowed; }
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--text-muted);
-}
-.copy-btn {
-  font-size: 0.62rem;
-  padding: 0.2rem 0.55rem;
-  background: transparent;
-  border: 1px dashed var(--border);
-  color: var(--text-muted);
-  border-radius: var(--radius);
-  cursor: pointer;
-  letter-spacing: 0.04em;
-}
-.copy-btn:hover {
-  border-color: var(--accent-primary);
-  color: var(--accent-primary);
 }
 .custom-input {
   width: 100%;
