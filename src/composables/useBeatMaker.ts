@@ -17,10 +17,23 @@ function subdivision(stepCount: number): string {
   return stepCount === 32 ? '32n' : '16n'
 }
 
-function ensureClipPlayer(clipId: string, buffer: AudioBuffer): Tone.Player {
+function ensureClipPlayer(
+  clipId: string,
+  buffer: AudioBuffer,
+  destination: Tone.ToneAudioNode | null,
+): Tone.Player {
   let player = clipPlayers.get(clipId)
   if (!player) {
-    player = new Tone.Player(buffer).toDestination()
+    player = new Tone.Player(buffer)
+    // Route through the master input (effects → mastering → safety
+    // limiter → destination). Previously these clip players ran
+    // .toDestination() which bypassed the whole chain — user-recorded
+    // clips fired from the beat maker came out unmastered, often
+    // significantly louder/peakier than the instrument tracks and
+    // sometimes clipping the output. Falling back to .toDestination()
+    // only if the master input isn't ready (race during cold start).
+    if (destination) player.connect(destination)
+    else player.toDestination()
     clipPlayers.set(clipId, player)
   }
   return player
@@ -39,7 +52,13 @@ export function useBeatMaker() {
   const store = useBeatMakerStore()
   const recorderStore = useRecorderStore()
   const userStore = useUserStore()
-  const { playOnTimed, dampInstrument, ensureToneStarted, ensureInstrument } = useAudio()
+  const {
+    playOnTimed,
+    dampInstrument,
+    ensureToneStarted,
+    ensureInstrument,
+    getMasterInput,
+  } = useAudio()
 
   function stepDurationSec(): number {
     // Length of a single step in seconds — one 16th (or 32nd) note at the
@@ -90,7 +109,7 @@ export function useBeatMaker() {
     if (track.clipId) {
       const clip = recorderStore.clips.find((c) => c.id === track.clipId)
       if (!clip) return
-      const player = ensureClipPlayer(track.clipId, clip.buffer)
+      const player = ensureClipPlayer(track.clipId, clip.buffer, getMasterInput())
       player.volume.value = Tone.gainToDb(Math.max(0.01, velocity / 127))
       player.start(time)
       return

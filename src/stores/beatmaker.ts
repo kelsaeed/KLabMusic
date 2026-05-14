@@ -138,6 +138,41 @@ export const useBeatMakerStore = defineStore('beatmaker', () => {
     }
   }
 
+  // Sprinkle random hits across every track in the active pattern.
+  // Density ≈ how often a step lights up — kicks/snares stay sparse,
+  // hi-hats and percussion get a busier carpet. Cleared first so the
+  // result is a fresh take, not a layer on top of what's there.
+  function randomize(density = 0.25) {
+    for (const t of activePattern.value.tracks) {
+      for (let i = 0; i < t.steps.length; i++) {
+        const onDownbeat = i % 4 === 0
+        // Downbeats get a stronger chance so the pattern always lands;
+        // off-beats use the base density.
+        const p = onDownbeat ? Math.min(0.85, density * 2.5) : density
+        const active = Math.random() < p
+        t.steps[i].active = active
+        t.steps[i].velocity = active
+          ? Math.round(70 + Math.random() * 50)
+          : 100
+        t.steps[i].microShift = 0
+        t.steps[i].cents = 0
+      }
+    }
+  }
+
+  // Reset every step in every track of the active pattern to off.
+  // Useful when starting over without losing track configs (note,
+  // volume, mute, solo).
+  function clearActivePattern() {
+    for (const t of activePattern.value.tracks) {
+      for (const s of t.steps) {
+        s.active = false
+        s.microShift = 0
+        s.cents = 0
+      }
+    }
+  }
+
   function shouldPlayTrack(track: BeatTrack): boolean {
     if (track.muted) return false
     if (anyTrackSoloed.value && !track.soloed) return false
@@ -176,6 +211,8 @@ export const useBeatMakerStore = defineStore('beatmaker', () => {
     removeTrack,
     updateTrack,
     humanize,
+    randomize,
+    clearActivePattern,
     shouldPlayTrack,
     setSongSequence,
   }

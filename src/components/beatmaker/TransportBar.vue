@@ -16,6 +16,19 @@ function bumpBpm(delta: number) {
   const next = Math.max(40, Math.min(220, store.bpm + delta))
   store.bpm = next
 }
+
+function onRandomize() {
+  // Confirm before nuking what the user has so far — randomize is
+  // a "fresh take" action, not a sprinkle, and an accidental click
+  // would otherwise wipe a working pattern.
+  if (typeof window !== 'undefined' && !window.confirm(t('beat.randomizeConfirm'))) return
+  store.randomize()
+}
+
+function onClearPattern() {
+  if (typeof window !== 'undefined' && !window.confirm(t('beat.clearPatternConfirm'))) return
+  store.clearActivePattern()
+}
 </script>
 
 <template>
@@ -44,6 +57,16 @@ function bumpBpm(delta: number) {
     </div>
 
     <button class="action mono" :title="t('beat.humanize')" @click="store.humanize()">{{ t('beat.humanize') }}</button>
+    <button
+      class="action mono"
+      :title="t('beat.randomize')"
+      @click="onRandomize"
+    >{{ t('beat.randomize') }}</button>
+    <button
+      class="action mono"
+      :title="t('beat.clearPattern')"
+      @click="onClearPattern"
+    >{{ t('beat.clearPattern') }}</button>
 
     <label class="song-toggle mono">
       <input v-model="store.songMode" type="checkbox" />
