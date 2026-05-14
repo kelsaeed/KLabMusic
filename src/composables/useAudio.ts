@@ -800,14 +800,11 @@ function buildPiano(): VoiceAdapter {
 }
 
 function buildElectricPiano(): VoiceAdapter {
-  // Rhodes-style FM e-piano. The previous patch (harmonicity 2.5, square
-  // mod, decay 1.4) read as a hollow bell — listeners flagged the
-  // electric piano as "thin and metallic" because the square modulator
-  // produced odd harmonics with no body. Switching to FMSynth with
-  // harmonicity 1 + sine modulator stacks the classic Rhodes tine
-  // ring on a fundamental sine carrier; modulationIndex 8 gives that
-  // dynamic bell-to-mellow response with velocity. Longer decay/release
-  // lets the bell ring out properly.
+  // Rhodes-style FM tine. harmonicity 1 + sine modulator + index 8
+  // gives the classic bell ring on attack that decays to a mellow
+  // sine sustain. Chorus stripped — the user can add it through the
+  // per-instrument FX chain when wanted; running it always-on was
+  // contributing to the audio-worker overload on busy patterns.
   const synth = new Tone.PolySynth(Tone.FMSynth, {
     harmonicity: 1,
     modulationIndex: 8,
@@ -816,10 +813,6 @@ function buildElectricPiano(): VoiceAdapter {
     modulation: { type: 'sine' },
     modulationEnvelope: { attack: 0.002, decay: 1.8, sustain: 0, release: 0.8 },
   })
-  // Subtle stereo chorus gives the bell that characteristic Rhodes
-  // warmth/movement. Tame depth so sustained notes don't warble.
-  const chorus = new Tone.Chorus({ frequency: 1.5, depth: 0.4, wet: 0.35 }).start()
-  synth.connect(chorus)
   const c = withCentsTracking({
     triggerAttack: (note, time, velocity) => synth.triggerAttack(note, time, velocity),
     triggerAttackRelease: (note, dur, time, velocity) =>
@@ -829,10 +822,10 @@ function buildElectricPiano(): VoiceAdapter {
   })
   return {
     ...c,
-    output: chorus,
+    output: synth,
     setVolumeDb: (db) => { synth.volume.value = db },
     setBendCents: (cents) => synth.set({ detune: cents }),
-    dispose: () => { synth.dispose(); chorus.dispose() },
+    dispose: () => synth.dispose(),
   }
 }
 
@@ -1133,98 +1126,57 @@ const HARMONIUM_URLS: Record<string, string> = {
 }
 
 function buildBass(): VoiceAdapter {
-  // Two-osc bass: a saw for harmonic bite and a sub-oscillator (sine
-  // dropped an octave via FMSynth harmonicity 0.5) for sub weight.
-  // The previous single-saw MonoSynth read as "thin" on most listeners'
-  // monitors — bass needs both upper harmonics (so it's audible on
-  // phone speakers) AND sub fundamentals (so it shakes proper systems).
-  // Filter envelope is faster and deeper so each note pops a brief
-  // resonant snap before settling — Moog-style punch.
+  // Single MonoSynth — `fatsawtooth` oscillator stacks 2 detuned saws
+  // inside ONE oscillator core so the bass gets the body the original
+  // single-saw lacked, without spinning up a second MonoSynth (which
+  // doubles the filter-envelope DSP per note). Tighter envelope +
+  // deeper filter sweep gives the Moog-style punch.
   const synth = new Tone.MonoSynth({
-    oscillator: { type: 'sawtooth' },
+    oscillator: { type: 'fatsawtooth', count: 2, spread: 12 } as unknown as Tone.OmniOscillatorOptions,
     envelope: { attack: 0.005, decay: 0.25, sustain: 0.6, release: 0.35 },
-    filter: { Q: 4, type: 'lowpass', rolloff: -24 },
+    filter: { Q: 3, type: 'lowpass', rolloff: -24 },
     filterEnvelope: {
       attack: 0.005,
       decay: 0.18,
       sustain: 0.3,
       release: 0.4,
-      baseFrequency: 90,
-      octaves: 4.5,
+      baseFrequency: 100,
+      octaves: 4,
     },
     volume: -4,
   })
-  // Sub layer — sine an octave below the played note via detune so the
-  // bass has body on phone speakers (sub) AND on big systems (saw bite).
-  const sub = new Tone.MonoSynth({
-    oscillator: { type: 'sine' },
-    envelope: { attack: 0.005, decay: 0.4, sustain: 0.8, release: 0.4 },
-    filter: { Q: 0.5, type: 'lowpass' },
-    filterEnvelope: { attack: 0.01, decay: 0.1, sustain: 1, release: 0.2, baseFrequency: 200, octaves: 0 },
-    detune: -1200,
-    volume: -8,
+  const c = withCentsTracking({
+    triggerAttack: (note, time, velocity) => synth.triggerAttack(note, time, velocity),
+    triggerAttackRelease: (note, dur, time, velocity) =>
+      synth.triggerAttackRelease(note, dur, time, velocity),
+    triggerRelease: () => synth.triggerRelease(),
   })
-  const out = new Tone.Gain(1)
-  synth.connect(out)
-  sub.connect(out)
-  let cachedCents = 0
-  const valueFor = (note: string, cents?: number): string | number => {
-    const c = cents ?? 0
-    return c ? Tone.Frequency(note).toFrequency() * Math.pow(2, c / 1200) : note
-  }
   return {
-    attack: (note, vel, cents) => {
-      const v = Math.max(0.05, vel / 127)
-      const value = valueFor(note, cents ?? cachedCents)
-      synth.triggerAttack(value, undefined, v)
-      sub.triggerAttack(value, undefined, v)
-    },
-    attackRelease: (note, dur, vel, cents) => {
-      const v = Math.max(0.05, vel / 127)
-      const value = valueFor(note, cents ?? cachedCents)
-      synth.triggerAttackRelease(value, dur, undefined, v)
-      sub.triggerAttackRelease(value, dur, undefined, v)
-    },
-    release: () => { synth.triggerRelease(); sub.triggerRelease() },
-    damp: () => { synth.triggerRelease(); sub.triggerRelease() },
-    output: out,
-    setVolumeDb: (db) => { out.gain.value = Tone.dbToGain(db) },
-    setBendCents: (cents) => {
-      cachedCents = cents
-      synth.detune.value = cents
-      sub.detune.value = -1200 + cents
-    },
-    dispose: () => { synth.dispose(); sub.dispose(); out.dispose() },
+    ...c,
+    output: synth,
+    setVolumeDb: (db) => { synth.volume.value = db },
+    setBendCents: (cents) => { synth.detune.value = cents },
+    dispose: () => synth.dispose(),
   }
 }
 
 function buildPad(): VoiceAdapter {
-  // Lush analog-style pad: saw oscillator into a slow filter envelope so
-  // notes blossom open instead of arriving flat. The previous FMSynth
-  // pad had a 0.4 s linear attack with no filter movement — listeners
-  // described it as "buzzy and static", which is exactly what an
-  // unfiltered FM saw sounds like. PolySynth(MonoSynth) gives every
-  // voice its own filter envelope so chords swell coherently.
-  const synth = new Tone.PolySynth(Tone.MonoSynth, {
-    oscillator: { type: 'sawtooth' },
-    filter: { Q: 1, type: 'lowpass', rolloff: -24 },
-    envelope: { attack: 0.6, decay: 0.4, sustain: 0.85, release: 2.5 },
-    filterEnvelope: {
-      attack: 1.2,
-      decay: 0.6,
-      sustain: 0.7,
-      release: 2.5,
-      baseFrequency: 200,
-      octaves: 3.5,
-    },
-    volume: -10,
+  // Single FMSynth poly — cheap DSP cost vs the previous MonoSynth-poly
+  // + chorus + reverb stack, which audibly overloaded the audio worker
+  // (wshhhh) when several beat-maker tracks ran at once. Tone.Reverb is
+  // a convolutional node and the heaviest single voice node in the
+  // engine; adding one per-instrument is what produced the lag. The
+  // master chain already has a reverb the user can dial up per
+  // instrument if they want that wash. Envelope kept lush (0.4 s
+  // attack, 2 s release) so chords still bloom open.
+  const synth = new Tone.PolySynth(Tone.FMSynth, {
+    harmonicity: 1.5,
+    modulationIndex: 4,
+    oscillator: { type: 'sine' },
+    envelope: { attack: 0.4, decay: 0.2, sustain: 0.85, release: 2 },
+    modulation: { type: 'sine' },
+    modulationEnvelope: { attack: 0.3, decay: 0.5, sustain: 0.6, release: 1.5 },
   })
-  // Slow chorus widens the stereo image so the pad sits behind the mix
-  // rather than dead-centre; reverb send adds breath without burning
-  // the per-instrument FX slot for it.
-  const chorus = new Tone.Chorus({ frequency: 0.4, depth: 0.7, wet: 0.5 }).start()
-  const reverb = new Tone.Reverb({ decay: 4, wet: 0.25 })
-  synth.chain(chorus, reverb)
   const c = withCentsTracking({
     triggerAttack: (note, time, velocity) => synth.triggerAttack(note, time, velocity),
     triggerAttackRelease: (note, dur, time, velocity) =>
@@ -1234,181 +1186,85 @@ function buildPad(): VoiceAdapter {
   })
   return {
     ...c,
-    output: reverb,
+    output: synth,
     setVolumeDb: (db) => { synth.volume.value = db },
     setBendCents: (cents) => synth.set({ detune: cents }),
-    dispose: () => { synth.dispose(); chorus.dispose(); reverb.dispose() },
+    dispose: () => synth.dispose(),
   }
 }
 
 function buildLead(): VoiceAdapter {
-  // Dual-detuned-saw lead — the previous single-saw Synth was thin and
-  // brittle in the upper register because one oscillator alone has no
-  // beating / chorusing to give it character. Two saws ±7 cents apart
-  // produce that classic supersaw shimmer trance leads have used for
-  // decades. PolySynth instead of mono so quick legato runs don't
-  // chop each other off. Sub-Vibrato depth stays gentle (0.06) so a
-  // held note breathes but never warbles.
-  const saw1 = new Tone.PolySynth(Tone.Synth, {
-    oscillator: { type: 'sawtooth' },
-    envelope: { attack: 0.01, decay: 0.15, sustain: 0.7, release: 0.5 },
-    detune: -7,
-    volume: -10,
+  // Single PolySynth with `fatsawtooth` — Tone's stock supersaw
+  // oscillator stacks 3 detuned saws inside ONE oscillator core, so it
+  // gives the same beating/chorusing as two PolySynths at roughly a
+  // third of the DSP cost. The previous dual-PolySynth + filter +
+  // vibrato + chorus stack was a major contributor to the audio-worker
+  // overload (wshhhh) the user reported. Gentle vibrato kept for breath;
+  // filter and chorus dropped — they belong in the per-instrument FX
+  // chain if the user wants them.
+  const synth = new Tone.PolySynth(Tone.Synth, {
+    oscillator: { type: 'fatsawtooth', count: 3, spread: 18 } as unknown as Tone.OmniOscillatorOptions,
+    envelope: { attack: 0.01, decay: 0.1, sustain: 0.7, release: 0.6 },
+    volume: -12,
   })
-  const saw2 = new Tone.PolySynth(Tone.Synth, {
-    oscillator: { type: 'sawtooth' },
-    envelope: { attack: 0.01, decay: 0.15, sustain: 0.7, release: 0.5 },
-    detune: 7,
-    volume: -10,
+  const vibrato = new Tone.Vibrato({ frequency: 5, depth: 0.05 })
+  synth.connect(vibrato)
+  const c = withCentsTracking({
+    triggerAttack: (note, time, velocity) => synth.triggerAttack(note, time, velocity),
+    triggerAttackRelease: (note, dur, time, velocity) =>
+      synth.triggerAttackRelease(note, dur, time, velocity),
+    triggerRelease: (note) => (note !== undefined ? synth.triggerRelease(note) : synth.releaseAll()),
+    releaseAll: () => synth.releaseAll(),
   })
-  // Lowpass with mild resonance keeps the highs from getting harsh on
-  // small speakers; vibrato adds breath; mild chorus widens the stereo.
-  const filter = new Tone.Filter({ frequency: 4500, type: 'lowpass', Q: 0.7 })
-  const vibrato = new Tone.Vibrato({ frequency: 5, depth: 0.06 })
-  const chorus = new Tone.Chorus({ frequency: 0.8, depth: 0.4, wet: 0.3 }).start()
-  saw1.chain(filter)
-  saw2.chain(filter)
-  filter.chain(vibrato, chorus)
-  const valueFor = (note: string, cents?: number): string | number =>
-    cents ? Tone.Frequency(note).toFrequency() * Math.pow(2, cents / 1200) : note
-  const active = new Map<string, string | number>()
   return {
-    attack: (note, vel, cents) => {
-      const v = Math.max(0.05, vel / 127)
-      const value = valueFor(note, cents)
-      active.set(note, value)
-      saw1.triggerAttack(value, undefined, v)
-      saw2.triggerAttack(value, undefined, v)
-    },
-    attackRelease: (note, dur, vel, cents) => {
-      const v = Math.max(0.05, vel / 127)
-      const value = valueFor(note, cents)
-      saw1.triggerAttackRelease(value, dur, undefined, v)
-      saw2.triggerAttackRelease(value, dur, undefined, v)
-    },
-    release: (note) => {
-      if (note) {
-        const value = active.get(note) ?? note
-        active.delete(note)
-        saw1.triggerRelease(value)
-        saw2.triggerRelease(value)
-      } else {
-        active.clear()
-        saw1.releaseAll(); saw2.releaseAll()
-      }
-    },
-    damp: () => { active.clear(); saw1.releaseAll(); saw2.releaseAll() },
-    output: chorus,
-    setVolumeDb: (db) => { saw1.volume.value = db; saw2.volume.value = db },
-    setBendCents: (cents) => {
-      saw1.set({ detune: cents - 7 })
-      saw2.set({ detune: cents + 7 })
-    },
-    dispose: () => {
-      saw1.dispose(); saw2.dispose()
-      filter.dispose(); vibrato.dispose(); chorus.dispose()
-    },
+    ...c,
+    output: vibrato,
+    setVolumeDb: (db) => { synth.volume.value = db },
+    setBendCents: (cents) => synth.set({ detune: cents }),
+    dispose: () => { synth.dispose(); vibrato.dispose() },
   }
 }
 
 function buildOrgan(): VoiceAdapter {
-  // Hammond-style drawbar organ: fundamental + harmonic stops stacked.
-  // Single FMSynth was producing a thin square-ish sine that didn't
-  // read as "organ" to most listeners. Three sine layers tuned to the
-  // most-used drawbar pitches (16', 8', 4' — sub, fundamental, octave)
-  // plus a 2 2/3' fifth give the organ its characteristic body.
-  // Rotating Leslie-style chorus completes the illusion. Fast attack
-  // and zero decay/sustain decay so it behaves like a bellows-driven
-  // organ that just stays on while the key is pressed.
-  const sub = new Tone.PolySynth(Tone.Synth, {
-    oscillator: { type: 'sine' },
-    envelope: { attack: 0.005, decay: 0, sustain: 1, release: 0.05 },
-    detune: -1200, // 16'
-    volume: -12,
+  // Single FatOscillator PolySynth — the previous 4-layer drawbar stack
+  // (16'/8'/4'/2 2/3') ran 4 PolySynths through a chorus. With a 4-note
+  // chord that's 16 polyphonic sine voices + a chorus stage per voice,
+  // which is what tipped the audio worker on busy beat-maker patterns.
+  // FatOscillator stacks 3 detuned sines inside ONE oscillator core,
+  // giving the same body at a quarter of the cost. Fast attack / zero
+  // decay / unity sustain keeps the bellows-driven organ behaviour.
+  const synth = new Tone.PolySynth(Tone.Synth, {
+    oscillator: { type: 'fatsine', count: 3, spread: 12 } as unknown as Tone.OmniOscillatorOptions,
+    envelope: { attack: 0.005, decay: 0, sustain: 1, release: 0.08 },
   })
-  const fund = new Tone.PolySynth(Tone.Synth, {
-    oscillator: { type: 'sine' },
-    envelope: { attack: 0.005, decay: 0, sustain: 1, release: 0.05 },
-    volume: -10, // 8'
+  const c = withCentsTracking({
+    triggerAttack: (note, time, velocity) => synth.triggerAttack(note, time, velocity),
+    triggerAttackRelease: (note, dur, time, velocity) =>
+      synth.triggerAttackRelease(note, dur, time, velocity),
+    triggerRelease: (note) => (note !== undefined ? synth.triggerRelease(note) : synth.releaseAll()),
+    releaseAll: () => synth.releaseAll(),
   })
-  const oct = new Tone.PolySynth(Tone.Synth, {
-    oscillator: { type: 'triangle' },
-    envelope: { attack: 0.005, decay: 0, sustain: 1, release: 0.05 },
-    detune: 1200, // 4'
-    volume: -14,
-  })
-  const fifth = new Tone.PolySynth(Tone.Synth, {
-    oscillator: { type: 'sine' },
-    envelope: { attack: 0.005, decay: 0, sustain: 1, release: 0.05 },
-    detune: 1902, // 2 2/3' — pure fifth above 8'
-    volume: -22,
-  })
-  // Leslie-style fast rotary chorus — that warbly motion is what makes
-  // an electric organ sound alive vs static.
-  const leslie = new Tone.Chorus({ frequency: 6.5, depth: 0.5, wet: 0.4 }).start()
-  ;[sub, fund, oct, fifth].forEach((s) => s.connect(leslie))
-  const valueFor = (note: string, cents?: number): string | number =>
-    cents ? Tone.Frequency(note).toFrequency() * Math.pow(2, cents / 1200) : note
-  const active = new Map<string, string | number>()
   return {
-    attack: (note, vel, cents) => {
-      const v = Math.max(0.05, vel / 127)
-      const value = valueFor(note, cents)
-      active.set(note, value)
-      ;[sub, fund, oct, fifth].forEach((s) => s.triggerAttack(value, undefined, v))
-    },
-    attackRelease: (note, dur, vel, cents) => {
-      const v = Math.max(0.05, vel / 127)
-      const value = valueFor(note, cents)
-      ;[sub, fund, oct, fifth].forEach((s) => s.triggerAttackRelease(value, dur, undefined, v))
-    },
-    release: (note) => {
-      if (note) {
-        const value = active.get(note) ?? note
-        active.delete(note)
-        ;[sub, fund, oct, fifth].forEach((s) => s.triggerRelease(value))
-      } else {
-        active.clear()
-        ;[sub, fund, oct, fifth].forEach((s) => s.releaseAll())
-      }
-    },
-    damp: () => { active.clear(); [sub, fund, oct, fifth].forEach((s) => s.releaseAll()) },
-    output: leslie,
-    setVolumeDb: (db) => { fund.volume.value = db },
-    setBendCents: (cents) => {
-      sub.set({ detune: -1200 + cents })
-      fund.set({ detune: cents })
-      oct.set({ detune: 1200 + cents })
-      fifth.set({ detune: 1902 + cents })
-    },
-    dispose: () => {
-      sub.dispose(); fund.dispose(); oct.dispose(); fifth.dispose(); leslie.dispose()
-    },
+    ...c,
+    output: synth,
+    setVolumeDb: (db) => { synth.volume.value = db },
+    setBendCents: (cents) => synth.set({ detune: cents }),
+    dispose: () => synth.dispose(),
   }
 }
 
 function buildDrums(): VoiceAdapter {
   // TR-808 sample kit via smplr. Ride cymbal isn't in TR-808, so we synth it.
-  // Drum bus chain (compressor + EQ) glues the hits together and pushes
-  // them forward — stock TR-808 samples sound flat and polite on small
-  // speakers without bus processing. The compressor catches transients
-  // (5 ms attack), the EQ boosts a touch of low-end thump and high-end
-  // sparkle, and the gain stage compensates for the comp pump-down.
+  // No per-voice drum bus comp/EQ — the smplr samples are already
+  // mastered and the global master chain (compressor + limiter + safety
+  // limiter) handles glue. An extra per-instrument comp + EQ3 stack
+  // burned audio-worker budget without an audible win and contributed
+  // to the wshhhh / lag the user reported.
   const ctx = Tone.getContext().rawContext as unknown as AudioContext
-  const busComp = new Tone.Compressor({
-    threshold: -14,
-    ratio: 3,
-    attack: 0.005,
-    release: 0.12,
-    knee: 6,
-  })
-  const busEq = new Tone.EQ3({ low: 2, mid: -1, high: 2 })
-  const out = new Tone.Gain(1.15)
-  busComp.connect(busEq)
-  busEq.connect(out)
+  const out = new Tone.Gain(1)
   const drums = new DrumMachine(ctx, {
     instrument: 'TR-808',
-    destination: busComp.input as unknown as AudioNode,
+    destination: out.input as unknown as AudioNode,
   })
   const ride = new Tone.MetalSynth({
     envelope: { attack: 0.001, decay: 0.9, release: 0.4 },
@@ -1417,8 +1273,8 @@ function buildDrums(): VoiceAdapter {
     resonance: 3000,
     octaves: 2,
   })
-  ride.volume.value = -14
-  ride.connect(busComp)
+  ride.volume.value = -18
+  ride.connect(out)
 
   // Use General-MIDI drum note numbers — universal across drum machines/kits.
   const SAMPLE_MIDI: Record<string, number> = {
@@ -1454,8 +1310,6 @@ function buildDrums(): VoiceAdapter {
     dispose: () => {
       drums.disconnect()
       ride.dispose()
-      busComp.dispose()
-      busEq.dispose()
       out.dispose()
     },
   }
@@ -1990,83 +1844,43 @@ function buildFluteSynthFallback(): VoiceAdapter {
 }
 
 function buildRealDrums(): VoiceAdapter {
-  // Acoustic band kit. Each piece is multi-layered: body + transient
-  // click so the hits actually punch through a mix instead of sounding
-  // like flat dome thuds. Filters/HPFs on the noise layers shape the
-  // hihat / snare timbre proper — raw white noise sounds like static,
-  // not metal. A drum-bus compressor at the output glues the hits
-  // together the way a real overhead mic chain would.
-
-  // KICK — sub thump (MembraneSynth) + HPF'd noise click for the beater attack.
+  // ONE synth node per kit-piece — anything more burns more mobile DSP
+  // per audio frame than the audio worker can sustain. A previous multi-
+  // layer rewrite (kick body + HPF click, 3-layer snare, MetalSynth+HPF
+  // hihats, tom clicks, bus comp + EQ3) audibly produced 'wshhhh' /
+  // lag on busy beat-maker patterns — exactly the failure the file's
+  // older comments specifically warned against. Single-node hits keep
+  // the engine playable on phones and still get acoustic body via the
+  // sample manifest (Tonejs/audio acoustic-kit) which overrides these
+  // synths for kick/snare/hihat/tom/floor when the network's up.
   const kick = new Tone.MembraneSynth({
-    pitchDecay: 0.04,
-    octaves: 8,
+    pitchDecay: 0.045,
+    octaves: 7,
     envelope: { attack: 0.001, decay: 0.55, sustain: 0, release: 0.7 },
   })
-  const kickClick = new Tone.NoiseSynth({
+  const snare = new Tone.NoiseSynth({
     noise: { type: 'white' },
-    envelope: { attack: 0.001, decay: 0.02, sustain: 0 },
-    volume: -14,
+    envelope: { attack: 0.001, decay: 0.18, sustain: 0 },
   })
-  const kickClickHP = new Tone.Filter({ frequency: 3000, type: 'highpass', Q: 0.7 })
-  kickClick.connect(kickClickHP)
-
-  // SNARE — three layers: body (mid sine thump), wires (HPF'd white
-  // noise), and snap (very tight HPF'd noise). This is how real snare
-  // samples are typically constructed and it's the only way to get the
-  // crack-and-body character the previous single-noise synth lacked.
-  const snareBody = new Tone.MembraneSynth({
+  const snareTone = new Tone.MembraneSynth({
     pitchDecay: 0.02,
-    octaves: 4,
-    envelope: { attack: 0.001, decay: 0.12, sustain: 0, release: 0.15 },
-    volume: -4,
+    octaves: 3,
+    envelope: { attack: 0.001, decay: 0.1, sustain: 0, release: 0.1 },
   })
-  const snareWires = new Tone.NoiseSynth({
+  const hihatClosed = new Tone.NoiseSynth({
     noise: { type: 'white' },
-    envelope: { attack: 0.001, decay: 0.16, sustain: 0 },
-    volume: -2,
+    envelope: { attack: 0.001, decay: 0.05, sustain: 0 },
   })
-  const snareWiresHP = new Tone.Filter({ frequency: 1500, type: 'highpass', Q: 0.5 })
-  snareWires.connect(snareWiresHP)
-  const snareSnap = new Tone.NoiseSynth({
+  const hihatOpen = new Tone.NoiseSynth({
     noise: { type: 'white' },
-    envelope: { attack: 0.001, decay: 0.04, sustain: 0 },
-    volume: -8,
+    envelope: { attack: 0.001, decay: 0.4, sustain: 0 },
   })
-  const snareSnapHP = new Tone.Filter({ frequency: 4000, type: 'highpass', Q: 0.7 })
-  snareSnap.connect(snareSnapHP)
-
-  // HIHATS — square-wave-ratio metallic harmonics through HPF for the
-  // characteristic sizzle. Raw white noise sounded like static; this
-  // shaped pink+HPF reads as actual cymbal metal.
-  const hihatClosed = new Tone.MetalSynth({
-    envelope: { attack: 0.001, decay: 0.08, release: 0.05 },
-    harmonicity: 5.1,
-    modulationIndex: 32,
-    resonance: 8000,
-    octaves: 1,
-    volume: -22,
-  })
-  const hihatClosedHP = new Tone.Filter({ frequency: 7000, type: 'highpass', Q: 0.7 })
-  hihatClosed.connect(hihatClosedHP)
-  const hihatOpen = new Tone.MetalSynth({
-    envelope: { attack: 0.001, decay: 0.5, release: 0.2 },
-    harmonicity: 5.1,
-    modulationIndex: 32,
-    resonance: 8000,
-    octaves: 1,
-    volume: -20,
-  })
-  const hihatOpenHP = new Tone.Filter({ frequency: 6000, type: 'highpass', Q: 0.7 })
-  hihatOpen.connect(hihatOpenHP)
-
   const ride = new Tone.MetalSynth({
     envelope: { attack: 0.001, decay: 1.4, release: 0.4 },
     harmonicity: 12,
     modulationIndex: 22,
     resonance: 4500,
     octaves: 2,
-    volume: -18,
   })
   const crash = new Tone.MetalSynth({
     envelope: { attack: 0.001, decay: 2.2, release: 1.5 },
@@ -2074,12 +1888,9 @@ function buildRealDrums(): VoiceAdapter {
     modulationIndex: 32,
     resonance: 4000,
     octaves: 1.5,
-    volume: -16,
   })
-
-  // TOMS — body + HPF click on attack so they read as a stick hitting
-  // a drum head, not a sine pulse. Tuned a perfect fifth apart so a
-  // high→mid→floor roll descends musically.
+  // Toms tuned a perfect fifth apart so a high→mid→floor roll reads
+  // as a real descending fill rather than three identical thumps.
   const tom1 = new Tone.MembraneSynth({
     pitchDecay: 0.05,
     octaves: 4,
@@ -2095,65 +1906,30 @@ function buildRealDrums(): VoiceAdapter {
     octaves: 5,
     envelope: { attack: 0.001, decay: 0.7, sustain: 0, release: 0.85 },
   })
-  const tomClick = new Tone.NoiseSynth({
-    noise: { type: 'white' },
-    envelope: { attack: 0.001, decay: 0.02, sustain: 0 },
-    volume: -18,
-  })
-  const tomClickHP = new Tone.Filter({ frequency: 2500, type: 'highpass', Q: 0.7 })
-  tomClick.connect(tomClickHP)
+  ride.volume.value = -16
+  crash.volume.value = -14
 
-  // DRUM BUS — compressor + EQ glue. Fast attack catches transients,
-  // medium release lets the body breathe; gentle high-shelf boost
-  // adds air on top, slight low-mid scoop keeps the mix from getting
-  // boomy on phone speakers.
-  const busComp = new Tone.Compressor({
-    threshold: -14,
-    ratio: 3,
-    attack: 0.005,
-    release: 0.12,
-    knee: 6,
-  })
-  const busEq = new Tone.EQ3({ low: 1, mid: -1, high: 1.5 })
-  const out = new Tone.Gain(1.1)
-  busComp.connect(busEq)
-  busEq.connect(out)
-  ;[
-    kick, kickClickHP,
-    snareBody, snareWiresHP, snareSnapHP,
-    hihatClosedHP, hihatOpenHP,
-    ride, crash,
-    tom1, tom2, floor, tomClickHP,
-  ].forEach((node) => node.connect(busComp))
+  const out = new Tone.Gain(1)
+  ;[kick, snare, snareTone, hihatClosed, hihatOpen, ride, crash, tom1, tom2, floor]
+    .forEach((node) => node.connect(out))
 
   const fire = (name: string, vel: number) => {
     const v = Math.max(0.05, vel / 127)
     switch (name) {
       case 'kick':
         kick.triggerAttackRelease('C1', '4n', undefined, v)
-        kickClick.triggerAttackRelease('64n', undefined, v * 0.8)
         break
       case 'snare':
-        snareBody.triggerAttackRelease('A2', '16n', undefined, v * 0.7)
-        snareWires.triggerAttackRelease('16n', undefined, v)
-        snareSnap.triggerAttackRelease('32n', undefined, v * 0.9)
+        snare.triggerAttackRelease('16n', undefined, v)
+        snareTone.triggerAttackRelease('A2', '32n', undefined, v * 0.6)
         break
-      case 'hihatC': hihatClosed.triggerAttackRelease('C6', '32n', undefined, v); break
-      case 'hihatO': hihatOpen.triggerAttackRelease('C6', '8n', undefined, v); break
+      case 'hihatC': hihatClosed.triggerAttackRelease('32n', undefined, v); break
+      case 'hihatO': hihatOpen.triggerAttackRelease('8n', undefined, v); break
       case 'ride': ride.triggerAttackRelease('C5', '4n', Tone.now(), v); break
       case 'crash': crash.triggerAttackRelease('C5', '2n', Tone.now(), v); break
-      case 'tom1':
-        tom1.triggerAttackRelease('A2', '8n', undefined, v)
-        tomClick.triggerAttackRelease('64n', undefined, v * 0.6)
-        break
-      case 'tom2':
-        tom2.triggerAttackRelease('F2', '8n', undefined, v)
-        tomClick.triggerAttackRelease('64n', undefined, v * 0.6)
-        break
-      case 'floor':
-        floor.triggerAttackRelease('B1', '8n', undefined, v)
-        tomClick.triggerAttackRelease('64n', undefined, v * 0.5)
-        break
+      case 'tom1': tom1.triggerAttackRelease('A2', '8n', undefined, v); break
+      case 'tom2': tom2.triggerAttackRelease('F2', '8n', undefined, v); break
+      case 'floor': floor.triggerAttackRelease('B1', '8n', undefined, v); break
     }
   }
 
@@ -2166,15 +1942,10 @@ function buildRealDrums(): VoiceAdapter {
     setVolumeDb: (db) => { out.gain.value = Tone.dbToGain(db) },
     setBendCents: () => { /* drums don't bend */ },
     dispose: () => {
-      kick.dispose(); kickClick.dispose(); kickClickHP.dispose()
-      snareBody.dispose(); snareWires.dispose(); snareWiresHP.dispose()
-      snareSnap.dispose(); snareSnapHP.dispose()
-      hihatClosed.dispose(); hihatClosedHP.dispose()
-      hihatOpen.dispose(); hihatOpenHP.dispose()
+      kick.dispose(); snare.dispose(); snareTone.dispose()
+      hihatClosed.dispose(); hihatOpen.dispose()
       ride.dispose(); crash.dispose()
       tom1.dispose(); tom2.dispose(); floor.dispose()
-      tomClick.dispose(); tomClickHP.dispose()
-      busComp.dispose(); busEq.dispose()
       out.dispose()
     },
   }
@@ -2448,22 +2219,13 @@ function buildPercussionFromManifest(id: InstrumentId): VoiceAdapter | null {
   const entries = MANIFEST[id]
   if (!entries) return null
 
-  // Drum bus chain: compressor + EQ before the gain stage. Stock
-  // sample packs are recorded conservatively, so on small speakers
-  // hits read as flat thumps. The bus chain glues the kit together,
-  // boosts air, and squashes peaks so a louder hit doesn't pump the
-  // master limiter audibly during a busy beat-maker pattern.
-  const busComp = new Tone.Compressor({
-    threshold: -14,
-    ratio: 3,
-    attack: 0.005,
-    release: 0.12,
-    knee: 6,
-  })
-  const busEq = new Tone.EQ3({ low: 1, mid: -1, high: 2 })
-  const out = new Tone.Gain(1.15)
-  busComp.connect(busEq)
-  busEq.connect(out)
+  // No per-voice drum bus. Stock recorded samples are already mastered
+  // and the engine's global master chain (compressor + limiter + safety
+  // limiter) handles glue. The earlier per-instrument Compressor + EQ3
+  // stack burned audio-worker budget on every audio frame without an
+  // audible win, contributing to the wshhhh / lag the user reported on
+  // busy beat-maker patterns.
+  const out = new Tone.Gain(1)
   const players = new Map<string, Tone.Player>()
   const loadPromises: Promise<void>[] = []
 
@@ -2480,7 +2242,7 @@ function buildPercussionFromManifest(id: InstrumentId): VoiceAdapter | null {
   for (const [sampleName, articulationMap] of Object.entries(entries)) {
     const leaf = pickManifestLeaf(articulationMap)
     if (!leaf) continue
-    const player = new Tone.Player().connect(busComp)
+    const player = new Tone.Player().connect(out)
     if (leaf.gain) player.volume.value = leaf.gain
     players.set(sampleName, player)
     const url = leaf.url
@@ -2556,8 +2318,6 @@ function buildPercussionFromManifest(id: InstrumentId): VoiceAdapter | null {
     dispose: () => {
       for (const p of players.values()) p.dispose()
       fallback?.dispose()
-      busComp.dispose()
-      busEq.dispose()
       out.dispose()
     },
   }
