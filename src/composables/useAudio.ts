@@ -309,6 +309,31 @@ let safetyLimiter: Tone.Compressor | null = null
 let masterReady = false
 let toneStarted = false
 
+// — Lazy global-FX routing —
+//
+// The seven global-FX nodes (reverb=ConvolverNode, delay, distortion=
+// WaveShaper, chorus=LFO+delay, filter, bitcrusher=AudioWorklet,
+// compressor) used to sit permanently in the master signal path. Even
+// with every effect off — the default state — a ConvolverNode still
+// convolves every sample against its impulse response and a BitCrusher
+// worklet still runs its own render callback every quantum. That fixed
+// per-sample tax is a big slice of the mobile audio budget and is
+// exactly the headroom whose absence turned a fast run into an
+// underrun ("wshhh / lag / it stops"). Now the chain is rewired on
+// demand so ONLY the effects that are actually doing something are in
+// the path; with nothing enabled the bus goes straight from
+// masterVolume into the mastering stage and the convolver/worklet
+// don't run at all.
+//
+// `chaosEngaged` keeps filter/reverb/bitcrusher in the path once the
+// Chaos XY pad / glitch has been used in the session (chaos drives
+// those three nodes directly), so chaos still works without paying its
+// cost for users who never open it.
+let chaosEngaged = false
+// Sentinel so the very first rewire (computed key "" = nothing active)
+// still differs from this and actually wires masterVolume→mastering.eq.
+let lastFxKey = '__uninit__'
+
 // — Voice lifecycle tracking —
 //
 // Without this, the same melodic note can be `attack()`ed twice while
@@ -696,29 +721,22 @@ function ensureMaster() {
   // one fewer bitcrusher worklet always processing = real headroom
   // back, especially on phones, which is part of the fast-play
   // overload fix.
-  masterVolume.chain(
-    globalFx.reverb,
-    globalFx.delay,
-    globalFx.distortion,
-    globalFx.chorus,
-    globalFx.filter,
-    globalFx.bitcrusher,
-    globalFx.compressor,
-    // Mastering chain shapes the final mix — EQ glue, then compressor
-    // for cohesion, then preset limiter as the soft ceiling.
-    mastering.eq,
+  // Static TAIL only: mastering glue → preset limiter → always-on
+  // safety limiter → analyser taps → speakers. This never changes, so
+  // it's wired once. The FX section IN FRONT of mastering.eq is wired
+  // on demand by rewireMasterChain() — with nothing enabled the bus
+  // connects straight to mastering.eq and the convolver/worklet/etc.
+  // are not in the path and cost zero DSP.
+  mastering.eq.chain(
     mastering.compressor,
     mastering.makeup,
     mastering.limiter,
-    // Safety limiter is downstream of the preset chain so it catches
-    // anything the preset misses. Analyser / FFT taps after the
-    // safety limiter so the visualizer reflects what the user
-    // actually hears.
     safetyLimiter,
     masterAnalyser,
     masterFft,
     Tone.getDestination(),
   )
+  rewireMasterChain()
   // Apply whatever preset the store currently has selected. The watcher in
   // wireWatchers picks up future changes; this initial call seeds the chain
   // so it isn't sitting at constructor defaults until the user opens the
@@ -2503,6 +2521,76 @@ function applyEffect(fx: FxChain, id: EffectId, enabled: boolean, amount: number
   }
 }
 
+// Is this effect doing anything audible? A disabled effect — or an
+// enabled one parked at its no-op amount — must be left OUT of the
+// signal path so its node (especially the convolver / worklet) stops
+// costing DSP. Mirrors the no-op states applyEffect() pins.
+function isFxActive(id: EffectId, ctl: { enabled: boolean; amount: number } | undefined): boolean {
+  if (!ctl || !ctl.enabled) return false
+  switch (id) {
+    case 'distortion':
+    case 'filter':
+      // distortion(0) ≈ transparent and filter@20k ≈ transparent, but
+      // "enabled" is an explicit user intent and the per-frame cost of
+      // one WaveShaper / one biquad is negligible vs a convolver, so
+      // honour the toggle directly.
+      return true
+    default:
+      // reverb / delay / chorus / bitcrusher / compressor are inaudible
+      // at amount 0 and those are the expensive ones — only insert them
+      // when they're actually turned up.
+      return ctl.amount > 0
+  }
+}
+
+/**
+ * Rewire the front of the master chain so only the FX nodes that are
+ * actually working sit between the bus and the mastering stage. The
+ * mastering→safety→analyser→destination tail is wired once in
+ * ensureMaster and never touched here. No-ops when the active set
+ * hasn't changed, so it won't click the audio by reconnecting nodes
+ * mid-play on every unrelated store change.
+ */
+function rewireMasterChain() {
+  if (!masterVolume || !globalFx || !mastering) return
+  const store = useAudioStore()
+  const controls = store.effects[store.activeInstrument]
+
+  const active: Tone.ToneAudioNode[] = []
+  const keyParts: string[] = []
+  for (const id of EFFECT_ORDER) {
+    const ctl = controls?.[id]
+    // Chaos drives filter / reverb / bitcrusher directly, so once it's
+    // engaged those three must stay in the path regardless of the
+    // per-instrument effect toggles.
+    const chaosNode =
+      chaosEngaged && (id === 'filter' || id === 'reverb' || id === 'bitcrusher')
+    if (isFxActive(id, ctl) || chaosNode) {
+      active.push(globalFx[id])
+      keyParts.push(id)
+    }
+  }
+
+  const key = keyParts.join('>')
+  if (key === lastFxKey) return
+  lastFxKey = key
+
+  // Drop every existing connection on the bus + the seven fx nodes,
+  // then rebuild masterVolume → [active...] → mastering.eq. The tail
+  // past mastering.eq is left intact.
+  try { masterVolume.disconnect() } catch { /* not yet connected */ }
+  for (const id of EFFECT_ORDER) {
+    try { globalFx[id].disconnect() } catch { /* idem */ }
+  }
+
+  let prev: Tone.ToneAudioNode = masterVolume
+  for (const node of active) {
+    prev.connect(node)
+    prev = node
+  }
+  prev.connect(mastering.eq)
+}
+
 function applyAllEffectsForActive() {
   if (!globalFx) return
   const store = useAudioStore()
@@ -2512,6 +2600,8 @@ function applyAllEffectsForActive() {
     const ctl = controls[id]
     if (ctl) applyEffect(globalFx, id, ctl.enabled, ctl.amount)
   }
+  // Recompute which nodes belong in the path now that levels changed.
+  rewireMasterChain()
 }
 
 // In-flight load deduplication. Without this, every concurrent caller of
@@ -2843,18 +2933,30 @@ export function useAudio() {
   // These are the same nodes the per-instrument FX panel touches; the
   // XY pad is a "performance" override and last-write-wins on those
   // params is the expected behaviour for a chaos surface.
+  // Chaos drives filter / reverb / bitcrusher directly. Those nodes are
+  // only in the signal path when something needs them, so the first
+  // chaos touch flips chaosEngaged and rewires them in — otherwise the
+  // XY pad would move silent params on disconnected nodes.
+  function engageChaos() {
+    if (chaosEngaged) return
+    chaosEngaged = true
+    rewireMasterChain()
+  }
   function setChaosX(value: number) {
     if (!chaosFx) return
+    engageChaos()
     const clamped = Math.max(0, Math.min(1, value))
     const freq = 200 + (1 - clamped) * 19800
     chaosFx.filter.frequency.rampTo(freq, 0.05)
   }
   function setChaosY(value: number) {
     if (!chaosFx) return
+    engageChaos()
     chaosFx.reverb.wet.rampTo(Math.max(0, Math.min(1, value)), 0.05)
   }
   function glitchBurst(durationSec = 1) {
     if (!chaosFx) return
+    engageChaos()
     chaosFx.bitcrusher.bits.value = 3
     chaosFx.bitcrusher.wet.rampTo(1, 0.02)
     setTimeout(() => {
