@@ -293,9 +293,14 @@ const PIANO_URLS: Record<string, string> = {
 
 const nodes = new Map<InstrumentId, InstrumentNode>()
 let masterVolume: Tone.Volume | null = null
-let chaosFilter: Tone.Filter | null = null
-let chaosReverb: Tone.Reverb | null = null
-let chaosCrush: Tone.BitCrusher | null = null
+// Chaos (XY pad + glitch) reuses the global FX filter / reverb /
+// bitcrusher instead of carrying its own duplicate Filter + Reverb
+// convolver + BitCrusher worklet always-on in the master chain. Those
+// duplicates were a fixed per-audio-frame cost on every device even
+// when chaos was never opened — a second convolutional reverb plus a
+// second bitcrusher worklet is a big slice of the mobile audio budget.
+// chaosFx points at the shared globalFx once the master is built.
+let chaosFx: FxChain | null = null
 let masterAnalyser: Tone.Analyser | null = null
 let masterFft: Tone.Analyser | null = null
 let globalFx: FxChain | null = null
@@ -384,6 +389,33 @@ function detectMobile(): boolean {
 // always runs alongside, without making the cap perceptible during
 // normal play (a 4-note chord + a beat row with 4 active steps fits).
 const POLYPHONY_LIMIT = detectMobile() ? 8 : 32
+
+// Hard per-PolySynth voice cap. Tone.PolySynth defaults to 32 and
+// allocates a fresh voice instance on demand up to that — with a
+// fast run or a held chord that's dozens of oscillators + envelopes
+// spinning up at once, which is exactly the "wshhhh then it stops
+// playing" overload. Capping the pool means Tone reuses voices
+// (stealing the oldest internally) instead of unbounded allocation,
+// so the cost of "play a lot of notes fast" stays bounded. Mobile
+// gets a tighter cap because phone audio threads choke sooner. The
+// engine's own activeNotes tracker (POLYPHONY_LIMIT) sits on top for
+// the cross-instrument total; this is the per-voice safety net.
+const SYNTH_MAX_POLYPHONY = detectMobile() ? 8 : 24
+
+/**
+ * Cap a PolySynth's voice pool. Tone.PolySynth exposes `maxPolyphony`
+ * as a settable field in v15 (the constructor option is unreliable
+ * across the typed surface, so we set it post-construction). Returns
+ * the same synth for chaining.
+ */
+function capPolyphony<T extends Tone.PolySynth>(synth: T): T {
+  try {
+    ;(synth as unknown as { maxPolyphony: number }).maxPolyphony = SYNTH_MAX_POLYPHONY
+  } catch {
+    /* older Tone without the field — engine's own cap still applies */
+  }
+  return synth
+}
 
 // Dev-only diagnostic logger. Vite strips DEV-gated branches in prod
 // builds so this contributes zero bytes / overhead to the shipped app.
@@ -638,13 +670,11 @@ function ensureMaster() {
   masterVolume.volume.cancelScheduledValues(now)
   masterVolume.volume.setValueAtTime(-60, now)
   masterVolume.volume.linearRampToValueAtTime(targetDb, now + 0.25)
-  chaosFilter = new Tone.Filter({ frequency: 20000, type: 'lowpass', Q: 1 })
-  chaosReverb = new Tone.Reverb({ decay: 3, wet: 0 })
-  chaosCrush = new Tone.BitCrusher(16)
-  chaosCrush.wet.value = 0
   masterAnalyser = new Tone.Analyser('waveform', 1024)
   masterFft = new Tone.Analyser('fft', 64)
   globalFx = buildGlobalFx()
+  // Chaos shares the global FX nodes — no separate convolver/worklet.
+  chaosFx = globalFx
   mastering = buildMasteringChain()
   // Always-on safety limiter at the very end of the chain. The
   // mastering preset's own limiter is bypassable (the "off" preset
@@ -660,6 +690,12 @@ function ensureMaster() {
     release: 0.1,
     knee: 0,
   })
+  // Chaos no longer adds its own filter/reverb/crusher nodes here —
+  // it drives globalFx.filter / globalFx.reverb / globalFx.bitcrusher
+  // directly (see setChaosX/Y, glitchBurst). One fewer convolver and
+  // one fewer bitcrusher worklet always processing = real headroom
+  // back, especially on phones, which is part of the fast-play
+  // overload fix.
   masterVolume.chain(
     globalFx.reverb,
     globalFx.delay,
@@ -668,9 +704,6 @@ function ensureMaster() {
     globalFx.filter,
     globalFx.bitcrusher,
     globalFx.compressor,
-    chaosFilter,
-    chaosReverb,
-    chaosCrush,
     // Mastering chain shapes the final mix — EQ glue, then compressor
     // for cohesion, then preset limiter as the soft ceiling.
     mastering.eq,
@@ -805,14 +838,14 @@ function buildElectricPiano(): VoiceAdapter {
   // sine sustain. Chorus stripped — the user can add it through the
   // per-instrument FX chain when wanted; running it always-on was
   // contributing to the audio-worker overload on busy patterns.
-  const synth = new Tone.PolySynth(Tone.FMSynth, {
+  const synth = capPolyphony(new Tone.PolySynth(Tone.FMSynth, {
     harmonicity: 1,
     modulationIndex: 8,
     oscillator: { type: 'sine' },
     envelope: { attack: 0.002, decay: 2.2, sustain: 0.15, release: 1.2 },
     modulation: { type: 'sine' },
     modulationEnvelope: { attack: 0.002, decay: 1.8, sustain: 0, release: 0.8 },
-  })
+  }))
   const c = withCentsTracking({
     triggerAttack: (note, time, velocity) => synth.triggerAttack(note, time, velocity),
     triggerAttackRelease: (note, dur, time, velocity) =>
@@ -1169,14 +1202,19 @@ function buildPad(): VoiceAdapter {
   // master chain already has a reverb the user can dial up per
   // instrument if they want that wash. Envelope kept lush (0.4 s
   // attack, 2 s release) so chords still bloom open.
-  const synth = new Tone.PolySynth(Tone.FMSynth, {
+  // release trimmed 2 → 1.2 s. A 2 s release means a lifted pad chord
+  // keeps all its FM voices processing for two full seconds while the
+  // user plays the next chord on top — that overlap is what stacked
+  // voices into the overload. 1.2 s still blooms/fades like a pad but
+  // frees the pool fast enough to keep up with chord changes.
+  const synth = capPolyphony(new Tone.PolySynth(Tone.FMSynth, {
     harmonicity: 1.5,
     modulationIndex: 4,
     oscillator: { type: 'sine' },
-    envelope: { attack: 0.4, decay: 0.2, sustain: 0.85, release: 2 },
+    envelope: { attack: 0.4, decay: 0.2, sustain: 0.85, release: 1.2 },
     modulation: { type: 'sine' },
-    modulationEnvelope: { attack: 0.3, decay: 0.5, sustain: 0.6, release: 1.5 },
-  })
+    modulationEnvelope: { attack: 0.3, decay: 0.5, sustain: 0.6, release: 1 },
+  }))
   const c = withCentsTracking({
     triggerAttack: (note, time, velocity) => synth.triggerAttack(note, time, velocity),
     triggerAttackRelease: (note, dur, time, velocity) =>
@@ -1202,11 +1240,17 @@ function buildLead(): VoiceAdapter {
   // overload (wshhhh) the user reported. Gentle vibrato kept for breath;
   // filter and chorus dropped — they belong in the per-instrument FX
   // chain if the user wants them.
-  const synth = new Tone.PolySynth(Tone.Synth, {
-    oscillator: { type: 'fatsawtooth', count: 3, spread: 18 } as unknown as Tone.OmniOscillatorOptions,
-    envelope: { attack: 0.01, decay: 0.1, sustain: 0.7, release: 0.6 },
+  // count: 2 (was 3) — two detuned saws still beat/shimmer like a
+  // supersaw but cost two oscillators per voice instead of three. With
+  // a fast run that 33% cut is the difference between smooth and the
+  // audio worker stalling. release shortened 0.6 → 0.35 so a stolen /
+  // lifted voice frees its oscillators fast instead of ringing while
+  // the next notes pile on top.
+  const synth = capPolyphony(new Tone.PolySynth(Tone.Synth, {
+    oscillator: { type: 'fatsawtooth', count: 2, spread: 20 } as unknown as Tone.OmniOscillatorOptions,
+    envelope: { attack: 0.01, decay: 0.1, sustain: 0.7, release: 0.35 },
     volume: -12,
-  })
+  }))
   const vibrato = new Tone.Vibrato({ frequency: 5, depth: 0.05 })
   synth.connect(vibrato)
   const c = withCentsTracking({
@@ -1230,13 +1274,17 @@ function buildOrgan(): VoiceAdapter {
   // (16'/8'/4'/2 2/3') ran 4 PolySynths through a chorus. With a 4-note
   // chord that's 16 polyphonic sine voices + a chorus stage per voice,
   // which is what tipped the audio worker on busy beat-maker patterns.
-  // FatOscillator stacks 3 detuned sines inside ONE oscillator core,
-  // giving the same body at a quarter of the cost. Fast attack / zero
-  // decay / unity sustain keeps the bellows-driven organ behaviour.
-  const synth = new Tone.PolySynth(Tone.Synth, {
-    oscillator: { type: 'fatsine', count: 3, spread: 12 } as unknown as Tone.OmniOscillatorOptions,
-    envelope: { attack: 0.005, decay: 0, sustain: 1, release: 0.08 },
-  })
+  // Plain single sine (was fatsine count: 3). Three detuned sines per
+  // voice beat against each other, and with the organ's sustain: 1
+  // every held key keeps all three oscillators running — a held chord
+  // was 12+ detuned sines fighting, which is the "organ noise / wshhh"
+  // the user heard (it's beating + audio-worker strain, not a real
+  // organ timbre). A single sine with a soft triangle-ish partial set
+  // is clean, unmistakably "organ", and one oscillator per voice.
+  const synth = capPolyphony(new Tone.PolySynth(Tone.Synth, {
+    oscillator: { type: 'triangle' },
+    envelope: { attack: 0.006, decay: 0, sustain: 1, release: 0.06 },
+  }))
   const c = withCentsTracking({
     triggerAttack: (note, time, velocity) => synth.triggerAttack(note, time, velocity),
     triggerAttackRelease: (note, dur, time, velocity) =>
@@ -2765,24 +2813,29 @@ export function useAudio() {
     node.voice.setBendCents(cents)
   }
 
+  // Chaos drives the shared globalFx nodes (chaosFx === globalFx).
+  // X = filter cutoff, Y = reverb wet, glitch = bitcrusher burst.
+  // These are the same nodes the per-instrument FX panel touches; the
+  // XY pad is a "performance" override and last-write-wins on those
+  // params is the expected behaviour for a chaos surface.
   function setChaosX(value: number) {
-    if (!chaosFilter) return
+    if (!chaosFx) return
     const clamped = Math.max(0, Math.min(1, value))
     const freq = 200 + (1 - clamped) * 19800
-    chaosFilter.frequency.rampTo(freq, 0.05)
+    chaosFx.filter.frequency.rampTo(freq, 0.05)
   }
   function setChaosY(value: number) {
-    if (!chaosReverb) return
-    chaosReverb.wet.rampTo(Math.max(0, Math.min(1, value)), 0.05)
+    if (!chaosFx) return
+    chaosFx.reverb.wet.rampTo(Math.max(0, Math.min(1, value)), 0.05)
   }
   function glitchBurst(durationSec = 1) {
-    if (!chaosCrush) return
-    chaosCrush.bits.value = 3
-    chaosCrush.wet.rampTo(1, 0.02)
+    if (!chaosFx) return
+    chaosFx.bitcrusher.bits.value = 3
+    chaosFx.bitcrusher.wet.rampTo(1, 0.02)
     setTimeout(() => {
-      if (!chaosCrush) return
-      chaosCrush.wet.rampTo(0, 0.1)
-      chaosCrush.bits.value = 16
+      if (!chaosFx) return
+      chaosFx.bitcrusher.wet.rampTo(0, 0.1)
+      chaosFx.bitcrusher.bits.value = 16
     }, durationSec * 1000)
   }
   function getMasterAnalyser(): Tone.Analyser | null { return masterAnalyser }
