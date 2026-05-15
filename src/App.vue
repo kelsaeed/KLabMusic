@@ -12,6 +12,12 @@ import { useLocale } from '@/i18n'
 const DebugOverlay = defineAsyncComponent(
   () => import('@/components/debug/DebugOverlay.vue'),
 )
+// Audio watchdog — same opt-in pattern (?watchdog=1). Async so its
+// analyser/DSP loop + useAudio import never touches the entry chunk
+// for users who aren't auditing.
+const AudioWatchdog = defineAsyncComponent(
+  () => import('@/components/debug/AudioWatchdog.vue'),
+)
 
 const { initTheme } = useTheme()
 const { initLocale } = useLocale()
@@ -92,6 +98,7 @@ onMounted(() => {
     </Transition>
   </RouterView>
   <DebugOverlay />
+  <AudioWatchdog />
 </template>
 
 <style>

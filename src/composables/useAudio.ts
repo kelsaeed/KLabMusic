@@ -2912,6 +2912,13 @@ export function useAudio() {
     polyphony: { active: number; limit: number; isMobile: boolean }
     activeNotes: Array<{ instrumentId: InstrumentId; note: string; startedAt: number }>
     loadedInstruments: InstrumentId[]
+    /** Hardware/driver output latency in seconds — how big the audio
+     *  buffer the OS handed us is. A tiny value here (≪0.02) is the
+     *  underrun-prone state the playback-latency context fix targets. */
+    baseLatency: number
+    outputLatency: number
+    /** Tone's main-thread scheduling lead time in seconds. */
+    lookAhead: number
   } {
     const ctx = Tone.getContext()
     const notes: Array<{ instrumentId: InstrumentId; note: string; startedAt: number }> = []
@@ -2921,6 +2928,10 @@ export function useAudio() {
         note: entry.note,
         startedAt: entry.startedAt,
       })
+    }
+    const raw = ctx.rawContext as unknown as {
+      baseLatency?: number
+      outputLatency?: number
     }
     return {
       audioContextState: ctx.state,
@@ -2932,6 +2943,9 @@ export function useAudio() {
       },
       activeNotes: notes,
       loadedInstruments: [...nodes.keys()],
+      baseLatency: typeof raw.baseLatency === 'number' ? raw.baseLatency : -1,
+      outputLatency: typeof raw.outputLatency === 'number' ? raw.outputLatency : -1,
+      lookAhead: typeof ctx.lookAhead === 'number' ? ctx.lookAhead : -1,
     }
   }
 

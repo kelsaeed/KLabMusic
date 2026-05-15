@@ -183,7 +183,14 @@ function onPickTonic(next: string) {
             @input="metronome.setBpm(Number(($event.target as HTMLInputElement).value))"
           />
         </label>
-        <label class="row">
+        <!-- div, NOT label: a <label> wrapping a native <select>
+             re-dispatches the click to its control, which on most
+             browsers opens then immediately closes the dropdown — it
+             reads as "the signature picker isn't clickable". The drone
+             tonic picker above is a <div class="row"> for exactly this
+             reason; the bpm/cents rows stay <label> because a range
+             input inside a label is fine. -->
+        <div class="row">
           <span class="lbl mono">{{ t('practice.metronome.signature') }}</span>
           <select
             class="picker mono"
@@ -192,7 +199,7 @@ function onPickTonic(next: string) {
           >
             <option v-for="s in metronome.signatures" :key="s.id" :value="s.id">{{ s.label }}</option>
           </select>
-        </label>
+        </div>
         <!-- Beat indicator — flashes the active beat lined up with the
              audio click. groups[] drives the visual grouping so 7/8
              reads as 3+2+2 dots, not seven undifferentiated dots. -->
