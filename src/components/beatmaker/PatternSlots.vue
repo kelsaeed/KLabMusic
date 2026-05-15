@@ -79,7 +79,7 @@ function rename(id: string, current: string) {
 }
 .idx { font-size: 0.6rem; color: var(--text-muted); }
 .del {
-  margin-left: 0.2rem;
+  margin-inline-start: 0.2rem;
   font-size: 0.85rem;
   color: var(--text-muted);
   line-height: 1;

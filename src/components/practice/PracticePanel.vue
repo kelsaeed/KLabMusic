@@ -6,6 +6,7 @@ import { useMetronome } from '@/composables/useMetronome'
 import { useDrone } from '@/composables/useDrone'
 import { useTuner } from '@/composables/useTuner'
 import { useToast } from '@/composables/useToast'
+import { useDirection } from '@/composables/useDirection'
 
 // Practice hub for musicians — collapsible panel that lives in the
 // audio stage's sidebar. Holds four tools each musician uses every
@@ -22,6 +23,7 @@ import { useToast } from '@/composables/useToast'
 
 const { t } = useI18n()
 const { show } = useToast()
+const { isRtl } = useDirection()
 
 const midi = useMidi()
 const metronome = useMetronome()
@@ -61,7 +63,12 @@ const tunerNeedlePct = computed(() => {
   const r = tunerReading.value
   if (!r) return 50
   const clamped = Math.max(-50, Math.min(50, r.cents))
-  return ((clamped + 50) / 100) * 100
+  const pct = ((clamped + 50) / 100) * 100
+  // Mirror in RTL so the −50¢ label sits on the visual reading-start
+  // (right edge) and the needle moves the same direction as the label
+  // strip below it. Without this, +cents was on the left and the
+  // labels read backwards relative to the needle.
+  return isRtl.value ? 100 - pct : pct
 })
 const tunerInTune = computed(() => {
   const r = tunerReading.value

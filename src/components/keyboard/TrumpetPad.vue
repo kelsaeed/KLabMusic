@@ -216,9 +216,9 @@ function toggleNotation() {
   cursor: pointer;
   transition: background var(--transition-fast), border-color var(--transition-fast), transform var(--transition-fast);
 }
-.cell.low { border-left: 3px solid #06ffa5; }
-.cell.mid { border-left: 3px solid #ccff00; }
-.cell.high { border-left: 3px solid #ff5e9c; }
+.cell.low { border-inline-start: 3px solid #06ffa5; }
+.cell.mid { border-inline-start: 3px solid #ccff00; }
+.cell.high { border-inline-start: 3px solid #ff5e9c; }
 .cell:hover { border-color: var(--accent-primary); }
 .cell.flash {
   background: var(--accent-primary);

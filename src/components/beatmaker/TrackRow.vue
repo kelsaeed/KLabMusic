@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useBeatMakerStore } from '@/stores/beatmaker'
 import { useRecorderStore } from '@/stores/recorder'
+import { useDirection } from '@/composables/useDirection'
 import { INSTRUMENTS } from '@/lib/instruments'
 import BeatNotePicker from './BeatNotePicker.vue'
 import type { BeatTrack } from '@/lib/types'
@@ -15,6 +16,17 @@ const emit = defineEmits<{
 const store = useBeatMakerStore()
 const recorderStore = useRecorderStore()
 const { t } = useI18n()
+const { isRtl } = useDirection()
+
+// Playhead transform expressed as a CSS variable so the same template
+// works LTR and RTL. The grid lays steps left-to-right in LTR and right-
+// to-left in RTL (because direction: rtl on the .steps container), so
+// the playhead's translateX has to flip sign in RTL to stay over the
+// current step. Without this the bar marches off-screen the wrong way.
+const playheadTransform = computed(() => {
+  const offset = store.currentStep * 100
+  return isRtl.value ? `translateX(${-offset}%)` : `translateX(${offset}%)`
+})
 
 const meta = computed(() => INSTRUMENTS[props.track.instrument])
 const clip = computed(() =>
@@ -116,7 +128,7 @@ function remove() { store.removeTrack(props.track.id) }
         class="playhead-bar"
         :style="{
           width: 100 / track.steps.length + '%',
-          transform: `translateX(${store.currentStep * 100}%)`,
+          transform: playheadTransform,
         }"
       />
       <div

@@ -228,7 +228,7 @@ onBeforeUnmount(() => {
   position: relative;
   height: auto;
   border-bottom: 1px solid var(--border);
-  border-left: 4px solid var(--track-color);
+  border-inline-start: 4px solid var(--track-color);
   background: var(--bg-elevated);
   display: flex;
   flex-direction: column;

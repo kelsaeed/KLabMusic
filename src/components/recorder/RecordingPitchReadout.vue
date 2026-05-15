@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import * as Tone from 'tone'
 import { useRecorderStore } from '@/stores/recorder'
 import { useRecorder } from '@/composables/useRecorder'
+import { useDirection } from '@/composables/useDirection'
 import { detectPitchHz, frequencyToMidiFloat, midiFloatToPitchResult } from '@/lib/pitch'
 
 // Live pitch readout shown while recording. Reads the SAME MediaStream
@@ -23,6 +24,7 @@ import { detectPitchHz, frequencyToMidiFloat, midiFloatToPitchResult } from '@/l
 
 const store = useRecorderStore()
 const { getMicStream } = useRecorder()
+const { isRtl } = useDirection()
 
 interface Reading {
   noteName: string
@@ -110,7 +112,10 @@ const needlePct = computed(() => {
   const r = reading.value
   if (!r) return 50
   const clamped = Math.max(-50, Math.min(50, r.cents))
-  return ((clamped + 50) / 100) * 100
+  const pct = ((clamped + 50) / 100) * 100
+  // Mirror in RTL so the needle moves consistently with the reading-
+  // start side of the gauge.
+  return isRtl.value ? 100 - pct : pct
 })
 
 const inTune = computed(() => {

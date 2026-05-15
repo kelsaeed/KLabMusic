@@ -463,7 +463,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   background: var(--bg-surface);
-  border-right: 1px solid var(--border);
+  border-inline-end: 1px solid var(--border);
 }
 .ruler-spacer { height: 28px; border-bottom: 1px solid var(--border); }
 .header-row {
@@ -473,7 +473,7 @@ onBeforeUnmount(() => {
   gap: 0.3rem;
   padding: 0.5rem 0.6rem;
   border-bottom: 1px solid var(--border);
-  border-left: 4px solid var(--track-color);
+  border-inline-start: 4px solid var(--track-color);
   height: 76px;
   box-sizing: border-box;
   transition: opacity var(--transition-fast);
@@ -562,7 +562,7 @@ onBeforeUnmount(() => {
   gap: 0.2rem;
   padding: 0.5rem 0.6rem;
   border-bottom: 1px solid var(--border);
-  border-left: 4px solid var(--track-color);
+  border-inline-start: 4px solid var(--track-color);
   background: var(--bg-elevated);
   /* Heights match AutomationLane: 33 (own header) + 56 (svg) + 1 border = 90 */
   min-height: 90px;

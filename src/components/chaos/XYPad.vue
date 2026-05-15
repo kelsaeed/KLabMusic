@@ -1,20 +1,29 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useChaos } from '@/composables/useChaos'
+import { useDirection } from '@/composables/useDirection'
 
 const { setChaosX, setChaosY } = useChaos()
 const { t } = useI18n()
+const { isRtl } = useDirection()
 const padRef = ref<HTMLDivElement | null>(null)
 const x = ref(0)
 const y = ref(0)
 const dragging = ref(false)
 
+// In RTL we mirror the pad horizontally so the audio-X axis (filter
+// brightness) reads in the user's reading direction. The pointer-input
+// math reads the box from the *physical left*, so the audio X is
+// `1 - pointerX` in RTL — drag to the right (toward visual axis start)
+// → smaller filter cutoff. Dot position uses the same axis so it
+// tracks under the finger.
 function ratios(e: PointerEvent): { x: number; y: number } {
   if (!padRef.value) return { x: 0, y: 0 }
   const rect = padRef.value.getBoundingClientRect()
+  const px = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width))
   return {
-    x: Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width)),
+    x: isRtl.value ? 1 - px : px,
     y: 1 - Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height)),
   }
 }
@@ -26,6 +35,11 @@ function apply(e: PointerEvent) {
   setChaosX(r.x)
   setChaosY(r.y)
 }
+
+// Dot's visual `left` percentage. In RTL the audio X grows from the
+// visual right edge, so we render with `100% - x` to keep the dot
+// under the finger.
+const dotLeftPct = computed(() => (isRtl.value ? (1 - x.value) : x.value) * 100)
 
 function start(e: PointerEvent) {
   ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
@@ -53,7 +67,7 @@ function end() {
     <p class="help mono">{{ t('chaos.xyHelp') }}</p>
     <div ref="padRef" class="pad" :class="{ dragging }" @pointerdown="start">
       <div class="grid" />
-      <div class="dot" :style="{ left: x * 100 + '%', bottom: y * 100 + '%' }" />
+      <div class="dot" :style="{ left: dotLeftPct + '%', bottom: y * 100 + '%' }" />
       <span class="axis-x mono">{{ t('chaos.filter') }}</span>
       <span class="axis-y mono">{{ t('chaos.reverb') }}</span>
     </div>
@@ -130,5 +144,19 @@ function end() {
   pointer-events: none;
 }
 .axis-x { bottom: 6px; left: 50%; transform: translateX(-50%); }
-.axis-y { top: 50%; right: 6px; transform: translateY(-50%) rotate(90deg); transform-origin: center; }
+/* `inset-inline-end` so the axis label sits on the visual right in
+   LTR and the visual right (= reading start) in RTL. Rotation flips
+   to -90deg in RTL so Arabic text reads naturally (top-to-bottom
+   becomes bottom-to-top in mirror), instead of the letters facing
+   into the pad. */
+.axis-y {
+  top: 50%;
+  inset-inline-end: 6px;
+  transform: translateY(-50%) rotate(90deg);
+  transform-origin: center;
+  white-space: nowrap;
+}
+html[dir='rtl'] .axis-y {
+  transform: translateY(-50%) rotate(-90deg);
+}
 </style>

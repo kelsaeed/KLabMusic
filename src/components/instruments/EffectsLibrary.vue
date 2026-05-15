@@ -177,18 +177,21 @@ function onCardClick(id: EffectId) {
 .lib {
   position: fixed;
   top: 0;
-  right: 0;
+  inset-inline-end: 0;
   bottom: 0;
   width: min(420px, 92vw);
   z-index: 90;
   background: var(--bg-surface);
-  border-left: 1px solid var(--border);
+  border-inline-start: 1px solid var(--border);
   box-shadow: -8px 0 32px rgba(0, 0, 0, 0.45);
   display: flex;
   flex-direction: column;
   padding: 1rem 1rem 0.6rem;
   gap: 0.7rem;
   overflow-y: auto;
+}
+:global(html[dir='rtl']) .lib {
+  box-shadow: 8px 0 32px rgba(0, 0, 0, 0.45);
 }
 .head { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.5rem; }
 .title-wrap { display: flex; flex-direction: column; gap: 0.15rem; }
@@ -314,7 +317,7 @@ function onCardClick(id: EffectId) {
 .card-badge {
   position: absolute;
   top: 0.4rem;
-  right: 0.4rem;
+  inset-inline-end: 0.4rem;
   font-size: 0.55rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -349,6 +352,10 @@ function onCardClick(id: EffectId) {
 .slide-enter-from, .slide-leave-to {
   transform: translateX(20px);
   opacity: 0;
+}
+:global(html[dir='rtl']) .slide-enter-from,
+:global(html[dir='rtl']) .slide-leave-to {
+  transform: translateX(-20px);
 }
 
 /* Per-effect hue gradient — keeps cards visually differentiated like

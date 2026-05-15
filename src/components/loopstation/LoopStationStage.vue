@@ -144,7 +144,7 @@ const { t } = useI18n()
   50% { box-shadow: 0 0 0 10px rgba(255, 0, 110, 0); }
 }
 
-.transport { display: inline-flex; gap: 0.3rem; margin-left: auto; }
+.transport { display: inline-flex; gap: 0.3rem; margin-inline-start: auto; }
 .t {
   width: 36px;
   height: 36px;

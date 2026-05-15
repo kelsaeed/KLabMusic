@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useLivePlay } from '@/composables/useLivePlay'
+import { useDirection } from '@/composables/useDirection'
 
 const { pitchBend, setBend, releaseBend } = useLivePlay()
 const { t } = useI18n()
+const { isRtl } = useDirection()
 const stripRef = ref<HTMLDivElement | null>(null)
 
 function start(e: PointerEvent) {
@@ -20,7 +22,11 @@ function move(e: PointerEvent) {
 function apply(e: PointerEvent) {
   if (!stripRef.value) return
   const rect = stripRef.value.getBoundingClientRect()
-  const ratio = (e.clientX - rect.left) / rect.width
+  const physical = (e.clientX - rect.left) / rect.width
+  // RTL users read the strip right-to-left, so a drag to the visual
+  // start (right edge) should bend up (+1) the same way a drag to
+  // the visual start (left edge) does in LTR.
+  const ratio = isRtl.value ? 1 - physical : physical
   setBend(ratio * 2 - 1)
 }
 function end() {
@@ -28,6 +34,13 @@ function end() {
   window.removeEventListener('pointermove', move)
   window.removeEventListener('pointerup', end)
 }
+
+// Visual position of the indicator. In RTL we mirror so the indicator
+// sits under the finger and the +bend reading is on the visual start.
+const indicatorLeftPct = computed(() => {
+  const r = (pitchBend.value + 1) / 2
+  return (isRtl.value ? 1 - r : r) * 100
+})
 </script>
 
 <template>
@@ -35,7 +48,7 @@ function end() {
     <div class="lbl mono">{{ t('live.bend') }}</div>
     <div ref="stripRef" class="strip" @pointerdown="start">
       <div class="track" />
-      <div class="indicator" :style="{ left: ((pitchBend + 1) / 2) * 100 + '%' }" />
+      <div class="indicator" :style="{ left: indicatorLeftPct + '%' }" />
       <div class="center" />
     </div>
     <div class="value mono">{{ Math.round(pitchBend * 100) }}</div>

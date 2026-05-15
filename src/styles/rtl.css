@@ -1,12 +1,31 @@
+/* Global RTL rules.
+ *
+ * Most layout in the app is direction-agnostic (flex/grid + logical
+ * properties), but a handful of physical CSS values inherited from
+ * the original LTR build need flipping when `html[dir='rtl']` is set
+ * by the i18n switcher. Anything that's already inside a component
+ * scope and uses logical properties (`margin-inline-start`,
+ * `inset-inline-end`, etc.) needs no override here.
+ *
+ * For direction-sensitive runtime values driven by inline `:style`
+ * (XY pad dot, beat-maker playhead, pitch needle, pitch-bend
+ * indicator), the components themselves use the useDirection
+ * composable — CSS can't reach into a JS-computed percentage.
+ */
+
 html[dir='rtl'] {
   font-family: 'Cairo', var(--font-body);
 }
 
+/* Reverse generic horizontal flex stacks that were authored
+ * left-to-right. Components that need a specific order in RTL set
+ * their own direction explicitly. */
 html[dir='rtl'] .row,
 html[dir='rtl'] .flex-row {
   flex-direction: row-reverse;
 }
 
+/* `margin: 0 0 0 auto` patterns. */
 html[dir='rtl'] .ml-auto {
   margin-left: 0;
   margin-right: auto;
@@ -17,6 +36,7 @@ html[dir='rtl'] .mr-auto {
   margin-left: auto;
 }
 
+/* Sidebars docked to a physical side. */
 html[dir='rtl'] .sidebar-left {
   left: auto;
   right: 0;
@@ -26,3 +46,72 @@ html[dir='rtl'] .sidebar-right {
   right: auto;
   left: 0;
 }
+
+/* — Form controls — */
+
+/* Native range sliders honour `dir` on the element itself in most
+ * browsers, but the parents' `direction: rtl` doesn't always
+ * propagate (Safari historically didn't). Forcing `direction: ltr`
+ * on the input keeps the thumb moving the same physical direction
+ * as the dragged finger — otherwise a slider in an RTL panel reads
+ * its min on the right and confuses the muscle memory of dragging
+ * "→ higher". The neighbouring label still flows RTL because it's
+ * on the parent. */
+html[dir='rtl'] input[type='range'] {
+  direction: ltr;
+}
+
+/* Number inputs: the digits themselves are LTR even in Arabic
+ * (Western-Arabic numerals or Eastern-Arabic numerals, both flow
+ * left-to-right in numeric value), so force LTR text on the input
+ * to keep the spinner buttons on the visual right and the cursor
+ * behaviour predictable. */
+html[dir='rtl'] input[type='number'] {
+  direction: ltr;
+  text-align: end;
+}
+
+/* — Text alignment in chat / log surfaces — */
+
+/* `text-align: left` written for LTR reading order should follow
+ * the document direction. Authors who specifically want left or
+ * right alignment (e.g. a username always pinned to the start of
+ * a chat line) should use `text-align: start` / `text-align: end`
+ * directly. These overrides cover the legacy class names that
+ * still use physical alignment. */
+html[dir='rtl'] .text-left { text-align: right; }
+html[dir='rtl'] .text-right { text-align: left; }
+
+/* — Inline-axis icons + arrows — */
+
+/* Chevron and arrow glyphs typed as `▶` / `›` / `→` point in a
+ * fixed Unicode direction. When they signal "next" or "more"
+ * (forward in reading order), they need to flip in RTL. Components
+ * that use a generic `.chev` class get the flip for free; the
+ * multiplayer ChatPanel already handles its own `.chev` (kept
+ * here for any other usage that adopts the convention). */
+html[dir='rtl'] .chev-forward {
+  transform: scaleX(-1);
+}
+
+/* — Borders that signal "track colour on the start side" — */
+
+/* Components written as `border-left: 4px solid var(--track-color)`
+ * for an LTR-only build read as on the trailing side in RTL. The
+ * cleanest fix is to use `border-inline-start` in the source; this
+ * fallback catches legacy class names that haven't been migrated. */
+html[dir='rtl'] .border-left-accent {
+  border-left: none;
+  border-right: 4px solid var(--accent-primary);
+}
+html[dir='rtl'] .border-right-accent {
+  border-right: none;
+  border-left: 4px solid var(--accent-primary);
+}
+
+/* — Tables / lists with separator borders — */
+
+/* Components using `:not(:last-child) { border-right: 1px solid }`
+ * for vertical separators stay correct because the separator is
+ * visually consistent in both directions. No override needed; this
+ * comment exists so the next maintainer knows it's intentional. */
