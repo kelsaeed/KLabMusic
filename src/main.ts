@@ -22,10 +22,16 @@ import { createPinia } from 'pinia'
 import App from './App.vue'
 import { router } from './router'
 import { i18n } from './i18n'
+import { installTunedAudioContext } from './lib/audioContext'
 
 import './styles/base.css'
 import './styles/themes.css'
 import './styles/rtl.css'
+
+// Swap Tone's default tiny-buffer context for a playback-latency one
+// BEFORE anything builds an audio node. This is the real "wshhhh under
+// heavy play" fix — see lib/audioContext.ts for the full reasoning.
+installTunedAudioContext()
 
 const app = createApp(App)
 app.use(createPinia())

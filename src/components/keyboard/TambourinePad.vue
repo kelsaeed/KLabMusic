@@ -4,14 +4,17 @@ import { useI18n } from 'vue-i18n'
 import { useAudio } from '@/composables/useAudio'
 import { useLivePlay } from '@/composables/useLivePlay'
 
-// الرق / riq. Two strokes, two zones:
+// الرق / riq. Two strokes, two concentric zones — exactly how the
+// instrument is actually played:
 //   • inner disc  → 'dum'  (deep centre-skin hit)
 //   • outer ring  → 'tak'  (bright rim / jingle snap)
-// Plus the continuous gestures, unchanged:
-//   • drag (sustained motion) → stream of soft 'shake' jingles
-//   • rapid taps (≥3 within 400 ms) → 'roll'
-// A real riq is played exactly this way — the player alternates a
-// centred dum with a rim tak and rolls the jingles between them.
+//   • drag        → continuous soft 'shake' jingles
+// The zone the pointer lands in is ALWAYS authoritative: tapping the
+// centre fast plays a stream of dums (a dum roll), tapping the rim
+// fast plays a stream of taks (a jingle roll). There is no separate
+// "rapid taps → jingle" override any more — that was hijacking fast
+// centre taps and playing the rim sound instead, which is the bug
+// the user hit ("spam the middle, the outside sound plays").
 
 const { t } = useI18n()
 const { playOn } = useAudio()
@@ -20,47 +23,34 @@ const { recordLivePlay } = useLivePlay()
 const surfaceRef = ref<HTMLDivElement | null>(null)
 const dragging = ref(false)
 const lastShakeTime = ref(0)
-const tapTimestamps: number[] = []
 
-const flash = ref<'dum' | 'tak' | 'shake' | 'roll' | null>(null)
-function pulse(kind: 'dum' | 'tak' | 'shake' | 'roll') {
+// Inner disc is the central 56% of the radius (matches the .head
+// visual at inset 22% → radius fraction 1 − 0.44 = 0.56).
+const DUM_RADIUS_FRAC = 0.56
+
+const flash = ref<'dum' | 'tak' | 'shake' | null>(null)
+function pulse(kind: 'dum' | 'tak' | 'shake') {
   flash.value = kind
   setTimeout(() => {
     if (flash.value === kind) flash.value = null
-  }, 170)
+  }, 150)
 }
 
-function detectRoll(now: number): boolean {
-  while (tapTimestamps.length && now - tapTimestamps[0] > 400) tapTimestamps.shift()
-  return tapTimestamps.length >= 3
-}
-
-// Where did the pointer land — the inner disc (dum) or the outer
-// ring (tak)? Distance from centre as a fraction of the radius; the
-// inner disc is the middle 56% (matches the .head visual at inset 22%).
 function zoneAt(e: PointerEvent): 'dum' | 'tak' {
   const el = surfaceRef.value
   if (!el) return 'tak'
   const rect = el.getBoundingClientRect()
-  const cx = rect.left + rect.width / 2
-  const cy = rect.top + rect.height / 2
-  const dx = e.clientX - cx
-  const dy = e.clientY - cy
-  const dist = Math.hypot(dx, dy) / (rect.width / 2)
-  return dist <= 0.56 ? 'dum' : 'tak'
+  const dx = e.clientX - (rect.left + rect.width / 2)
+  const dy = e.clientY - (rect.top + rect.height / 2)
+  // Normalise by the radius so the test is exact regardless of the
+  // responsive surface size.
+  const distFrac = Math.hypot(dx, dy) / (Math.min(rect.width, rect.height) / 2)
+  return distFrac <= DUM_RADIUS_FRAC ? 'dum' : 'tak'
 }
 
 function onDown(e: PointerEvent) {
   ;(e.target as Element)?.releasePointerCapture?.(e.pointerId)
   dragging.value = true
-  const now = performance.now()
-  tapTimestamps.push(now)
-  if (detectRoll(now)) {
-    void playOn('tambourine', 'roll', 100)
-    recordLivePlay('tambourine', 'roll', 100, 0.2)
-    pulse('roll')
-    return
-  }
   const zone = zoneAt(e)
   if (zone === 'dum') {
     void playOn('tambourine', 'dum', 118)
@@ -80,7 +70,7 @@ function onMove(e: PointerEvent) {
     return
   }
   // Throttle shake samples so the voice pool isn't hammered. Real
-  // jingles shimmer every ~70 ms during a sustained shake.
+  // jingles shimmer roughly every ~70 ms during a sustained shake.
   const now = performance.now()
   if (now - lastShakeTime.value < 70) return
   lastShakeTime.value = now
@@ -102,6 +92,12 @@ onBeforeUnmount(() => {
   window.removeEventListener('pointerup', onUp)
   window.removeEventListener('pointercancel', onUp)
 })
+
+// 10 jingles evenly spaced around the frame. Pre-computed angles so
+// the template just maps them — placement is done with a clean polar
+// transform (rotate then push out by the radius), not fragile
+// per-jingle top/left math.
+const JINGLES = Array.from({ length: 10 }, (_, i) => (i * 360) / 10)
 </script>
 
 <template>
@@ -113,20 +109,24 @@ onBeforeUnmount(() => {
       :class="{
         flashTak: flash === 'tak',
         flashShake: flash === 'shake',
-        flashRoll: flash === 'roll',
       }"
       @pointerdown="onDown"
       @pointermove="onMove"
     >
-      <!-- Jingles around the frame (the tak zone) -->
+      <!-- Jingles ride the rim. Each is centred, then a polar
+           transform rotates it and pushes it out to the rim radius.
+           transform-origin stays at the element centre so the maths
+           is exact at any responsive size. -->
       <span
-        v-for="i in 12"
-        :key="i"
+        v-for="angle in JINGLES"
+        :key="angle"
         class="jingle"
-        :style="{ '--angle': `${(i - 1) * 30}deg` }"
+        :style="{
+          transform: `translate(-50%, -50%) rotate(${angle}deg) translateY(calc(var(--rim) * -1)) rotate(${-angle}deg)`,
+        }"
       />
       <span class="ring-label mono">{{ t('tambourine.tak') }}</span>
-      <!-- Inner skin disc (the dum zone) — its own hit target -->
+      <!-- Inner skin disc = the dum hit target. -->
       <span class="head" :class="{ flashDum: flash === 'dum' }">
         <span class="head-label mono">{{ t('tambourine.dum') }}</span>
       </span>
@@ -151,80 +151,78 @@ onBeforeUnmount(() => {
   line-height: 1.5;
 }
 .surface {
+  /* --d drives every internal measurement so the polar maths is
+     exact at any size. */
+  --d: clamp(220px, 50vw, 320px);
+  --rim: calc(var(--d) / 2 - 20px);
   position: relative;
-  width: clamp(220px, 50vw, 320px);
-  aspect-ratio: 1;
+  width: var(--d);
+  height: var(--d);
   border-radius: 50%;
-  border: 3px solid #b88d2a;
+  border: 3px solid #c79a33;
   background:
-    radial-gradient(circle at 50% 45%, #2a2030 0%, #1a1422 70%, #120e18 100%);
+    radial-gradient(circle at 50% 42%, #2c2233 0%, #1b1524 68%, #110d17 100%);
   cursor: pointer;
   user-select: none;
   touch-action: none;
-  display: grid;
-  place-items: center;
-  box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.6), 0 4px 18px rgba(0, 0, 0, 0.5);
-  transition: box-shadow var(--transition-fast);
+  box-shadow: inset 0 0 26px rgba(0, 0, 0, 0.6), 0 4px 18px rgba(0, 0, 0, 0.5);
+  transition: box-shadow var(--transition-fast), border-color var(--transition-fast);
 }
-/* tak = ring stroke: whole frame lights warm */
 .surface.flashTak {
-  box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.6), 0 0 26px var(--accent-primary);
+  box-shadow: inset 0 0 26px rgba(0, 0, 0, 0.6), 0 0 26px var(--accent-primary);
   border-color: var(--accent-primary);
 }
 .surface.flashShake {
-  box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.6), 0 0 20px #ccff00aa;
+  box-shadow: inset 0 0 26px rgba(0, 0, 0, 0.6), 0 0 20px #ccff00aa;
   border-color: #ccff00;
-}
-.surface.flashRoll {
-  box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.6), 0 0 28px var(--accent-secondary);
-  border-color: var(--accent-secondary);
 }
 
 .head {
   position: absolute;
+  /* inset 22% → inner disc spans the central 56% of the diameter,
+     which is exactly the dum hit-test radius in script. */
   inset: 22%;
   border-radius: 50%;
   display: grid;
   place-items: center;
   background:
-    radial-gradient(circle at 50% 40%, rgba(232, 210, 178, 0.22) 0%, rgba(150, 110, 70, 0.34) 70%, rgba(90, 64, 40, 0.4) 100%);
-  border: 1px solid rgba(232, 210, 178, 0.25);
-  box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.45);
+    radial-gradient(circle at 50% 38%, rgba(235, 214, 182, 0.24) 0%, rgba(150, 110, 70, 0.34) 66%, rgba(86, 60, 38, 0.42) 100%);
+  border: 1px solid rgba(235, 214, 182, 0.28);
+  box-shadow: inset 0 2px 12px rgba(0, 0, 0, 0.5);
   transition: box-shadow var(--transition-fast), transform var(--transition-fast);
   pointer-events: none;
 }
-/* dum = centre stroke: just the skin disc reacts */
 .head.flashDum {
-  transform: scale(0.96);
-  box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.45), 0 0 22px var(--accent-primary);
+  transform: scale(0.95);
+  box-shadow: inset 0 2px 12px rgba(0, 0, 0, 0.5), 0 0 24px var(--accent-primary);
   border-color: var(--accent-primary);
 }
 .head-label {
-  font-size: 0.72rem;
-  letter-spacing: 0.16em;
+  font-size: 0.74rem;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: rgba(232, 210, 178, 0.65);
+  color: rgba(235, 214, 182, 0.7);
 }
 .ring-label {
   position: absolute;
-  bottom: 7%;
+  left: 50%;
+  bottom: 6%;
+  transform: translateX(-50%);
   font-size: 0.62rem;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: rgba(232, 210, 178, 0.5);
+  color: rgba(235, 214, 182, 0.5);
   pointer-events: none;
 }
 .jingle {
   position: absolute;
-  top: 5px;
-  left: calc(50% - 8px);
-  width: 16px;
-  height: 16px;
+  top: 50%;
+  left: 50%;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
-  background: linear-gradient(180deg, #f6e58d 0%, #b88d2a 100%);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
-  transform-origin: 8px calc((min(220px, 50vw, 320px) / 2) - 5px);
-  transform: rotate(var(--angle));
+  background: linear-gradient(160deg, #f7e98e 0%, #c79a33 60%, #8a6a1f 100%);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.55), inset 0 1px 1px rgba(255, 255, 255, 0.4);
   pointer-events: none;
 }
 </style>
