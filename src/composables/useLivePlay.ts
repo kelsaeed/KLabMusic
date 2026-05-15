@@ -52,7 +52,7 @@ export function useLivePlay() {
       () => {
         for (const hold of activeKeyChords.values()) hold.cancelled = true
         activeKeyChords.clear()
-        audioStore.activeNotes = new Set()
+        audioStore.clearActiveNotes()
       },
     )
   }

@@ -572,7 +572,7 @@ function panicAllNotesOff() {
   // Sync the audio store's view of active notes too — the piano UI
   // reads from there to render lit keys.
   try {
-    useAudioStore().activeNotes = new Set()
+    useAudioStore().clearActiveNotes()
   } catch { /* store may not be available during teardown */ }
 }
 
@@ -2901,7 +2901,7 @@ export function useAudio() {
       if (entry.autoCleanupTimer) clearTimeout(entry.autoCleanupTimer)
       activeNotes.delete(key)
     }
-    store.activeNotes = new Set()
+    store.clearActiveNotes()
   }
 
   function stopAll() {

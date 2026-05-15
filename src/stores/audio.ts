@@ -48,7 +48,16 @@ export const useAudioStore = defineStore('audio', () => {
   const effects = reactive<Record<InstrumentId, Record<EffectId, EffectControl>>>(
     {} as Record<InstrumentId, Record<EffectId, EffectControl>>,
   )
-  const activeNotes = ref<Set<string>>(new Set())
+  // Vue reactive Set (NOT ref<Set> + reallocation). Vue 3 proxies
+  // Set mutations with per-key fine-grained tracking, so `.add(n)` /
+  // `.delete(n)` only re-run the bindings that actually depend on
+  // `has(n)` / size / iteration — instead of the old
+  // `activeNotes.value = new Set(...)` which swapped the ref identity
+  // every single note and forced every `activeNotes.has()` binding
+  // (the Piano has 50+ key cells) to re-evaluate. That per-note
+  // whole-keyboard re-render on the main thread was starving the
+  // audio thread during fast play (a real chunk of the wshhh/lag).
+  const activeNotes = reactive(new Set<string>())
 
   function ensureEffectsFor(id: InstrumentId) {
     if (!effects[id]) effects[id] = defaultEffects()
@@ -110,12 +119,16 @@ export const useAudioStore = defineStore('audio', () => {
   const isReady = computed(() => getLoadState(activeInstrument.value) === 'ready')
 
   function noteOn(note: string) {
-    activeNotes.value.add(note)
-    activeNotes.value = new Set(activeNotes.value)
+    activeNotes.add(note)
   }
   function noteOff(note: string) {
-    activeNotes.value.delete(note)
-    activeNotes.value = new Set(activeNotes.value)
+    activeNotes.delete(note)
+  }
+  // Bulk reset — used by panic / damp / live-play teardown. The Set is
+  // a reactive const now, so callers `.clear()` through this instead
+  // of reassigning a fresh Set (which would detach the reactive proxy).
+  function clearActiveNotes() {
+    activeNotes.clear()
   }
 
   function setNotation(next: 'solfege' | 'letters') {
@@ -148,5 +161,6 @@ export const useAudioStore = defineStore('audio', () => {
     setMasteringPreset,
     noteOn,
     noteOff,
+    clearActiveNotes,
   }
 })

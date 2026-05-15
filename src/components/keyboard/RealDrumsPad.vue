@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { reactive } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAudio } from '@/composables/useAudio'
 import { useLivePlay } from '@/composables/useLivePlay'
@@ -45,7 +45,9 @@ const PIECES: Piece[] = [
   { sample: 'kick',   label: 'Kick',         color: 'var(--accent-primary)', col: '2 / span 4', row: '3', size: 'large' },
 ]
 
-const flashing = ref<Set<string>>(new Set())
+// Reactive Set — see DrumPad: per-key tracking, no per-hit Set
+// reallocation / full-grid re-render during a fast roll.
+const flashing = reactive(new Set<string>())
 
 function velocityFromY(e: PointerEvent, target: HTMLElement): number {
   const rect = target.getBoundingClientRect()
@@ -59,10 +61,9 @@ function hit(piece: Piece, e: PointerEvent) {
   const vel = velocityFromY(e, target)
   void playOn('realDrums', piece.sample, vel)
   recordLivePlay('realDrums', piece.sample, vel, 0.4)
-  flashing.value = new Set([...flashing.value, piece.sample])
+  flashing.add(piece.sample)
   setTimeout(() => {
-    flashing.value.delete(piece.sample)
-    flashing.value = new Set(flashing.value)
+    flashing.delete(piece.sample)
   }, 160)
 }
 </script>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { reactive, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAudio } from '@/composables/useAudio'
 import { useKeyBindingsStore } from '@/stores/keybindings'
@@ -26,7 +26,11 @@ const PADS: Pad[] = [
   { sample: '__empty', label: '', icon: '', color: 'transparent' },
 ]
 
-const flashing = ref<Set<string>>(new Set())
+// Reactive Set: `.add`/`.delete` are tracked per-key with no
+// reallocation, so a fast drum roll only re-renders the pad that
+// actually flashed instead of swapping the whole Set's identity and
+// re-evaluating every pad's flash binding on every hit.
+const flashing = reactive(new Set<string>())
 
 function bindingKeyFor(sample: string): string | undefined {
   for (const b of bindingStore.activeSet.bindings) {
@@ -51,10 +55,9 @@ function hit(sample: string, e: PointerEvent) {
   const target = e.currentTarget as HTMLElement
   const vel = velocityFromY(e, target)
   void playOn('drums', sample, vel)
-  flashing.value = new Set([...flashing.value, sample])
+  flashing.add(sample)
   setTimeout(() => {
-    flashing.value.delete(sample)
-    flashing.value = new Set(flashing.value)
+    flashing.delete(sample)
   }, 150)
 }
 </script>
