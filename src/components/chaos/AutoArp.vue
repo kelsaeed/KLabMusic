@@ -60,10 +60,54 @@ const MAQAM_IDS: MaqamId[] = [
 // pad uses, so the user can echo a guitar chord card or a bowed
 // instrument's open strings into the arp without having to type or
 // remember the voicing.
-type ChordSource = 'custom' | 'guitar' | 'strings'
+// 'typed' is the paste destination: the Random Melody generator's
+// "Copy" button puts a space-separated note list on the clipboard;
+// the user pastes it here and the arp plays it. Accepts Western
+// letters (C4 D#4 Eb3) and Arabic / Italian solfège (do4 re4 mi4),
+// space / comma / dot-separated — same grammar the chaos custom-
+// melody box uses, so a melody copied from anywhere round-trips.
+type ChordSource = 'custom' | 'guitar' | 'strings' | 'typed'
 const source = ref<ChordSource>('custom')
 const guitarChordId = ref(GUITAR_CHORDS[0].id)
 const stringSetId = ref(STRING_PRESETS[0].id)
+const typedText = ref('')
+
+const SOLFEGE_MAP: Record<string, string> = {
+  do: 'C', re: 'D', mi: 'E', fa: 'F', sol: 'G', la: 'A', si: 'B', ti: 'B',
+}
+const NOTE_RE = /^([A-Ga-g])([#b]?)(-?\d{1,2})$/
+const SOLFEGE_RE = /^(do|re|mi|fa|sol|la|si|ti)([#b]?)(-?\d{1,2})$/i
+
+function parseTypedNotes(text: string): string[] {
+  const tokens = text.split(/[\s,·]+/).map((s) => s.trim()).filter(Boolean)
+  const out: string[] = []
+  for (const raw of tokens) {
+    const m = NOTE_RE.exec(raw)
+    if (m) {
+      out.push(`${m[1].toUpperCase()}${m[2]}${m[3]}`)
+      continue
+    }
+    const s = SOLFEGE_RE.exec(raw)
+    if (s) {
+      const letter = SOLFEGE_MAP[s[1].toLowerCase()]
+      if (letter) out.push(`${letter}${s[2]}${s[3]}`)
+    }
+  }
+  return out
+}
+
+const typedNotes = computed(() => parseTypedNotes(typedText.value))
+
+async function pasteFromClipboard() {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      const txt = await navigator.clipboard.readText()
+      if (txt) typedText.value = txt
+    }
+  } catch {
+    /* clipboard read blocked — user can still paste manually into the box */
+  }
+}
 
 const root = ref<RootKey>('C')
 const quality = ref<Quality>('maj')
@@ -101,6 +145,9 @@ function maqamSemitones(id: MaqamId): { offsets: number[]; tonic: string } {
 }
 
 const chord = computed<string[]>(() => {
+  if (source.value === 'typed') {
+    return typedNotes.value
+  }
   if (source.value === 'guitar') {
     const c = GUITAR_CHORDS.find((x) => x.id === guitarChordId.value)
     return c ? [...c.notes] : []
@@ -160,10 +207,32 @@ async function toggle() {
       <span class="lbl mono">{{ t('chaos.chord.source') }}</span>
       <select v-model="source">
         <option value="custom">{{ t('chaos.chord.sourceCustom') }}</option>
+        <option value="typed">{{ t('chaos.chord.sourceTyped') }}</option>
         <option value="guitar">{{ t('chaos.chord.sourceGuitar') }}</option>
         <option value="strings">{{ t('chaos.chord.sourceStrings') }}</option>
       </select>
     </label>
+
+    <!-- Typed / paste: the destination for a melody copied from the
+         Random Melody generator (or anywhere). Paste button pulls
+         straight from the clipboard; the box is editable too. -->
+    <template v-if="source === 'typed'">
+      <div class="paste-head">
+        <span class="lbl mono">{{ t('chaos.chord.typedNotes') }}</span>
+        <button type="button" class="paste-btn mono" @click="pasteFromClipboard">
+          ⧉ {{ t('chaos.chord.paste') }}
+        </button>
+      </div>
+      <textarea
+        v-model="typedText"
+        class="paste-input mono"
+        :placeholder="t('chaos.chord.typedPlaceholder')"
+        rows="2"
+      />
+      <p class="parsed mono">
+        {{ t('chaos.chord.typedParsed', { n: typedNotes.length }) }}
+      </p>
+    </template>
 
     <!-- Custom: existing root + quality + octave + maqam builder. -->
     <template v-if="source === 'custom'">
@@ -214,8 +283,10 @@ async function toggle() {
 
     <!-- Bowed / oud open strings. The chord is the open-string column
          of the picked instrument; arping it produces the natural
-         "play every string in turn" pattern. -->
-    <label v-else class="field full">
+         "play every string in turn" pattern. Explicit v-else-if (not
+         a bare v-else) so it doesn't also render when source==='typed'
+         — that block is a separate v-if above the custom chain. -->
+    <label v-else-if="source === 'strings'" class="field full">
       <span class="lbl mono">{{ t('chaos.chord.stringSet') }}</span>
       <select v-model="stringSetId">
         <option v-for="s in STRING_PRESETS" :key="s.id" :value="s.id">
@@ -273,6 +344,44 @@ async function toggle() {
   font-size: 0.95rem;
 }
 .play.on { background: var(--accent-secondary); }
+
+.paste-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+.paste-btn {
+  font-size: 0.62rem;
+  padding: 0.25rem 0.7rem;
+  background: var(--bg-base);
+  color: var(--accent-primary);
+  border: 1px solid var(--accent-primary);
+  border-radius: 999px;
+  cursor: pointer;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.paste-btn:hover { background: var(--accent-primary); color: var(--text-inverse); }
+.paste-input {
+  width: 100%;
+  background: var(--bg-base);
+  color: var(--accent-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.5rem 0.6rem;
+  font-size: 0.78rem;
+  resize: vertical;
+  min-height: 42px;
+}
+.paste-input:focus { outline: none; border-color: var(--accent-primary); }
+.parsed {
+  margin: 0;
+  font-size: 0.62rem;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+}
 
 .builder {
   display: grid;

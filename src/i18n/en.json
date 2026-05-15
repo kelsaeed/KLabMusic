@@ -327,8 +327,13 @@
       "preview": "Chord",
       "source": "Source",
       "sourceCustom": "Custom — pick root + quality",
+      "sourceTyped": "Paste / type notes",
       "sourceGuitar": "Guitar chord card",
       "sourceStrings": "Open strings",
+      "typedNotes": "Notes to arpeggiate",
+      "typedPlaceholder": "Paste a copied melody, e.g. C4 E4 G4 A4 — spaces or commas",
+      "typedParsed": "{n} notes",
+      "paste": "Paste",
       "guitarChord": "Guitar chord",
       "stringSet": "Instrument"
     },
@@ -693,8 +698,10 @@
     }
   },
   "tambourine": {
-    "hint": "Tap to hit, drag to shake, rapid taps for a roll.",
-    "label": "Tambourine"
+    "hint": "Centre = deep dum · rim = bright tak · drag to shake · rapid taps to roll",
+    "label": "Riq",
+    "dum": "Dum",
+    "tak": "Tak"
   },
   "clarinet": {
     "hint": "Tap a tone hole to play. The register key jumps the octave.",

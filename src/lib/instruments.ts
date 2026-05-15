@@ -172,16 +172,19 @@ export const INSTRUMENTS: Record<InstrumentId, InstrumentMeta> = {
     description: 'B♭ trumpet — three valves and three partials cover the standard playable range.',
   },
   tambourine: {
+    // 'dum' (deep centre skin) + 'tak' (bright rim/jingle) are the two
+    // riq strokes; 'hit' stays in the list as the legacy alias for tak
+    // so old beat-maker patterns / saved sessions keep resolving.
     id: 'tambourine',
     category: 'percussion',
     playMode: 'sample',
     icon: '🪘',
     available: true,
-    samples: ['hit', 'shake', 'roll'],
+    samples: ['dum', 'tak', 'shake', 'roll', 'hit'],
     realm: 'percussion',
-    articulations: ['hit', 'shake', 'roll'],
+    articulations: ['dum', 'tak', 'shake', 'roll', 'hit'],
     hasQuarterTones: false,
-    description: 'Tambourine — tap to hit, drag to shake, rapid taps for a roll.',
+    description: 'Riq (الرق) — centre = deep dum, rim = bright tak, drag to shake, rapid taps to roll.',
   },
   clarinet: {
     id: 'clarinet',
@@ -379,7 +382,7 @@ export const DEFAULT_NOTE_FOR: Record<InstrumentId, string> = {
   // so the BeatNotePicker recognises the note as in-range. The trumpet
   // pad's enharmonic is the same pitch.
   trumpet: 'A#3',
-  tambourine: 'hit',
+  tambourine: 'dum',
   clarinet: 'C4',
   flute: 'C5',
   glitch: 'C4',

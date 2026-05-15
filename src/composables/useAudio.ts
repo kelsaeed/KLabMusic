@@ -1716,40 +1716,62 @@ function buildTrumpetSynthFallback(): VoiceAdapter {
 }
 
 function buildTambourine(): VoiceAdapter {
-  // Phase 8 — tambourine. Two layers: a short noise burst for the skin
-  // hit (when present — a real tambourine is jingles-on-a-frame, often
-  // skin-less) plus a metal synth for the jingles. Different sample
-  // names produce different envelopes (hit / shake / roll).
-  const skin = new Tone.NoiseSynth({
-    noise: { type: 'pink' },
-    envelope: { attack: 0.001, decay: 0.05, sustain: 0 },
+  // الرق / riq — the Arabic tambourine has TWO distinct strokes the
+  // player switches between, and they should sound clearly different:
+  //   • dum  — a deep, round membrane hit struck near the centre of
+  //            the skin. Low, warm, short. (inner zone in the UI)
+  //   • tak  — a sharp, bright rim stroke that snaps the jingles. High,
+  //            cracking, metallic. (outer zone in the UI)
+  // Plus the continuous gestures: shake (soft jingle shimmer) and
+  // roll (fast jingle stream). 'hit' is kept as a legacy alias for
+  // tak so old beat-maker patterns / saved sessions still resolve.
+  //
+  // dum = MembraneSynth tuned low with a tight pitch envelope so it
+  // reads as a tuned skin, not a kick. tak = a short HPF'd noise crack
+  // layered with a bright metal ping for the jingles. Two small synth
+  // nodes total — cheap enough for fast rolls.
+  const dum = new Tone.MembraneSynth({
+    pitchDecay: 0.03,
+    octaves: 3,
+    envelope: { attack: 0.001, decay: 0.22, sustain: 0, release: 0.18 },
   })
+  dum.volume.value = -3
+  const takCrack = new Tone.NoiseSynth({
+    noise: { type: 'white' },
+    envelope: { attack: 0.001, decay: 0.035, sustain: 0 },
+  })
+  const takCrackHP = new Tone.Filter({ frequency: 3500, type: 'highpass', Q: 0.6 })
+  takCrack.connect(takCrackHP)
   const jingle = new Tone.MetalSynth({
-    envelope: { attack: 0.001, decay: 0.45, release: 0.15 },
+    envelope: { attack: 0.001, decay: 0.4, release: 0.15 },
     harmonicity: 8,
     modulationIndex: 28,
-    resonance: 6000,
+    resonance: 6500,
     octaves: 1.5,
   })
-  jingle.volume.value = -16
+  jingle.volume.value = -14
   const out = new Tone.Gain(1)
-  skin.connect(out)
+  dum.connect(out)
+  takCrackHP.connect(out)
   jingle.connect(out)
 
   const fire = (name: string, vel: number) => {
     const v = Math.max(0.05, vel / 127)
     switch (name) {
-      case 'hit':
-        skin.triggerAttackRelease('16n', undefined, v * 0.4)
-        jingle.triggerAttackRelease('C5', '8n', Tone.now(), v)
+      case 'dum':
+        // Low membrane note — G1 lands the round body of a riq skin.
+        dum.triggerAttackRelease('G1', '8n', undefined, v)
+        break
+      case 'tak':
+      case 'hit': // legacy alias
+        takCrack.triggerAttackRelease('32n', undefined, v)
+        jingle.triggerAttackRelease('C6', '16n', Tone.now(), v * 0.9)
         break
       case 'shake':
-        // A continuous shake is delivered by the gesture as a stream
-        // of these calls — short, soft, no skin-hit.
-        jingle.triggerAttackRelease('C5', '32n', Tone.now(), v * 0.5)
+        jingle.triggerAttackRelease('C6', '32n', Tone.now(), v * 0.5)
         break
       case 'roll':
-        jingle.triggerAttackRelease('C5', '16n', Tone.now(), v * 0.7)
+        jingle.triggerAttackRelease('C6', '16n', Tone.now(), v * 0.7)
         break
     }
   }
@@ -1762,7 +1784,10 @@ function buildTambourine(): VoiceAdapter {
     output: out,
     setVolumeDb: (db) => { out.gain.value = Tone.dbToGain(db) },
     setBendCents: () => { /* not pitched */ },
-    dispose: () => { skin.dispose(); jingle.dispose(); out.dispose() },
+    dispose: () => {
+      dum.dispose(); takCrack.dispose(); takCrackHP.dispose()
+      jingle.dispose(); out.dispose()
+    },
   }
 }
 
