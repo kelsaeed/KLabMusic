@@ -270,7 +270,7 @@ onBeforeUnmount(() => {
   content: '';
   position: absolute;
   top: 4px;
-  right: 5px;
+  inset-inline-end: 5px;
   width: 5px;
   height: 5px;
   border-radius: 50%;

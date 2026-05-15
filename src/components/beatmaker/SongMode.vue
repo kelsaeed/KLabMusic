@@ -101,7 +101,7 @@ function clear() {
 .del {
   position: absolute;
   top: 2px;
-  right: 4px;
+  inset-inline-end: 4px;
   background: transparent;
   border: none;
   color: var(--text-muted);

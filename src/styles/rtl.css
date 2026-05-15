@@ -18,12 +18,18 @@ html[dir='rtl'] {
 }
 
 /* Reverse generic horizontal flex stacks that were authored
- * left-to-right. Components that need a specific order in RTL set
- * their own direction explicitly. */
-html[dir='rtl'] .row,
-html[dir='rtl'] .flex-row {
-  flex-direction: row-reverse;
-}
+ * left-to-right.
+ *
+ * IMPORTANT: we do NOT force `flex-direction: row-reverse` on `.row`
+ * here. An earlier build did, and that was the single biggest source
+ * of "the Arabic layout is broken" — under the inherited
+ * `direction: rtl` (set by `dir="rtl"` on <html>), flexbox ALREADY
+ * lays its items right-to-left. Adding `row-reverse` on top
+ * double-flips them back to left-to-right, so every `.row` flex
+ * container ended up LTR while the rest of the page was RTL —
+ * inconsistent and visually wrong. The browser's native RTL flex
+ * handling is correct; let it do its job. Grid `.row`s are
+ * unaffected either way (flex-direction is a no-op on grid). */
 
 /* `margin: 0 0 0 auto` patterns. */
 html[dir='rtl'] .ml-auto {

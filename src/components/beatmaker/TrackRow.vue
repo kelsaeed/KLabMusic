@@ -371,7 +371,7 @@ function remove() { store.removeTrack(props.track.id) }
 .cents-flag {
   position: absolute;
   bottom: 1px;
-  right: 2px;
+  inset-inline-end: 2px;
   font-size: 0.5rem;
   color: var(--accent-secondary);
   line-height: 1;

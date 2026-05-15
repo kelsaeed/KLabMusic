@@ -199,7 +199,7 @@ function pick(id: MasteringPresetId) {
 .badge {
   position: absolute;
   top: 0.5rem;
-  right: 0.5rem;
+  inset-inline-end: 0.5rem;
   font-size: 0.55rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;

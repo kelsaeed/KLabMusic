@@ -132,7 +132,7 @@ canvas {
   color: var(--text-muted);
   padding: 0.4rem 0.55rem;
   background: var(--bg-elevated);
-  border-left: 2px solid var(--accent-primary);
+  border-inline-start: 2px solid var(--accent-primary);
   border-radius: var(--radius);
 }
 </style>

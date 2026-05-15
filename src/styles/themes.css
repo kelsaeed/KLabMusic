@@ -79,7 +79,14 @@
 :root {
   --font-display: 'Syne', 'Cairo', system-ui, sans-serif;
   --font-body: 'DM Sans', 'Cairo', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  /* 'Cairo' before the generic monospace fallback so Arabic glyphs
+     have a real face to land on: JetBrains Mono ships no Arabic, and
+     browser per-glyph fallback to bare `monospace` renders tofu /
+     blank on many systems. This was the "Arabic text not shown" bug —
+     every `.mono`-classed label (most of the UI chrome) hit it.
+     Latin still renders in JetBrains Mono; only the codepoints it
+     lacks fall through to Cairo. */
+  --font-mono: 'JetBrains Mono', 'Cairo', ui-monospace, monospace;
   --transition-fast: 80ms ease;
   --transition-base: 180ms ease;
   --transition-slow: 400ms cubic-bezier(0.34, 1.56, 0.64, 1);

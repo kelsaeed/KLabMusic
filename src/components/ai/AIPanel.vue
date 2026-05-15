@@ -465,6 +465,10 @@ textarea {
   opacity: 0;
   transform: translateX(20px);
 }
+:global(html[dir='rtl']) .fade-enter-from,
+:global(html[dir='rtl']) .fade-leave-to {
+  transform: translateX(-20px);
+}
 @media (max-width: 720px) {
   .ai-panel {
     inset-inline-end: 0;

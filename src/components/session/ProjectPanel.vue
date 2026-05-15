@@ -203,7 +203,7 @@ function formatDate(ts: number): string {
 .panel {
   position: fixed;
   top: 60px;
-  right: 16px;
+  inset-inline-end: 16px;
   width: min(360px, calc(100vw - 32px));
   max-height: calc(100vh - 80px);
   overflow-y: auto;
@@ -364,5 +364,9 @@ function formatDate(ts: number): string {
 .slide-leave-to {
   transform: translateX(8px);
   opacity: 0;
+}
+:global(html[dir='rtl']) .slide-enter-from,
+:global(html[dir='rtl']) .slide-leave-to {
+  transform: translateX(-8px);
 }
 </style>
