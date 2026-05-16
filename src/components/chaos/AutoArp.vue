@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import * as Tone from 'tone'
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useChaos, type ArpMode, type MaqamId } from '@/composables/useChaos'
@@ -20,7 +21,7 @@ import { GUITAR_CHORDS, STRING_PRESETS } from '@/lib/instrumentPresets'
 // Octave stays at 4 — moves outside that range happen via the
 // existing octave drift in useChaos rather than UI.
 
-const { startArp, stopArp, arpRunning } = useChaos()
+const { startArp, startSequence, stopArp, arpRunning, arpStepIndex } = useChaos()
 const { t } = useI18n()
 
 const KEYS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const
@@ -78,25 +79,160 @@ const SOLFEGE_MAP: Record<string, string> = {
 const NOTE_RE = /^([A-Ga-g])([#b]?)(-?\d{1,2})$/
 const SOLFEGE_RE = /^(do|re|mi|fa|sol|la|si|ti)([#b]?)(-?\d{1,2})$/i
 
-function parseTypedNotes(text: string): string[] {
+function parseOneNote(raw: string): string | null {
+  const m = NOTE_RE.exec(raw)
+  if (m) {
+    const n = `${m[1].toUpperCase()}${m[2]}${m[3]}`
+    try { Tone.Frequency(n).toMidi(); return n } catch { return null }
+  }
+  const s = SOLFEGE_RE.exec(raw)
+  if (s) {
+    const letter = SOLFEGE_MAP[s[1].toLowerCase()]
+    if (!letter) return null
+    const n = `${letter}${s[2]}${s[3]}`
+    try { Tone.Frequency(n).toMidi(); return n } catch { return null }
+  }
+  return null
+}
+
+// — Piano-roll step model —
+// `steps[i]` = the notes sounding at step i; [] = a rest. The text box
+// and the grid are two views of this one model. Text grammar (a small,
+// reversible extension of the old flat list): tokens separated by
+// whitespace/comma/· are steps; `+` inside a token groups notes into a
+// chord step (C4+E4+G4); `_` (or `-`) is a rest. serializeStepsToText
+// is the exact inverse of parseStepsFromText, so a round-trip through
+// either view is lossless and the two never drift apart.
+const MAX_STEPS = 64
+const steps = ref<string[][]>([])
+
+function midiOf(note: string): number {
+  try { return Tone.Frequency(note).toMidi() } catch { return 60 }
+}
+function sortByMidi(notes: string[]): string[] {
+  return [...notes].sort((a, b) => midiOf(a) - midiOf(b))
+}
+function parseStepsFromText(text: string): string[][] {
   const tokens = text.split(/[\s,·]+/).map((s) => s.trim()).filter(Boolean)
-  const out: string[] = []
-  for (const raw of tokens) {
-    const m = NOTE_RE.exec(raw)
-    if (m) {
-      out.push(`${m[1].toUpperCase()}${m[2]}${m[3]}`)
-      continue
+  const out: string[][] = []
+  for (const tok of tokens.slice(0, MAX_STEPS)) {
+    if (tok === '_' || tok === '-') { out.push([]); continue }
+    const notes: string[] = []
+    for (const part of tok.split('+')) {
+      const n = parseOneNote(part)
+      if (n && !notes.includes(n)) notes.push(n)
     }
-    const s = SOLFEGE_RE.exec(raw)
-    if (s) {
-      const letter = SOLFEGE_MAP[s[1].toLowerCase()]
-      if (letter) out.push(`${letter}${s[2]}${s[3]}`)
-    }
+    if (notes.length > 0) out.push(sortByMidi(notes))
   }
   return out
 }
+function serializeStepsToText(s: string[][]): string {
+  return s.map((step) => (step.length === 0 ? '_' : step.join('+'))).join(' ')
+}
 
-const typedNotes = computed(() => parseTypedNotes(typedText.value))
+// — Pitch window (the visible rows of the roll) —
+// Declared before the sync watch: its immediate run can call
+// fitWindowIfNeeded(), which reads windowLowMidi — a TDZ crash if the
+// ref were declared later and the text ever seeded non-empty.
+const ROWS = 24
+const windowLowMidi = ref(48) // C3 at the bottom by default
+
+// Two-way sync, compare-guarded so neither side can loop the other:
+// a text edit reparses only when the text differs from what the grid
+// would serialise to, and commitSteps only rewrites the text when it
+// actually changed. immediate:true seeds the grid from any existing /
+// pre-pasted text.
+watch(typedText, (txt) => {
+  if (txt === serializeStepsToText(steps.value)) return
+  steps.value = parseStepsFromText(txt)
+  fitWindowIfNeeded()
+}, { immediate: true })
+
+function commitSteps() {
+  const txt = serializeStepsToText(steps.value)
+  if (txt !== typedText.value) typedText.value = txt
+}
+
+const rowMidis = computed(() => {
+  // High pitch first so the grid reads like a real piano roll.
+  const arr: number[] = []
+  for (let r = ROWS - 1; r >= 0; r--) arr.push(windowLowMidi.value + r)
+  return arr
+})
+function noteName(midi: number): string {
+  try { return Tone.Frequency(midi, 'midi').toNote() } catch { return '' }
+}
+function isBlackKey(midi: number): boolean {
+  return [1, 3, 6, 8, 10].includes(((midi % 12) + 12) % 12)
+}
+function allMidis(): number[] {
+  const ms: number[] = []
+  for (const st of steps.value) for (const n of st) ms.push(midiOf(n))
+  return ms
+}
+function clampWindow(low: number): number {
+  return Math.max(12, Math.min(96, low))
+}
+function shiftWindow(semi: number) {
+  windowLowMidi.value = clampWindow(windowLowMidi.value + semi)
+}
+function fitWindow() {
+  const ms = allMidis()
+  if (ms.length === 0) return
+  const mid = Math.round((Math.min(...ms) + Math.max(...ms)) / 2)
+  windowLowMidi.value = clampWindow(mid - Math.floor(ROWS / 2))
+}
+function fitWindowIfNeeded() {
+  const ms = allMidis()
+  if (ms.length === 0) return
+  const top = windowLowMidi.value + ROWS - 1
+  if (Math.min(...ms) < windowLowMidi.value || Math.max(...ms) > top) fitWindow()
+}
+
+// — Cell / step editing (the grid is directly mutable) —
+function cellActive(stepIdx: number, midi: number): boolean {
+  const st = steps.value[stepIdx]
+  return !!st && st.includes(noteName(midi))
+}
+function toggleCell(stepIdx: number, midi: number) {
+  const name = noteName(midi)
+  const st = steps.value[stepIdx] ? [...steps.value[stepIdx]] : []
+  const at = st.indexOf(name)
+  if (at >= 0) st.splice(at, 1)
+  else st.push(name)
+  const next = steps.value.slice()
+  next[stepIdx] = sortByMidi(st)
+  steps.value = next
+  commitSteps()
+}
+function addStep() {
+  if (steps.value.length >= MAX_STEPS) return
+  steps.value = [...steps.value, []]
+  commitSteps()
+}
+function deleteStep(stepIdx: number) {
+  steps.value = steps.value.filter((_, i) => i !== stepIdx)
+  commitSteps()
+}
+function clearGrid() {
+  steps.value = []
+  commitSteps()
+}
+
+const stepCount = computed(() => steps.value.length)
+const noteCount = computed(() =>
+  steps.value.reduce((acc, s) => acc + s.length, 0))
+// Plain index list so the grid's v-for needs no unused value binding.
+const stepIndices = computed(() => steps.value.map((_, i) => i))
+
+// Column the running sequence is currently sounding — drives the
+// playhead highlight. arpStepIndex is -1 when nothing is playing.
+const playheadStep = computed(() => {
+  if (!arpRunning.value || arpStepIndex.value < 0 || steps.value.length === 0) {
+    return -1
+  }
+  return arpStepIndex.value % steps.value.length
+})
 
 async function pasteFromClipboard() {
   try {
@@ -126,6 +262,10 @@ const modes: ArpMode[] = ['up', 'down', 'random', 'chord']
 // makes the relationship visible.
 watch(source, (s) => {
   if (s !== 'custom') maqam.value = null
+  // Centre the roll on the pasted notes when the user lands on the
+  // diagram view (steps stay synced from the text watch regardless of
+  // which source is active, so they're already current here).
+  if (s === 'typed') fitWindowIfNeeded()
 })
 
 /**
@@ -146,7 +286,7 @@ function maqamSemitones(id: MaqamId): { offsets: number[]; tonic: string } {
 
 const chord = computed<string[]>(() => {
   if (source.value === 'typed') {
-    return typedNotes.value
+    return steps.value.flat()
   }
   if (source.value === 'guitar') {
     const c = GUITAR_CHORDS.find((x) => x.id === guitarChordId.value)
@@ -184,6 +324,15 @@ const chord = computed<string[]>(() => {
 async function toggle() {
   if (arpRunning.value) {
     stopArp()
+    return
+  }
+  // Typed source plays the diagram exactly as drawn (left → right,
+  // chords and rests intact) via startSequence — arp mode doesn't
+  // apply to a hand-drawn pattern. Other sources keep the chord +
+  // mode arpeggiator.
+  if (source.value === 'typed') {
+    if (noteCount.value === 0) return
+    await startSequence(steps.value, speed.value, gate.value)
     return
   }
   if (chord.value.length === 0) return
@@ -230,8 +379,65 @@ async function toggle() {
         rows="2"
       />
       <p class="parsed mono">
-        {{ t('chaos.chord.typedParsed', { n: typedNotes.length }) }}
+        {{ t('chaos.chord.typedParsed', { steps: stepCount, notes: noteCount }) }}
       </p>
+
+      <!-- Piano-roll diagram. Columns = steps, rows = pitch; the model
+           is the same `steps` the text box reflects, so editing here
+           rewrites the text and vice versa. The lit column tracks
+           playback. -->
+      <div class="roll">
+        <div class="roll-toolbar">
+          <div class="roll-grp">
+            <button type="button" class="roll-btn mono" :title="t('chaos.chord.gridOctUp')" @click="shiftWindow(12)">▲</button>
+            <button type="button" class="roll-btn mono" :title="t('chaos.chord.gridOctDown')" @click="shiftWindow(-12)">▼</button>
+            <button type="button" class="roll-btn mono" :title="t('chaos.chord.gridFit')" @click="fitWindow">⤢</button>
+          </div>
+          <div class="roll-grp">
+            <button type="button" class="roll-btn mono" @click="addStep">{{ t('chaos.chord.gridAddStep') }}</button>
+            <button type="button" class="roll-btn mono" :disabled="stepCount === 0" @click="clearGrid">{{ t('chaos.chord.gridClear') }}</button>
+          </div>
+        </div>
+
+        <div v-if="stepCount === 0" class="roll-empty mono">
+          {{ t('chaos.chord.gridEmpty') }}
+        </div>
+        <div v-else class="roll-scroll">
+          <div
+            class="roll-grid"
+            :style="{ gridTemplateColumns: `var(--lblw) repeat(${stepCount}, var(--cellw))` }"
+          >
+            <div class="rg-corner" />
+            <div
+              v-for="si in stepIndices"
+              :key="`h${si}`"
+              class="rg-colh"
+              :class="{ play: playheadStep === si }"
+            >
+              <span class="rg-num mono">{{ si + 1 }}</span>
+              <button
+                type="button"
+                class="rg-del"
+                :title="t('chaos.chord.gridDeleteStep')"
+                @click="deleteStep(si)"
+              >×</button>
+            </div>
+
+            <template v-for="m in rowMidis" :key="`r${m}`">
+              <div class="rg-label mono" :class="{ blk: isBlackKey(m) }">{{ noteName(m) }}</div>
+              <button
+                v-for="si in stepIndices"
+                :key="`c${si}-${m}`"
+                type="button"
+                class="rg-cell"
+                :class="{ on: cellActive(si, m), blk: isBlackKey(m), play: playheadStep === si }"
+                @click="toggleCell(si, m)"
+              />
+            </template>
+          </div>
+        </div>
+        <p class="roll-hint mono">{{ t('chaos.chord.gridHint') }}</p>
+      </div>
     </template>
 
     <!-- Custom: existing root + quality + octave + maqam builder. -->
@@ -295,12 +501,15 @@ async function toggle() {
       </select>
     </label>
 
-    <p class="preview mono">
+    <!-- Chord preview + arp mode only apply to the chord-walking
+         sources. The typed source plays the diagram as drawn, so its
+         "preview" is the grid itself and mode is meaningless there. -->
+    <p v-if="source !== 'typed'" class="preview mono">
       <span class="preview-lbl">{{ t('chaos.chord.preview') }}</span>
       <span class="preview-notes">{{ chord.join(' · ') || '—' }}</span>
     </p>
 
-    <div class="modes">
+    <div v-if="source !== 'typed'" class="modes">
       <button
         v-for="m in modes"
         :key="m"
@@ -417,4 +626,120 @@ select:disabled { opacity: 0.45; cursor: not-allowed; }
 }
 .mode.on { color: var(--accent-primary); border-color: var(--accent-primary); }
 input[type='range'] { width: 100%; padding: 0; }
+
+/* — Piano-roll diagram — */
+.roll {
+  --lblw: 34px;
+  --cellw: 22px;
+  --rowh: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.roll-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.roll-grp { display: inline-flex; gap: 0.3rem; }
+.roll-btn {
+  font-size: 0.62rem;
+  padding: 0.22rem 0.55rem;
+  background: var(--bg-base);
+  color: var(--accent-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  transition: border-color var(--transition-fast), color var(--transition-fast);
+}
+.roll-btn:hover { border-color: var(--accent-primary); }
+.roll-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.roll-empty {
+  padding: 0.7rem 0.6rem;
+  background: var(--bg-elevated);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  font-size: 0.66rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+.roll-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-base);
+}
+.roll-grid {
+  display: grid;
+  /* gridTemplateColumns set inline from the step count */
+  width: max-content;
+}
+.rg-corner,
+.rg-label {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--bg-elevated);
+}
+.rg-corner { height: 18px; border-bottom: 1px solid var(--border); }
+.rg-colh {
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 2px;
+  border-bottom: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+}
+.rg-colh.play { background: var(--accent-glow); }
+.rg-num { font-size: 0.55rem; color: var(--text-muted); }
+.rg-del {
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  line-height: 1;
+  font-size: 0.7rem;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.rg-del:hover { color: var(--accent-secondary); }
+.rg-label {
+  height: var(--rowh);
+  display: flex;
+  align-items: center;
+  padding-left: 4px;
+  font-size: 0.52rem;
+  color: var(--text-muted);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 35%, transparent);
+}
+.rg-label.blk { color: color-mix(in srgb, var(--text-muted) 60%, transparent); }
+.rg-cell {
+  height: var(--rowh);
+  padding: 0;
+  border: none;
+  border-left: 1px solid color-mix(in srgb, var(--border) 45%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 25%, transparent);
+  background: transparent;
+  cursor: pointer;
+}
+.rg-cell.blk { background: color-mix(in srgb, var(--bg-elevated) 55%, transparent); }
+.rg-cell.play { background: color-mix(in srgb, var(--accent-glow) 40%, transparent); }
+.rg-cell:hover { background: color-mix(in srgb, var(--accent-primary) 25%, transparent); }
+.rg-cell.on {
+  background: var(--accent-primary);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-primary) 60%, #fff);
+}
+.rg-cell.on.play { background: var(--accent-secondary); }
+.roll-hint {
+  margin: 0;
+  font-size: 0.58rem;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
 </style>

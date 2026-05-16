@@ -263,6 +263,11 @@ const KEYS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] a
 
 const chaosAmount = ref(0)
 const arpRunning = ref(false)
+// Current step the running sequence is on, for the piano-roll playhead
+// highlight in AutoArp's paste/diagram mode. -1 = nothing playing.
+// Module-scoped alongside arpRunning so the highlight survives the
+// component re-rendering and is reset by the shared stopArp().
+const arpStepIndex = ref(-1)
 const melodyPlaying = ref(false)
 // Tone.getDraw().schedule returns a numeric event id. We hold every
 // draw event a melody schedules so stopMelody can cancel them all.
@@ -377,7 +382,46 @@ export function useChaos() {
     }, ARP_MAX_DURATION_MS)
   }
 
+  /**
+   * Play an explicit step sequence — the piano-roll path. Unlike
+   * startArp (which walks a single chord by mode), each element of
+   * `steps` is the set of notes to sound at that step; an empty array
+   * is a rest. Playback loops the sequence and drives `arpStepIndex`
+   * so the diagram's playhead tracks the column being heard. Reuses
+   * the same arpLoop / transport / auto-stop / arpRunning machinery as
+   * startArp, so the shared stopArp() tears it down identically.
+   */
+  async function startSequence(steps: string[][], intervalSec: number, gate: number) {
+    if (steps.length === 0 || steps.every((s) => s.length === 0)) return
+    await ensureToneStarted()
+    stopArp()
+    // Same per-note duration clamp as startArp: floor 40 ms, cap 0.5 s
+    // so a high gate can't pile second-long notes across loop turns.
+    const noteDur = Math.max(0.04, Math.min(0.5, intervalSec * Math.max(0.1, Math.min(1, gate))))
+    let i = 0
+    arpLoop = new Tone.Loop((time) => {
+      const stepIdx = i % steps.length
+      const notes = steps[stepIdx]
+      i++
+      const arpInstrument = audioStore.activeInstrument
+      Tone.getDraw().schedule(() => {
+        arpStepIndex.value = stepIdx
+        for (const n of notes) {
+          void playOnTimed(arpInstrument, n, noteDur, 100)
+          broadcastNote(arpInstrument, n, 100)
+        }
+      }, time)
+    }, intervalSec)
+    arpLoop.start(0)
+    if (Tone.getTransport().state !== 'started') Tone.getTransport().start()
+    arpRunning.value = true
+    arpAutoStopTimer = setTimeout(() => {
+      stopArp()
+    }, ARP_MAX_DURATION_MS)
+  }
+
   function stopArp() {
+    arpStepIndex.value = -1
     if (arpAutoStopTimer) {
       clearTimeout(arpAutoStopTimer)
       arpAutoStopTimer = null
@@ -681,6 +725,7 @@ export function useChaos() {
   return {
     chaosAmount,
     arpRunning,
+    arpStepIndex,
     lastMelody,
     melodyPlaying,
     setChaosAmount,
@@ -688,6 +733,7 @@ export function useChaos() {
     setChaosY,
     glitchBurst,
     startArp,
+    startSequence,
     stopArp,
     generateMelody,
     playMelody,
