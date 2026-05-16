@@ -406,14 +406,25 @@ function detectMobile(): boolean {
   }
   return /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent || '')
 }
-// 8 voices on phone-class CPUs vs 32 on desktop. The previous mobile
+// 8 voices on phone-class CPUs vs 20 on desktop. The previous mobile
 // cap of 12 still let the audio worker overload audibly ('wshhhh') on
 // real-device QA — even a moderately busy beat-maker bar plus a held
 // piano chord is past 12 voices on its own. 8 keeps headroom for the
 // per-instrument FX chain + master compressor + limiter the engine
 // always runs alongside, without making the cap perceptible during
 // normal play (a 4-note chord + a beat row with 4 active steps fits).
-const POLYPHONY_LIMIT = detectMobile() ? 8 : 32
+//
+// INVARIANT: this MUST stay below SYNTH_MAX_POLYPHONY. This is the
+// engine's own tracker — stealOldestVoice() releases the oldest voice
+// through its envelope (graceful) when the count is hit. The per-synth
+// Tone cap below is a hard ceiling: once a PolySynth reaches it, Tone
+// force-drops the note ("Max polyphony exceeded. Note dropped.") with
+// no envelope. Desktop was 32 vs a 24 synth cap, so a single capped
+// synth hit Tone's hard ceiling ~8 voices before the graceful steal
+// ever ran — that's the warning flood. 20 sits 4 below the 24 cap,
+// leaving headroom for voices still ringing out their release tail
+// (which keep occupying a Tone voice until the envelope completes).
+const POLYPHONY_LIMIT = detectMobile() ? 8 : 20
 
 // Hard per-PolySynth voice cap. Tone.PolySynth defaults to 32 and
 // allocates a fresh voice instance on demand up to that — with a
@@ -1153,12 +1164,18 @@ const CELLO_URLS: Record<string, string> = {
   C2: 'C2.mp3', G2: 'G2.mp3', C3: 'C3.mp3', G3: 'G3.mp3', C4: 'C4.mp3',
 }
 
+// nbrosowsky's harp has no C7 (top real files are B6 / D7 / F7) and
+// the trumpet jumps C4 → C6 with no C5. Requesting the missing files
+// 403s on jsDelivr, Tone.Sampler rejects, the load race times out and
+// the voice silently drops to the synth fallback. B6 / D5 are the
+// closest real pitches to the original anchors, so range coverage is
+// unchanged. Verified against the repo's actual sample list.
 const HARP_URLS: Record<string, string> = {
-  C3: 'C3.mp3', C5: 'C5.mp3', E5: 'E5.mp3', C7: 'C7.mp3',
+  C3: 'C3.mp3', C5: 'C5.mp3', E5: 'E5.mp3', B6: 'B6.mp3',
 }
 
 const TRUMPET_URLS: Record<string, string> = {
-  F3: 'F3.mp3', C4: 'C4.mp3', F4: 'F4.mp3', C5: 'C5.mp3', F5: 'F5.mp3',
+  F3: 'F3.mp3', C4: 'C4.mp3', F4: 'F4.mp3', D5: 'D5.mp3', F5: 'F5.mp3',
 }
 
 const CLARINET_URLS: Record<string, string> = {
