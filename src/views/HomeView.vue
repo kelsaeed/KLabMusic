@@ -2,6 +2,7 @@
 import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
 import AppNav from '@/components/AppNav.vue'
+import AdRails from '@/components/ui/AdRails.vue'
 
 const { t, tm, rt } = useI18n()
 const features = tm('home.features') as Record<string, string>
@@ -10,6 +11,7 @@ const features = tm('home.features') as Record<string, string>
 <template>
   <div class="home">
     <AppNav />
+    <AdRails />
 
     <section class="hero">
       <div class="hero-inner">

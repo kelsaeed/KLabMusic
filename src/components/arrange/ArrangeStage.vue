@@ -458,6 +458,15 @@ onBeforeUnmount(() => {
   background: var(--bg-base);
   overflow: hidden;
   min-height: 320px;
+  /* The arrangement timeline is universally left→right: time flows
+     forward to the right and the track-header column sits on the left,
+     in every locale — exactly how every DAW (including Arabic ones)
+     presents it. Forcing LTR here keeps the JS-driven clip/playhead/
+     ruler `left:` pixel positions correct and the header column on the
+     left in Arabic; without it the grid flipped, the header column
+     jumped sides and clips/playhead landed off-screen. Track names
+     keep their own (Arabic) direction via unicode-bidi below. */
+  direction: ltr;
 }
 .headers {
   display: flex;
@@ -500,6 +509,11 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   flex: 1;
+  /* The grid is forced LTR for layout, but a track named in Arabic
+     must still shape and align as Arabic — plaintext auto-detects the
+     direction from the text itself. */
+  unicode-bidi: plaintext;
+  text-align: start;
 }
 .header-name .kind {
   font-size: 0.6rem;

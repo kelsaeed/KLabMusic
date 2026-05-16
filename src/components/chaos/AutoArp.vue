@@ -747,6 +747,15 @@ input[type='range'] { width: 100%; padding: 0; }
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg-base);
+  /* A piano roll reads left→right (step 1 … step N, low pitch label
+     column on the start side) in EVERY locale — same as a DAW
+     timeline. Forcing LTR here keeps the sticky label column, the
+     cell borders and the horizontal scroll origin consistent in
+     Arabic RTL; without it the grid laid itself right-to-left while
+     the sticky `left:0` label column stayed on the left, so labels
+     detached from their rows and the first steps scrolled off-screen.
+     The Arabic toolbar/hint around it stay RTL (they're outside). */
+  direction: ltr;
 }
 .roll-grid {
   display: grid;

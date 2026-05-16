@@ -1,4 +1,8 @@
 {
+  "ads": {
+    "advertisement": "Advertisement",
+    "placeholder": "Ad space"
+  },
   "app": {
     "name": "KLabMusic",
     "tagline": "Make Music. Break Rules."

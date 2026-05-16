@@ -4,6 +4,7 @@ import AppNav from '@/components/AppNav.vue'
 import ModuleTabs from '@/components/ModuleTabs.vue'
 import RecorderDrawer from '@/components/recorder/RecorderDrawer.vue'
 import ToastStack from '@/components/ui/ToastStack.vue'
+import AdRails from '@/components/ui/AdRails.vue'
 import type { ModuleTab } from '@/lib/types'
 
 const AudioStage = defineAsyncComponent(() => import('@/components/instruments/AudioStage.vue'))
@@ -37,6 +38,7 @@ const active = ref<ModuleTab>('live')
 
     <RecorderDrawer />
     <ToastStack />
+    <AdRails />
   </div>
 </template>
 
