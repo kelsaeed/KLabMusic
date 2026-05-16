@@ -56,6 +56,13 @@ const showAdvanced = ref(false)
 // (the clipboard write itself is silent and async).
 const justCopied = ref(false)
 let copyResetTimer: ReturnType<typeof setTimeout> | null = null
+// Paste-button state — mirrors the copy flow. 'ok' flashes "Pasted!",
+// 'fail' tells the user to Ctrl+V manually (clipboard *read* can be
+// blocked by permissions / insecure origin and, unlike copy, has no
+// reliable execCommand fallback — browsers block synthetic paste).
+const pasteState = ref<'idle' | 'ok' | 'fail'>('idle')
+let pasteResetTimer: ReturnType<typeof setTimeout> | null = null
+const customInputRef = ref<HTMLTextAreaElement | null>(null)
 const NOTE_RE = /^([A-Ga-g])([#b]?)(-?\d{1,2})$/
 // Solfège → letter map so 'do re mi fa sol la si' (the Arabic /
 // French / Italian convention used heavily in maqam pedagogy)
@@ -235,6 +242,33 @@ async function copyMelodyToClipboard() {
     copyResetTimer = setTimeout(() => { justCopied.value = false }, 1400)
   }
 }
+
+async function pasteFromClipboard() {
+  // Clipboard → custom-melody textarea in one tap: the inverse of
+  // copyMelodyToClipboard, and the answer to "where do I paste a
+  // melody". The textarea already accepts a manual Ctrl+V; this just
+  // removes the "is this even a paste target" friction. readText()
+  // has no execCommand fallback (browsers block synthetic paste), so
+  // when it's unavailable we focus the textarea and tell the user to
+  // paste manually rather than failing silently.
+  let text: string | null = null
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      text = await navigator.clipboard.readText()
+    }
+  } catch {
+    text = null
+  }
+  if (text !== null) {
+    customText.value = text.trim()
+    pasteState.value = 'ok'
+  } else {
+    customInputRef.value?.focus()
+    pasteState.value = 'fail'
+  }
+  if (pasteResetTimer) clearTimeout(pasteResetTimer)
+  pasteResetTimer = setTimeout(() => { pasteState.value = 'idle' }, 1600)
+}
 </script>
 
 <template>
@@ -344,8 +378,22 @@ async function copyMelodyToClipboard() {
     <div class="custom">
       <header class="custom-head">
         <span class="custom-label mono">{{ t('chaos.customNotes') }}</span>
+        <button
+          type="button"
+          class="chip-tool mono"
+          :class="{ done: pasteState === 'ok' }"
+          :title="t('chaos.pasteMelodyTitle')"
+          @click="pasteFromClipboard"
+        >
+          {{ pasteState === 'ok'
+            ? '✓ ' + t('chaos.pasteMelodyDone')
+            : pasteState === 'fail'
+              ? '⌨ ' + t('chaos.pasteMelodyFail')
+              : '📋 ' + t('chaos.pasteMelody') }}
+        </button>
       </header>
       <textarea
+        ref="customInputRef"
         v-model="customText"
         class="custom-input mono"
         :placeholder="t('chaos.customPlaceholder')"
