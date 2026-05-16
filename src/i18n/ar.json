@@ -342,6 +342,9 @@
       "gridFit": "ملاءمة النوتات",
       "gridDeleteStep": "احذف هذه الخطوة",
       "gridEmpty": "الصق أو اكتب النوتات بالأعلى لرسم المخطط، أو اضغط + خطوة واضغط على الخانات.",
+      "customChordPlaceholder": "اكتب أي نوتات — مثل C4 E4 G4 B4، أو do4 mi4 sol4. افصل بمسافة أو فاصلة.",
+      "customChordParsed": "{n} نوتة",
+      "rebuild": "إرجاع للقوائم",
       "guitarChord": "كوردة الجيتار",
       "stringSet": "الآلة"
     },

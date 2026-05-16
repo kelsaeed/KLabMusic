@@ -342,6 +342,9 @@
       "gridFit": "Fit to notes",
       "gridDeleteStep": "Delete this step",
       "gridEmpty": "Paste or type notes above to draw the diagram, or hit + Step and click cells.",
+      "customChordPlaceholder": "Type any notes — e.g. C4 E4 G4 B4, or do4 mi4 sol4. Spaces or commas.",
+      "customChordParsed": "{n} notes",
+      "rebuild": "Reset to dropdowns",
       "guitarChord": "Guitar chord",
       "stringSet": "Instrument"
     },

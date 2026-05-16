@@ -284,18 +284,11 @@ function maqamSemitones(id: MaqamId): { offsets: number[]; tonic: string } {
   }
 }
 
-const chord = computed<string[]>(() => {
-  if (source.value === 'typed') {
-    return steps.value.flat()
-  }
-  if (source.value === 'guitar') {
-    const c = GUITAR_CHORDS.find((x) => x.id === guitarChordId.value)
-    return c ? [...c.notes] : []
-  }
-  if (source.value === 'strings') {
-    const s = STRING_PRESETS.find((x) => x.id === stringSetId.value)
-    return s ? [...s.notes] : []
-  }
+// The root / quality / octave / maqam dropdowns no longer drive the
+// chord directly — they SEED an editable text field. This is the
+// "let the user be free" change: the builder is just a starting
+// point, and the actual notes are whatever the user typed/edited.
+const builderChord = computed<string[]>(() => {
   if (maqam.value) {
     const { offsets, tonic } = maqamSemitones(maqam.value)
     const tonicIdx = KEYS.indexOf(tonic as RootKey)
@@ -319,6 +312,47 @@ const chord = computed<string[]>(() => {
     const oct = octave.value + Math.floor((rootIdx + semi) / 12)
     return `${KEYS[noteIdx]}${oct}`
   })
+})
+
+// Free-form chord the user can type anything into (any notes, any
+// count, space / comma / · separated, Western or solfège). Seeded
+// from the builder and re-seeded whenever a builder dropdown changes,
+// but otherwise the user's edits stand untouched.
+const customChordText = ref('')
+
+function parseFreeNotes(text: string): string[] {
+  const out: string[] = []
+  for (const tok of text.split(/[\s,·]+/).map((s) => s.trim()).filter(Boolean)) {
+    const n = parseOneNote(tok)
+    if (n) out.push(n)
+  }
+  return out
+}
+
+watch(
+  [root, quality, octave, maqam],
+  () => { customChordText.value = builderChord.value.join(' ') },
+  { immediate: true },
+)
+
+function rebuildCustomChord() {
+  customChordText.value = builderChord.value.join(' ')
+}
+
+const chord = computed<string[]>(() => {
+  if (source.value === 'typed') {
+    return steps.value.flat()
+  }
+  if (source.value === 'guitar') {
+    const c = GUITAR_CHORDS.find((x) => x.id === guitarChordId.value)
+    return c ? [...c.notes] : []
+  }
+  if (source.value === 'strings') {
+    const s = STRING_PRESETS.find((x) => x.id === stringSetId.value)
+    return s ? [...s.notes] : []
+  }
+  // Custom source — the user's free-form notes are the source of truth.
+  return parseFreeNotes(customChordText.value)
 })
 
 async function toggle() {
@@ -473,6 +507,29 @@ async function toggle() {
           </option>
         </select>
       </label>
+
+      <!-- The chord is yours: the dropdowns above just SEED this box.
+           Edit it freely — any notes, any count. Reset re-derives it
+           from the dropdowns; changing any dropdown also re-seeds it. -->
+      <div class="field full">
+        <div class="chord-head">
+          <span class="lbl mono">{{ t('chaos.chord.preview') }}</span>
+          <button
+            type="button"
+            class="paste-btn mono"
+            :title="t('chaos.chord.rebuild')"
+            @click="rebuildCustomChord"
+          >↺ {{ t('chaos.chord.rebuild') }}</button>
+        </div>
+        <input
+          v-model="customChordText"
+          class="chord-input mono"
+          :placeholder="t('chaos.chord.customChordPlaceholder')"
+        />
+        <p class="parsed mono">
+          {{ t('chaos.chord.customChordParsed', { n: chord.length }) }} · {{ chord.join(' · ') || '—' }}
+        </p>
+      </div>
     </template>
 
     <!-- Guitar chord cards — picks one of the eight first-position
@@ -501,10 +558,10 @@ async function toggle() {
       </select>
     </label>
 
-    <!-- Chord preview + arp mode only apply to the chord-walking
-         sources. The typed source plays the diagram as drawn, so its
-         "preview" is the grid itself and mode is meaningless there. -->
-    <p v-if="source !== 'typed'" class="preview mono">
+    <!-- Read-only chord preview for the preset pickers only. The custom
+         source has its own editable chord field above; the typed source
+         shows the grid instead, so neither needs this line. -->
+    <p v-if="source === 'guitar' || source === 'strings'" class="preview mono">
       <span class="preview-lbl">{{ t('chaos.chord.preview') }}</span>
       <span class="preview-notes">{{ chord.join(' · ') || '—' }}</span>
     </p>
@@ -616,6 +673,24 @@ select:disabled { opacity: 0.45; cursor: not-allowed; }
 }
 .preview-lbl { color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
 .preview-notes { color: var(--accent-primary); word-break: break-word; }
+
+.chord-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+.chord-input {
+  width: 100%;
+  background: var(--bg-base);
+  color: var(--accent-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.5rem 0.6rem;
+  font-size: 0.82rem;
+  letter-spacing: 0.03em;
+}
+.chord-input:focus { outline: none; border-color: var(--accent-primary); }
 
 .modes { display: flex; gap: 0.3rem; flex-wrap: wrap; }
 .mode {
