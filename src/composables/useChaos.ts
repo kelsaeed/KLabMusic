@@ -358,19 +358,22 @@ export function useChaos() {
       i++
       const playNote = note
       const arpInstrument = audioStore.activeInstrument
-      Tone.getDraw().schedule(() => {
-        void playOnTimed(arpInstrument, playNote, noteDur, 100)
-        broadcastNote(arpInstrument, playNote, 100)
-      }, time)
+      // Trigger directly in this worker-clock Loop callback. The old
+      // Tone.getDraw() wrapper was requestAnimationFrame-based, which
+      // Chrome freezes while its window is minimized / behind another
+      // app — that's exactly why the arp went silent until you brought
+      // Chrome back to the front. The Beat Maker already triggers
+      // directly here; this matches it.
+      void playOnTimed(arpInstrument, playNote, noteDur, 100)
+      broadcastNote(arpInstrument, playNote, 100)
       if (mode === 'chord') {
         for (let c = 1; c < chord.length; c++) {
           const otherNote = chord[c]
-          Tone.getDraw().schedule(() => {
-            void playOnTimed(arpInstrument, otherNote, noteDur, 100)
-            broadcastNote(arpInstrument, otherNote, 100)
-          }, time)
+          void playOnTimed(arpInstrument, otherNote, noteDur, 100)
+          broadcastNote(arpInstrument, otherNote, 100)
         }
       }
+      void time
     }, intervalSec)
     arpLoop.start(0)
     if (Tone.getTransport().state !== 'started') Tone.getTransport().start()
@@ -404,12 +407,18 @@ export function useChaos() {
       const notes = steps[stepIdx]
       i++
       const arpInstrument = audioStore.activeInstrument
+      // Audio triggers directly in the worker-clock Loop callback so
+      // the sequence keeps playing with the Chrome window minimized /
+      // unfocused (Tone.getDraw is requestAnimationFrame-based and
+      // Chrome freezes it off-screen). Only the playhead highlight —
+      // a purely visual update you can't see while the window is
+      // hidden anyway — stays on Tone.getDraw().
+      for (const n of notes) {
+        void playOnTimed(arpInstrument, n, noteDur, 100)
+        broadcastNote(arpInstrument, n, 100)
+      }
       Tone.getDraw().schedule(() => {
         arpStepIndex.value = stepIdx
-        for (const n of notes) {
-          void playOnTimed(arpInstrument, n, noteDur, 100)
-          broadcastNote(arpInstrument, n, 100)
-        }
       }, time)
     }, intervalSec)
     arpLoop.start(0)
@@ -640,9 +649,15 @@ export function useChaos() {
     // call mid-playback otherwise.
     const cents = lastMelodyCents.value.slice()
     melodyPlaying.value = true
+    // Schedule each step on the Tone context's worker-clock timer
+    // (Tone.getContext().setTimeout), NOT Tone.getDraw(). Draw is
+    // requestAnimationFrame-based and Chrome freezes rAF when its
+    // window is minimized / behind another app, which silenced the
+    // generated melody until you refocused Chrome. The context clock
+    // runs in a Web Worker and keeps ticking in the background.
+    const ctx = Tone.getContext()
     notes.forEach((note, i) => {
-      const t = Tone.now() + i * stepSec
-      const id = Tone.getDraw().schedule(() => {
+      const id = ctx.setTimeout(() => {
         // Clamp the generated note into the active instrument's playable
         // range so a "majestic" mood targeting C5 doesn't hand a violin
         // pad a B6 it can't reach in first position. Falls through
@@ -662,9 +677,9 @@ export function useChaos() {
         // through the wire, so a Bayati melody plays in tune across the
         // room instead of being snapped back to 12-TET on the receiver.
         broadcastNote(ai, finalNote, 100, shift)
-      }, t)
-      // Tone.Draw.schedule returns a number id we can pass to clear()
-      // — we collect all of them so stopMelody can cancel mid-stream.
+      }, i * stepSec)
+      // ctx.setTimeout returns a numeric id; collect them all so
+      // stopMelody can cancel every pending step mid-stream.
       melodyDrawIds.push(id as unknown as number)
     })
     // Clear melodyPlaying once the last note's release has elapsed,
@@ -685,8 +700,9 @@ export function useChaos() {
    * before a fresh playMelody so back-to-back plays don't overlap.
    */
   function stopMelody() {
+    const ctx = Tone.getContext()
     for (const id of melodyDrawIds) {
-      try { Tone.getDraw().cancel(id as unknown as number) } catch { /* idem */ }
+      try { ctx.clearTimeout(id as unknown as number) } catch { /* idem */ }
     }
     melodyDrawIds = []
     if (melodyEndTimer) {

@@ -60,12 +60,16 @@ export function useLoopLibrary() {
       for (const track of loop.tracks) {
         const v = track.steps[stepIdx]
         if (v == null) continue
-        // Schedule on Tone.Draw so the playOnTimed call lands at the audio
-        // time of the tick (not the JS event-loop time, which can drift).
-        Tone.getDraw().schedule(() => {
-          void playOnTimed(track.instrument, track.note, stepDur, v)
-        }, time)
+        // Trigger directly in this Tone.Loop callback (worker-clock
+        // driven, so it keeps firing when the Chrome window is
+        // minimized / occluded). The previous Tone.getDraw() wrapper
+        // was requestAnimationFrame-based, which Chrome FREEZES while
+        // the window isn't focused — that's why loop preview cut out
+        // until you brought Chrome back to front. Same direct-call
+        // pattern the Beat Maker uses.
+        void playOnTimed(track.instrument, track.note, stepDur, v)
       }
+      void time
       cursor++
     }, subdivision)
     activeLoop.start(0)

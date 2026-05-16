@@ -255,10 +255,14 @@ export function useArrange() {
             const step = t.steps[idx]
             if (!step || !step.active) continue
             const vel = Math.round(step.velocity * t.volume * trackVol)
-            Tone.getDraw().schedule(() => {
-              void playOnTimed(t.instrument, t.note, stepDur, vel)
-            }, time)
+            // Trigger directly in this Transport callback (worker-clock
+            // driven → keeps playing with the Chrome window minimized /
+            // unfocused). The old Tone.getDraw() wrapper was rAF-based
+            // and Chrome freezes rAF off-screen, which stopped arrange
+            // playback until the window was refocused.
+            void playOnTimed(t.instrument, t.note, stepDur, vel)
           }
+          void time
         }, absoluteT)
         eventIds.push(id)
       }
@@ -387,21 +391,24 @@ export function useArrange() {
         // automation just like pattern clips do.
         const automatedVol = store.sampleAutomation(track, 'volume', absoluteT)
         const vol = automatedVol !== null ? automatedVol : trackVolMul
-        Tone.getDraw().schedule(() => {
-          // Pass the recorded microtonal bend straight through to the
-          // voice so a maqam violin take replays with its original
-          // quarter-tone fingerings — voices that support per-attack
-          // cents bake it into the per-voice frequency, voices that
-          // don't (drums) ignore it, and overlapping bent notes no
-          // longer drag each other off pitch via a shared detune param.
-          void playOnTimed(
-            ev.instrument,
-            ev.note,
-            remaining,
-            Math.round(ev.velocity * vol),
-            ev.cents ?? 0,
-          )
-        }, time)
+        // Trigger directly in this worker-clock Transport callback so
+        // a live-take clip keeps playing with the Chrome window
+        // minimized / unfocused. The old Tone.getDraw() wrapper was
+        // requestAnimationFrame-based and Chrome freezes rAF when the
+        // window is off-screen, which stopped playback until refocus.
+        // The recorded microtonal bend is passed straight through so a
+        // maqam violin take replays with its original quarter-tone
+        // fingerings (cents-aware voices bake it per-voice; drums
+        // ignore it; overlapping bent notes no longer drag each other
+        // off pitch via a shared detune param).
+        void playOnTimed(
+          ev.instrument,
+          ev.note,
+          remaining,
+          Math.round(ev.velocity * vol),
+          ev.cents ?? 0,
+        )
+        void time
       }, absoluteT)
       eventIds.push(id)
     }
